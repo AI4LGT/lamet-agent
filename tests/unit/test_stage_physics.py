@@ -1,0 +1,3849 @@
+"""Focused numerical checks for stage-owned physics.
+
+Purpose: exercise multi-state spectra, coordinate-aware matrix ratios, and the
+self-renormalization factor fit. Inputs are deterministic toy arrays; outputs
+are recovered physical parameters. Example: ``pytest tests/unit/test_stage_physics.py``.
+"""
+
+from __future__ import annotations
+
+import ast
+import io
+import json
+from pathlib import Path
+import tokenize
+import warnings
+
+import numpy as np
+import pytest
+
+from lamet_agent.data import EnsembleData, EnsembleInfo
+from lamet_agent.agent import ToolContext
+from lamet_agent.parallel import FitNumericalError
+from lamet_agent.kernels import list_kernel_ids, load_kernel, load_kernel_document, load_renormalization_kernel
+from lamet_agent.kernels.implementation import HBAR_C_GEV_FM
+from lamet_agent.stages.correlator_analysis.physics import (
+    fit_matrix_element_samples,
+    fit_qda_samples,
+    fit_spectrum_samples,
+    matrix_element_fcn,
+    matrix_element_prior,
+    matrix_element_samples,
+    pt2_fcn,
+    pt3_fcn,
+    qda_fcn,
+    qda_ratio_fcn,
+)
+from lamet_agent.parallel.lanczos import (
+    _analyze_threept,
+    _analyze_twopt,
+    _median_threept_matrix,
+    _median_twopt_energies,
+    analyze_prepared_lanczos,
+    prepare_lanczos_data,
+)
+from lamet_agent.stages.extrapolation.physics import basis_terms, fit_candidate
+from lamet_agent.parallel import fourier_transform
+from lamet_agent.stages.fourier_transform.physics import fit_tail_parameters, scan_fourier_transform, tail_model_values
+from lamet_agent.stages.perturbative_matching.physics import inspect_callable
+from lamet_agent.stages.renormalization.physics import (
+    fit_factor,
+    load_data as load_renormalization_data,
+    log_m,
+)
+from lamet_agent.stages.fourier_transform.physics import fourier_transform as stage_fourier_transform
+
+
+def _ensemble(spacing: float, identifier: str = "test", *, L_s: int = 64, m_pi: float = 0.14) -> EnsembleInfo:
+    return EnsembleInfo("test", identifier, spacing, spacing, L_s, 2 * L_s, m_pi)
+
+
+def test_raw_correlator_fcns_match_lametlat_reference_formulas() -> None:
+    """Cross-check the split FCNs against temp/LaMETLat's explicit equations."""
+    times = np.asarray([4.0, 6.0])
+    insertions = np.asarray([1.0, 2.0])
+    extent = 64
+    parameters = {
+        "E0": 0.25,
+        "dE1": 0.4,
+        "z0": 1.2,
+        "z1": 0.45,
+        "O00_re": 0.72,
+        "O01_re": 0.31,
+        "O11_re": 0.18,
+    }
+    energies = (parameters["E0"], parameters["E0"] + parameters["dE1"])
+    overlaps = (parameters["z0"], parameters["z1"])
+    expected_pt2 = sum(
+        overlap**2 / (2 * energy) * (np.exp(-energy * times) + np.exp(-energy * (extent - times)))
+        for energy, overlap in zip(energies, overlaps, strict=True)
+    )
+    expected_pt3 = sum(
+        parameters[f"O{min(source, sink)}{max(source, sink)}_re"]
+        * overlaps[source]
+        * overlaps[sink]
+        * np.exp(-energies[source] * (times - insertions))
+        * np.exp(-energies[sink] * insertions)
+        / (2 * energies[source])
+        / (2 * energies[sink])
+        for source in range(2)
+        for sink in range(2)
+    )
+    expected_qda = sum(
+        overlaps[state]
+        * parameters[f"O0{state}_re"]
+        / (2 * energies[state])
+        * (np.exp(-energies[state] * times) + np.exp(-energies[state] * (extent - times)))
+        for state in range(2)
+    )
+
+    common = {"n_states": 2, "extent": extent}
+    np.testing.assert_allclose(pt2_fcn({**common, "times": times}, parameters), expected_pt2)
+    np.testing.assert_allclose(
+        pt3_fcn(
+            {
+                "n_states": 2,
+                "form": "Breit",
+                "component": "re",
+                "times": times,
+                "insertions": insertions,
+            },
+            parameters,
+        ),
+        expected_pt3,
+    )
+    np.testing.assert_allclose(
+        qda_fcn({**common, "times": times, "component": "re"}, parameters),
+        expected_qda,
+    )
+    ratio = matrix_element_fcn(
+        {
+            **common,
+            "form": "Breit",
+            "atoms": ("3pt_ratio",),
+            "components": ("re",),
+            "ratio_t": times,
+            "ratio_tau": insertions,
+        },
+        parameters,
+    )
+    np.testing.assert_allclose(ratio, expected_pt3 / expected_pt2)
+    np.testing.assert_allclose(
+        qda_ratio_fcn(
+            {
+                **common,
+                "times": times,
+                "components": ("re",),
+                "denominator_kind": "external_2pt",
+            },
+            parameters,
+        ),
+        expected_qda / expected_pt2,
+    )
+
+
+def test_matrix_ratio_uses_declared_tsep_and_tau_coordinates() -> None:
+    t = np.arange(1.0, 7.0)
+    tsep = np.array([2.0, 3.0, 4.0])
+    tau = np.array([1.0, 2.0, 3.0])
+    z = np.array([0.0, 1.0])
+    c2_values = [np.exp(-0.3 * t), 1.1 * np.exp(-0.3 * t)]
+    c3_values = [
+        np.stack([np.full((tau.size, z.size), 0.7 * np.exp(-0.3 * ts)) for ts in tsep]),
+        np.stack([np.full((tau.size, z.size), 0.7 * 1.1 * np.exp(-0.3 * ts)) for ts in tsep]),
+    ]
+    c2 = EnsembleData(None, "bootstrap", c2_values, ["t"], {"t": t.tolist()}, attrs={"correlator_type": "two_point"})
+    c3 = EnsembleData(
+        None,
+        "bootstrap",
+        c3_values,
+        ["tsep", "tau", "z"],
+        {"tsep": tsep.tolist(), "tau": tau.tolist(), "z": z.tolist()},
+        attrs={"correlator_type": "three_point"},
+    )
+    values, coordinates, _ = matrix_element_samples({"c2": c2, "c3": c3}, method="ratio", tmin=2, tmax=4, tau_min=1)
+    assert coordinates == [0.0, 1.0]
+    assert np.allclose(values, 0.7, atol=1e-12)
+
+
+def test_matrix_ratio_rejects_a_missing_exact_two_point_denominator() -> None:
+    c2 = EnsembleData(
+        None, "bootstrap", [np.ones(2), np.ones(2)], ["t"], {"t": [1.0, 2.0]}, attrs={"correlator_type": "two_point"}
+    )
+    c3 = EnsembleData(
+        None,
+        "bootstrap",
+        [np.ones((1, 1)), np.ones((1, 1))],
+        ["tsep", "tau"],
+        {"tsep": [3.0], "tau": [1.0]},
+        attrs={"correlator_type": "three_point"},
+    )
+    with pytest.raises(ValueError, match="exactly one entry"):
+        matrix_element_samples({"c2": c2, "c3": c3}, method="ratio", tmin=1, tmax=3, tau_min=1)
+
+
+def _exact_lanczos_correlators(
+    n_configurations: int = 6,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    energies = np.asarray([0.25, 0.7])
+    overlaps_squared = np.asarray([1.0, 0.3])
+    transfer_values = np.exp(-energies)
+    times = np.arange(8)
+    c2 = np.sum(overlaps_squared[:, None] * np.exp(-energies[:, None] * times), axis=0)
+    current = np.asarray([[0.8, 0.1], [0.1, 0.4]])
+    overlaps = np.sqrt(overlaps_squared)
+    c3 = np.empty((3, 3), dtype=float)
+    for sigma in range(3):
+        for tau in range(3):
+            c3[sigma, tau] = np.sum(
+                overlaps[:, None]
+                * transfer_values[:, None] ** sigma
+                * current
+                * overlaps[None, :]
+                * transfer_values[None, :] ** tau
+            )
+    return (
+        np.tile(c2, (n_configurations, 1)),
+        np.tile(c3, (n_configurations, 1, 1)),
+        current,
+    )
+
+
+def test_migrated_lanczos_recovers_exact_spectrum_and_matrix() -> None:
+    c2, c3, current = _exact_lanczos_correlators()
+
+    spectra = _analyze_twopt(c2, 6, seed=0, max_iterations=3)
+    energies = _median_twopt_energies(spectra, max_states=2)
+    matrices = _analyze_threept(c3, c2, c2, 6, seed=0, max_iterations=2)
+    matrix = _median_threept_matrix(matrices, iteration=2, max_states=2)
+
+    assert energies[-1] == pytest.approx([0.25, 0.7])
+    assert matrix == pytest.approx(current)
+
+
+def test_lanczos_gmpy2_recurrence_matches_numpy_reference() -> None:
+    from lamet_agent.parallel.lanczos import _transfer_matrix
+
+    transfer_values = np.exp(-np.asarray([0.2, 0.5, 0.9]))
+    weights = np.asarray([1.0, 0.4, 0.15])
+    correlator = np.asarray([np.sum(weights * transfer_values**time) for time in range(6)])
+
+    reference = _transfer_matrix(correlator, precision=0)
+    high_precision = _transfer_matrix(correlator, precision=100)
+
+    for expected, actual in zip(reference, high_precision):
+        np.testing.assert_allclose(actual, expected, rtol=1e-11, atol=1e-13)
+
+
+def test_lanczos_uses_raw_nested_resampling_and_standard_tsep_conversion(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    n_configurations = 6
+    energies = np.asarray([0.25, 0.7])
+    overlaps_squared = np.asarray([1.0, 0.3])
+    overlaps = np.sqrt(overlaps_squared)
+    current = np.asarray([[0.8 + 0.25j, 0.1 - 0.05j], [0.1 + 0.02j, 0.4 - 0.1j]])
+    times = np.arange(14)
+    c2_values = np.tile(
+        np.sum(
+            overlaps_squared[:, None] * np.exp(-energies[:, None] * times),
+            axis=0,
+        ),
+        (n_configurations, 1),
+    )
+    tseps = [4, 6, 8, 12]
+    taus = list(range(13))
+    c3_values = np.zeros((n_configurations, len(tseps), len(taus), 1), dtype=complex)
+    for tsep_index, tsep in enumerate(tseps):
+        for tau in range(tsep + 1):
+            sigma = tsep - tau
+            value = np.sum(
+                overlaps[:, None]
+                * np.exp(-energies[:, None] * sigma)
+                * current
+                * overlaps[None, :]
+                * np.exp(-energies[None, :] * tau)
+            )
+            c3_values[:, tsep_index, tau, 0] = value
+    momentum = "[0, 0, 0]"
+    c2 = EnsembleData(
+        None,
+        "raw",
+        [sample for sample in c2_values],
+        ["t"],
+        {"t": times.tolist()},
+        attrs={
+            "correlator_type": "two_point",
+            "source_momentum": momentum,
+            "sink_momentum": momentum,
+        },
+        name="c2",
+    )
+    c3 = EnsembleData(
+        None,
+        "raw",
+        [sample for sample in c3_values],
+        ["tsep", "tau", "z"],
+        {"tsep": tseps, "tau": taus, "z": [0]},
+        attrs={
+            "correlator_type": "three_point",
+            "source_momentum": momentum,
+            "sink_momentum": momentum,
+            "parton": "quark",
+            "gfix": "CG",
+            "polarization": "unpolarized",
+            "kernel_operator": "gt",
+        },
+        name="c3",
+    )
+
+    prepared = prepare_lanczos_data({"c2": c2, "c3": c3}, scope="3pt_matrix")
+    result = analyze_prepared_lanczos(
+        prepared,
+        components="both",
+        max_states=2,
+        resampling="jackknife",
+        bootstrap_samples=None,
+        bin_size=1,
+        inner_samples=4,
+        precision=0,
+        seed=0,
+        workers=1,
+        final_iteration=2,
+    )
+
+    inspection = prepared["inspection"]
+    assert inspection["lanczos_t0"] == 2
+    assert inspection["lanczos_time_step"] == 2
+    assert inspection["sampling_plan"]["selected_tseps"] == [4, 6, 8]
+    assert inspection["point_usage"]["used_per_z"] == 4
+    assert inspection["point_usage"]["discarded_per_z"] == 30
+    assert result["values"][:, 0] == pytest.approx(np.full(n_configurations, current[0, 0]))
+
+    from lamet_agent.stages.correlator_analysis._lanczos_inspection import (
+        run as inspect_lanczos,
+    )
+    from lamet_agent.stages.correlator_analysis._lanczos import (
+        run as run_lanczos,
+    )
+
+    params = {
+        "analysis_method": "lanczos",
+        "component": "both",
+        "nstate": [2],
+        "scope": "3pt_matrix",
+        "inner_samples": 4,
+        "precision": 0,
+        "final_iteration": 2,
+    }
+    context = ToolContext(
+        {
+            "metadata": {
+                "workers": 1,
+                "random_seed": 0,
+                "sample_error_mode": "covariance",
+                "target_observable": "pdf",
+                "resample_mode": "jackknife",
+                "bin_size": 1,
+            }
+        },
+        tmp_path / "manifest.json",
+        "correlator_analysis",
+        "lanczos",
+        params,
+        {},
+        {},
+        {"raw_correlators": {"c2": c2, "c3": c3}},
+        tmp_path,
+        np.random.default_rng(1),
+    )
+    inspect_lanczos(context)
+    captured = capsys.readouterr().out
+    assert "ATTENTION: Lanczos uses" in captured
+    assert "30 points are discarded" in captured
+    observation = run_lanczos(context)
+
+    assert context.output.values[:, 0] == pytest.approx(np.full(n_configurations, current[0, 0]))
+    assert observation["summary"] == "published bare_matrix_element"
+    assert context.output.attrs["parton"] == "quark"
+    assert context.output.attrs["gfix"] == "CG"
+    assert context.output.attrs["polarization"] == "unpolarized"
+    assert context.output.attrs["kernel_operator"] == "gt"
+    assert (tmp_path / "output.nc").is_file()
+    assert (tmp_path / "diagnostics" / "state_matrices.nc").is_file()
+    assert (tmp_path / "plots" / "result.pdf").is_file()
+    assert not (tmp_path / "report.md").exists()
+
+    spectrum_dir = tmp_path / "spectrum"
+    spectrum_dir.mkdir()
+    spectrum_params = {
+        **params,
+        "component": "re",
+        "scope": "2pt_spectrum",
+        "inner_samples": 4,
+        "precision": 0,
+    }
+    spectrum_context = ToolContext(
+        context.manifest,
+        tmp_path / "manifest.json",
+        "correlator_analysis",
+        "lanczos_spectrum",
+        spectrum_params,
+        {},
+        {},
+        {"raw_correlators": {"c2": c2}},
+        spectrum_dir,
+        np.random.default_rng(2),
+    )
+    inspect_lanczos(spectrum_context)
+    spectrum_observation = run_lanczos(spectrum_context)
+
+    assert spectrum_observation["summary"] == "published lanczos_energy"
+    assert spectrum_context.output.dims == ["channel", "iteration", "state"]
+    assert (spectrum_dir / "output.nc").is_file()
+
+
+def test_qda_fit_divides_by_nonlocal_origin_and_fits_each_sample() -> None:
+    rng = np.random.default_rng(17)
+    times = np.arange(8.0)
+    z = [0.0, 1.0]
+    target = 0.72 + 0.18j
+    samples = []
+    for _ in range(24):
+        denominator = np.exp(-0.25 * times) * (1.0 + rng.normal(0.0, 0.01))
+        ratio = target + rng.normal(0.0, 0.003, times.size) + 1j * rng.normal(0.0, 0.003, times.size)
+        samples.append(np.column_stack([denominator, denominator * ratio]))
+    source = EnsembleData(
+        _ensemble(0.1),
+        "bootstrap",
+        samples,
+        ["t", "z"],
+        {"t": times.tolist(), "z": z},
+        attrs={"correlator_type": "qda"},
+    )
+    values, coordinates, diagnostics = matrix_element_samples(
+        {"qda": source},
+        method="qda",
+        tmin=2,
+        tmax=7,
+        tau_min=None,
+        lsqfit={
+            "pt2_windows": [{"tmin": 2, "tmax": 7}],
+            "svdcut": 1e-8,
+            "posterior_prior_error_scale": 3.0,
+            "q_min": 0.0,
+        },
+        workers=2,
+    )
+    assert coordinates == z
+    assert np.all(values[:, 0] == 1.0)
+    assert np.isclose(np.mean(values[:, 1]), target, atol=2e-3)
+    assert diagnostics["min_Q"] >= 0.0
+    assert all("E0" in fit and "E0_sdev" in fit for fit in diagnostics["fits"])
+    production_fit = diagnostics["fits"][0]
+    assert len(production_fit["sample_diagnostics"]) == source.n_sample
+    assert len(production_fit["E0_samples"]) == source.n_sample
+    assert production_fit["sample0_plot"]["plots"][0]["kind"] == "qda_ratio"
+    assert production_fit["sample0_plot"]["plots"][0]["series"][0]["x"] == times.tolist()
+    assert production_fit["sample0_plot"]["plots"][0]["series"][0]["fit_x"] == [1.5, 6.5]
+    assert diagnostics["n_params"] == 5
+
+
+def test_qda_two_state_ratio_recovers_ground_state_plateau() -> None:
+    rng = np.random.default_rng(21)
+    ensemble = _ensemble(0.1)
+    times = np.arange(16.0)
+    extent = ensemble.L_t
+    energies = (0.25, 0.65)
+    overlaps = (1.2, 0.5)
+    local = (1.0, 0.4)
+    o_re = (0.72, 0.30)
+    o_im = (0.18, 0.10)
+
+    def correlator(matrices: tuple[float, float]) -> np.ndarray:
+        values = 0.0
+        for energy, overlap, matrix in zip(energies, overlaps, matrices, strict=True):
+            values = values + overlap / (2 * energy) * matrix * (
+                np.exp(-energy * times) + np.exp(-energy * (extent - times))
+            )
+        return values
+
+    local_c = correlator(local)
+    samples = []
+    for _ in range(48):
+        scale = 1.0 + rng.normal(0.0, 0.004)
+        numerator = correlator(o_re) + 1j * correlator(o_im)
+        samples.append(np.column_stack([local_c * scale, numerator * scale]))
+    source = EnsembleData(
+        ensemble,
+        "bootstrap",
+        samples,
+        ["t", "z"],
+        {"t": times.tolist(), "z": [0.0, 1.0]},
+        attrs={"correlator_type": "qda"},
+    )
+    values, _coordinates, diagnostics = matrix_element_samples(
+        {"qda": source},
+        method="qda",
+        tmin=2,
+        tmax=14,
+        tau_min=None,
+        lsqfit={
+            "pt2_windows": [{"tmin": 2, "tmax": 14}],
+            "svdcut": 1e-8,
+            "posterior_prior_error_scale": 3.0,
+            "q_min": 0.0,
+        },
+        n_states=2,
+        workers=1,
+    )
+    target = o_re[0] / local[0] + 1j * o_im[0] / local[0]
+    assert np.isclose(np.mean(values[:, 1]), target, atol=0.05)
+    assert diagnostics["n_params"] == 10
+    series = diagnostics["fits"][0]["sample0_plot"]["plots"][0]["series"][0]
+    assert len(series["fit_x"]) > 2
+
+
+@pytest.mark.parametrize(
+    ("use_explicit_two_point", "expected_denominator"),
+    [(False, "qda_z0"), (True, "external_2pt")],
+)
+def test_raw_qda_joint_fit_supports_both_denominator_sources(
+    use_explicit_two_point: bool, expected_denominator: str
+) -> None:
+    rng = np.random.default_rng(121)
+    ensemble = _ensemble(0.1)
+    times = np.arange(9.0)
+    energy = 0.25
+    overlap = 1.2
+    target = 0.72
+    periodic = np.exp(-energy * times) + np.exp(-energy * (ensemble.L_t - times))
+    denominator = overlap**2 / (2 * energy) * periodic
+    numerator = overlap * (target * overlap) / (2 * energy) * periodic
+    qda_samples = []
+    pt2_samples = []
+    for _ in range(24):
+        shared = 1.0 + rng.normal(0.0, 0.006)
+        point_noise = rng.normal(0.0, 0.0005, times.size)
+        pt2 = denominator * shared * (1.0 + point_noise)
+        target_sample = numerator * shared * (1.0 + point_noise)
+        qda_samples.append(target_sample[:, None] if use_explicit_two_point else np.column_stack([pt2, target_sample]))
+        pt2_samples.append(pt2)
+    common = {"sink_momentum": "[0, 0, 3]", "resample_id": "shared"}
+    qda = EnsembleData(
+        ensemble,
+        "bootstrap",
+        qda_samples,
+        ["t", "z"],
+        {"t": times.tolist(), "z": [1.0] if use_explicit_two_point else [0.0, 1.0]},
+        attrs={**common, "correlator_type": "qda"},
+    )
+    correlators = {"qda": qda}
+    if use_explicit_two_point:
+        correlators["two_point"] = EnsembleData(
+            ensemble,
+            "bootstrap",
+            pt2_samples,
+            ["t"],
+            {"t": times.tolist()},
+            attrs={**common, "correlator_type": "two_point"},
+        )
+
+    output, diagnostics = fit_qda_samples(
+        correlators,
+        fit_scope=["2pt+qda"],
+        components="real",
+        tmin=2,
+        tmax=7,
+        n_states=1,
+        prior_width=1.0,
+        svdcut=1e-8,
+        posterior_prior_error_scale=3.0,
+        sample_error_mode="variance",
+        workers=1,
+    )
+
+    assert output is not None
+    assert diagnostics["denominator_kind"] == expected_denominator
+    assert output.attrs["denominator_kind"] == expected_denominator
+    target_index = 0 if use_explicit_two_point else 1
+    assert np.mean(output.values[:, target_index]) == pytest.approx(target, abs=0.02)
+    assert diagnostics["fits"][0]["sample0_plot"]["plots"][0]["kind"] == "qda_ratio"
+
+
+def test_qda_ratio_division_skips_zero_denominator_times_outside_the_window() -> None:
+    rng = np.random.default_rng(19)
+    times = np.arange(8.0)
+    samples = []
+    for _ in range(16):
+        denominator = np.exp(-0.25 * times) * (1.0 + rng.normal(0.0, 0.01))
+        denominator[-1] = 0.0
+        ratio = 0.7 + rng.normal(0.0, 0.003, times.size)
+        samples.append(np.column_stack([denominator, denominator * ratio]))
+    source = EnsembleData(
+        _ensemble(0.1),
+        "bootstrap",
+        samples,
+        ["t", "z"],
+        {"t": times.tolist(), "z": [0.0, 1.0]},
+        attrs={"correlator_type": "qda"},
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", RuntimeWarning)
+        output, diagnostics = fit_qda_samples(
+            {"qda": source},
+            fit_scope=["2pt+qda"],
+            components="real",
+            tmin=2,
+            tmax=7,
+            n_states=1,
+            prior_width=1.0,
+            svdcut=1e-8,
+            posterior_prior_error_scale=3.0,
+            sample_error_mode="variance",
+            workers=1,
+        )
+    assert not any("invalid value encountered in divide" in str(item.message) for item in caught)
+    assert output is not None
+    assert np.isfinite(np.mean(output.values[:, 1]))
+    assert diagnostics["fits"][0]["sample0_plot"]["plots"][0]["kind"] == "qda_ratio"
+
+
+def test_qda_rejects_multiple_or_incompatible_explicit_two_point_inputs() -> None:
+    ensemble = _ensemble(0.1)
+    times = np.arange(6.0)
+    values = np.tile(np.exp(-0.25 * times), (4, 1))
+    qda = EnsembleData(
+        ensemble,
+        "bootstrap",
+        [np.column_stack([sample, 0.7 * sample]) for sample in values],
+        ["t", "z"],
+        {"t": times.tolist(), "z": [0.0, 1.0]},
+        attrs={"correlator_type": "qda", "sink_momentum": "[0, 0, 3]", "resample_id": "shared"},
+    )
+
+    def two_point(momentum: str) -> EnsembleData:
+        return EnsembleData(
+            ensemble,
+            "bootstrap",
+            list(values),
+            ["t"],
+            {"t": times.tolist()},
+            attrs={"correlator_type": "two_point", "sink_momentum": momentum, "resample_id": "shared"},
+        )
+
+    kwargs = {
+        "fit_scope": ["2pt+qda"],
+        "components": "real",
+        "tmin": 1,
+        "tmax": 5,
+        "n_states": 1,
+        "prior_width": 1.0,
+        "svdcut": 1e-8,
+        "posterior_prior_error_scale": 3.0,
+        "fit_samples": False,
+        "tune_z": 1.0,
+    }
+    with pytest.raises(ValueError, match="incompatible"):
+        fit_qda_samples({"qda": qda, "two_point": two_point("[0, 0, 2]")}, **kwargs)
+    with pytest.raises(ValueError, match="at most one"):
+        fit_qda_samples(
+            {"qda": qda, "two_point_a": two_point("[0, 0, 3]"), "two_point_b": two_point("[0, 0, 3]")},
+            **kwargs,
+        )
+
+
+@pytest.mark.parametrize(
+    ("fit_scope", "expected_n_data"),
+    [(["2pt+qda_ratio"], 15), (["2pt", "qda_ratio"], 10)],
+)
+def test_qda_scope_pipeline_uses_local_denominator(fit_scope: list[str], expected_n_data: int) -> None:
+    rng = np.random.default_rng(23)
+    ensemble = _ensemble(0.1)
+    times = np.arange(8.0)
+    energy = 0.25
+    local = 1.2 / (2 * energy) * (np.exp(-energy * times) + np.exp(-energy * (ensemble.L_t - times)))
+    target = 0.72 + 0.18j
+    samples = []
+    for _ in range(40):
+        denominator = local * (1.0 + rng.normal(0.0, 0.01, times.size))
+        ratio = target + rng.normal(0.0, 0.003, times.size) + 1j * rng.normal(0.0, 0.003, times.size)
+        samples.append(np.column_stack([denominator, denominator * ratio]))
+    source = EnsembleData(
+        ensemble,
+        "bootstrap",
+        samples,
+        ["t", "z"],
+        {"t": times.tolist(), "z": [0.0, 1.0]},
+        attrs={"correlator_type": "qda"},
+    )
+
+    values, _coordinates, diagnostics = matrix_element_samples(
+        {"qda": source},
+        method="qda",
+        tmin=2,
+        tmax=7,
+        tau_min=None,
+        lsqfit={"svdcut": 1e-8, "posterior_prior_error_scale": 3.0, "q_min": 0.0},
+        sample_error_mode="variance",
+        workers=1,
+        tune_z=1.0,
+        fit_samples=False,
+        fit_scope=fit_scope,
+    )
+
+    assert values is None
+    assert diagnostics["fit_scope"] == fit_scope
+    assert diagnostics["n_data"] == expected_n_data
+    assert np.isclose(diagnostics["fits"][0]["E0"], energy, atol=0.03)
+
+
+def test_matrix_and_qda_fits_keep_same_ensemble_off_diagonal_covariance(monkeypatch) -> None:
+    import gvar as gv
+    import lamet_agent.stages.correlator_analysis.physics as physics
+
+    captured: list[object] = []
+    original = physics.nonlinear_fit
+
+    def capture(data, *args, **kwargs):
+        captured.append((data, kwargs.get("covariance")))
+        return original(data, *args, **kwargs)
+
+    monkeypatch.setattr(physics, "nonlinear_fit", capture)
+
+    ensemble = EnsembleInfo("toy", "toy", 0.1, 0.1, 32, 32, 0.2)
+    times = np.arange(12)
+    tseps = np.asarray([8, 10])
+    tau = np.arange(11)
+    rng = np.random.default_rng(11)
+    c2_samples = []
+    c3_samples = []
+    for _ in range(40):
+        shared = rng.normal(0.0, 0.02)
+        energy = 0.3 + shared
+        overlap = 1.4 + shared
+        matrix = 0.8 + shared
+        c2 = overlap**2 / (2 * energy) * (np.exp(-energy * times) + np.exp(-energy * (ensemble.L_t - times)))
+        c3 = np.zeros((tseps.size, tau.size, 1), dtype=complex)
+        for tsep_index, tsep in enumerate(tseps):
+            valid = tau <= tsep
+            c3[tsep_index, valid, 0] = matrix / (2 * energy) * c2[tsep]
+        c2_samples.append(c2.astype(complex))
+        c3_samples.append(c3)
+    common = {"source_momentum": "[1, 0, 0]", "sink_momentum": "[1, 0, 0]", "resample_id": "shared"}
+    fit_matrix_element_samples(
+        {
+            "c2": EnsembleData(
+                ensemble,
+                "bootstrap",
+                c2_samples,
+                ["t"],
+                {"t": times.tolist()},
+                attrs={**common, "correlator_type": "two_point"},
+            ),
+            "c3": EnsembleData(
+                ensemble,
+                "bootstrap",
+                c3_samples,
+                ["tsep", "tau", "z"],
+                {"tsep": tseps.tolist(), "tau": tau.tolist(), "z": [0]},
+                attrs={**common, "correlator_type": "three_point"},
+            ),
+        },
+        fitting_form="Breit",
+        fit_scope=["2pt+3pt_ratio"],
+        components="real",
+        tmin=3,
+        tmax=8,
+        tsep_values=tseps.tolist(),
+        tau_min=2,
+        n_states=1,
+        prior_width=1.0,
+        correlator_rescale=1.0,
+        svdcut=1e-8,
+        posterior_prior_error_scale=3.0,
+        workers=1,
+        fit_samples=False,
+        tune_z=0,
+    )
+    data, covariance = captured[0]
+    assert covariance is None
+    fit_data = data[1]
+    cov = np.asarray(gv.evalcov(fit_data.average("covariance")), dtype=float)
+    n_pt2 = 5
+    assert np.any(np.abs(cov[:n_pt2, n_pt2:]) > 1e-18)
+
+    captured.clear()
+    qda_times = np.arange(8.0)
+    qda_samples = []
+    for _ in range(24):
+        shared = rng.normal(0.0, 0.02)
+        denominator = np.exp(-0.25 * qda_times) * (1.0 + shared)
+        ratio = (0.72 + shared) + 1j * (0.18 + shared)
+        qda_samples.append(np.column_stack([denominator, denominator * ratio]))
+    matrix_element_samples(
+        {
+            "qda": EnsembleData(
+                _ensemble(0.1),
+                "bootstrap",
+                qda_samples,
+                ["t", "z"],
+                {"t": qda_times.tolist(), "z": [0.0, 1.0]},
+                attrs={"correlator_type": "qda"},
+            )
+        },
+        method="qda",
+        tmin=2,
+        tmax=7,
+        tau_min=None,
+        lsqfit={"svdcut": 1e-8, "posterior_prior_error_scale": 3.0, "q_min": 0.0},
+        workers=1,
+        fit_samples=False,
+        tune_z=1.0,
+    )
+    data, covariance = captured[0]
+    assert covariance is None
+    fit_data = data[1]
+    cov = np.asarray(gv.evalcov(fit_data.average("covariance")), dtype=float)
+    split = 5
+    assert np.any(np.abs(cov[:split, split:]) > 1e-18)
+
+
+def test_correlator_publish_requires_complete_scan_and_deterministic_best_candidate(tmp_path, monkeypatch) -> None:
+    import lamet_agent.stages.correlator_analysis._publish as tool
+
+    labels = []
+    original = tool.configure_plot
+    monkeypatch.setattr(tool, "configure_plot", lambda **kwargs: labels.append(kwargs) or original(**kwargs))
+
+    attrs = {"observable": "matrix_element", "sample_error_mode": "one_sigma"}
+    low = EnsembleData(
+        None,
+        "bootstrap",
+        [np.array([0.9]), np.array([1.1])],
+        ["z"],
+        {"z": [0]},
+        attrs=attrs,
+        name="bare_matrix_element",
+    )
+    high = EnsembleData(
+        None,
+        "bootstrap",
+        [np.array([1.0]), np.array([1.2])],
+        ["z"],
+        {"z": [0]},
+        attrs=attrs,
+        name="bare_matrix_element",
+    )
+    candidates = [
+        {
+            "id": "matrix_001",
+            "method": "lsqfit",
+            "fit_scope": ["qda_ratio"],
+            "nstate": 1,
+            "prior_width": 1.0,
+            "observable": "matrix_element",
+            "window": {"tmin": 2, "tmax": 5, "tau_min": None},
+            "data": low,
+            "Q": 0.2,
+            "chi2_dof": 1.2,
+            "min_Q": 0.2,
+            "worst_chi2_dof": 1.2,
+            "n_data": 6,
+            "n_params": 5,
+            "quality_passed": False,
+            "feasible_at_all_tune_z": True,
+        },
+        {
+            "id": "matrix_002",
+            "method": "lsqfit",
+            "fit_scope": ["qda_ratio"],
+            "nstate": 1,
+            "prior_width": 1.0,
+            "observable": "matrix_element",
+            "window": {"tmin": 3, "tmax": 6, "tau_min": None},
+            "data": high,
+            "Q": 0.8,
+            "chi2_dof": 0.9,
+            "min_Q": 0.8,
+            "worst_chi2_dof": 0.9,
+            "n_data": 6,
+            "n_params": 5,
+            "quality_passed": False,
+            "feasible_at_all_tune_z": True,
+        },
+    ]
+    params = {
+        "observable": "matrix_element",
+        "analysis_method": "lsqfit",
+        "nstate": [1],
+        "fit_scope": ["qda_ratio"],
+        "prior_width": [1.0],
+        "q_min": 0.9,
+        "tune_z_values": [1],
+        "pt2_windows": [{"tmin": 2, "tmax": 5}, {"tmin": 3, "tmax": 6}],
+    }
+    context = ToolContext(
+        {"metadata": {"workers": 1, "sample_error_mode": "one_sigma"}},
+        tmp_path / "manifest.json",
+        "correlator_analysis",
+        "qda",
+        params,
+        {},
+        {},
+        {"matrix_element_candidates": candidates},
+        tmp_path,
+        np.random.default_rng(2),
+    )
+    with pytest.raises(ValueError, match="deterministic best"):
+        tool.run(context, candidate_id="matrix_001")
+    tool.run(context, candidate_id="matrix_002")
+    assert context.output is high
+    assert context.summary["decisions"]["fallback_no_q_passing"] is True
+    assert context.summary["diagnostics"]["fallback_no_q_passing"] is True
+    assert (tmp_path / "diagnostics" / "candidates.json").is_file()
+    assert "report.md" not in context.summary["artifacts"]
+    assert not (tmp_path / "report.md").exists()
+    assert labels[-1]["xlabel"] == r"$z~/~a$"
+    assert labels[-1]["ylabel"] == "bare matrix element"
+
+
+def test_correlator_candidate_selection_uses_robust_qda_rule() -> None:
+    from lamet_agent.stages.correlator_analysis._selection import select_spectrum_candidate, select_tuned_candidate
+
+    candidates = [
+        {
+            "id": "higher_min_q",
+            "n_data": 18,
+            "n_params": 10,
+            "min_Q": 0.9,
+            "worst_chi2_dof": 1.2,
+            "feasible_at_all_tune_z": True,
+        },
+        {
+            "id": "lower_min_q",
+            "n_data": 24,
+            "n_params": 10,
+            "min_Q": 0.8,
+            "worst_chi2_dof": 0.5,
+            "feasible_at_all_tune_z": True,
+        },
+    ]
+    selected, fallback = select_tuned_candidate(candidates, q_min=0.05)
+    assert selected["id"] == "higher_min_q"
+    assert fallback is False
+
+    candidates[0]["min_Q"] = 0.8
+    selected, fallback = select_tuned_candidate(candidates, q_min=0.05)
+    assert selected["id"] == "lower_min_q"
+    assert fallback is False
+
+    candidates[1]["worst_chi2_dof"] = 1.3
+    selected, fallback = select_tuned_candidate(candidates, q_min=0.05)
+    assert selected["id"] == "higher_min_q"
+
+    with pytest.raises(ValueError, match="no overdetermined"):
+        select_tuned_candidate(
+            [{"id": "invalid", "n_data": 1, "n_params": 1, "min_Q": 0.8, "worst_chi2_dof": 1.0}],
+            q_min=0.05,
+        )
+
+    spectrum = [
+        {"id": "nonfinite", "Q": float("nan"), "chi2_dof": 0.0},
+        {"id": "higher_chi2", "Q": 0.01, "chi2_dof": 2.0},
+        {"id": "first_tie", "Q": 0.01, "chi2_dof": 1.0},
+        {"id": "later_tie", "Q": 0.01, "chi2_dof": 1.0},
+    ]
+    selected, fallback = select_spectrum_candidate(spectrum, q_min=0.05)
+    assert selected["id"] == "first_tie"
+    assert fallback is True
+    with pytest.raises(ValueError, match="finite Q"):
+        select_spectrum_candidate([{"id": "failed", "Q": None, "error": "failed"}], q_min=0.05)
+
+
+def test_correlator_dataset_key_groups_nstate_and_prior_on_one_window() -> None:
+    from lamet_agent.stages.correlator_analysis._selection import dataset_key, models_on_dataset
+
+    shared = {
+        "method": "lsqfit",
+        "fit_scope": ["3pt_ratio"],
+        "window": {"tmin": 3, "tmax": 8, "tau_min": 2},
+        "tsep_values": [8],
+    }
+    anchor = {"id": "matrix_001", "nstate": 1, "prior_width": 1.0, **shared}
+    same_dataset = {"id": "matrix_002", "nstate": 2, "prior_width": 2.0, **shared}
+    other_window = {
+        "id": "matrix_003",
+        "nstate": 1,
+        "prior_width": 1.0,
+        **shared,
+        "window": {"tmin": 3, "tmax": 8, "tau_min": 3},
+    }
+    other_scope = {"id": "matrix_004", "nstate": 1, "prior_width": 1.0, **shared, "fit_scope": ["FH"]}
+    reordered_joint = {
+        "id": "matrix_005",
+        "nstate": 1,
+        "prior_width": 1.0,
+        **shared,
+        "fit_scope": ["3pt_ratio"],
+    }
+    grouped = models_on_dataset([anchor, same_dataset, other_window, other_scope], anchor)
+    assert [candidate["id"] for candidate in grouped] == ["matrix_001", "matrix_002"]
+    assert dataset_key(anchor) == dataset_key(same_dataset)
+    assert dataset_key(anchor) != dataset_key(other_window)
+    assert dataset_key(anchor) != dataset_key(other_scope)
+    joint_a = {**anchor, "fit_scope": ["2pt+3pt"]}
+    joint_b = {**reordered_joint, "fit_scope": ["3pt+2pt"]}
+    assert dataset_key(joint_a) == dataset_key(joint_b)
+
+
+def test_loggbf_weights_normalise_and_favour_high_loggbf() -> None:
+    from lamet_agent.stages.correlator_analysis._model_average import loggbf_weights
+
+    weights = loggbf_weights(np.array([1.0, 4.0]))
+    assert float(np.sum(weights)) == pytest.approx(1.0)
+    assert weights[1] > weights[0]
+    assert weights[1] == pytest.approx(np.exp(3.0) / (1.0 + np.exp(3.0)))
+
+
+def test_combine_matrix_samples_weights_per_sample_and_skips_failed_siblings() -> None:
+    from lamet_agent.stages.correlator_analysis._model_average import combine_matrix_samples
+
+    def _model(candidate_id: str, values: list[list[float]], log_gbf: list[float | None]) -> dict[str, object]:
+        diagnostics = [
+            {"sample": index, "chi2": 1.0, "dof": 1.0, "chi2_dof": 1.0, "Q": 0.8, "logGBF": value}
+            for index, value in enumerate(log_gbf)
+            if value is not None
+        ]
+        return {
+            "id": candidate_id,
+            "data": EnsembleData(
+                None,
+                "bootstrap",
+                [np.array(sample, dtype=complex) for sample in values],
+                ["z"],
+                {"z": [0.0]},
+                name="bare_matrix_element",
+            ),
+            "application_fit": {
+                "fits": [
+                    {
+                        "z": 0.0,
+                        "Q": 0.8,
+                        "chi2_dof": 0.9,
+                        "logGBF": next((value for value in log_gbf if value is not None), float("nan")),
+                        "sample_diagnostics": diagnostics,
+                    }
+                ]
+            },
+        }
+
+    combined = combine_matrix_samples(
+        [
+            _model("low", [[1.0], [1.0]], [1.0, None]),
+            _model("high", [[3.0], [5.0]], [4.0, 4.0]),
+        ]
+    )
+    weights = np.exp(np.array([1.0, 4.0]) - 4.0)
+    weights = weights / weights.sum()
+    assert combined["primary_id"] == "high"
+    assert combined["data"].values[0, 0] == pytest.approx(weights[0] * 1.0 + weights[1] * 3.0)
+    assert combined["data"].values[1, 0] == pytest.approx(5.0)
+    assert combined["mean_weights"][1] > combined["mean_weights"][0]
+    assert combined["real_sys_sdev"][0] > 0.0
+
+    with pytest.raises(FitNumericalError, match="all averaged models failed"):
+        combine_matrix_samples(
+            [
+                _model("a", [[np.nan], [np.nan]], [None, None]),
+                _model("b", [[np.nan], [np.nan]], [None, None]),
+            ]
+        )
+
+
+def test_matrix_element_prior_keeps_original_inactive_component_parameters() -> None:
+    prior = matrix_element_prior(2, form="Breit", scope="3pt_ratio", components=("re",), width_scale=1.0)
+    assert "O00_im" in prior and "O01_im" in prior and "O11_im" in prior
+    assert float(prior["O00_im"].mean) == 1.0
+    assert "log(E0)" in prior
+    assert float(prior["E0"].mean) > 0.0
+
+
+@pytest.mark.parametrize(
+    ("typical_abs", "expected_scale"),
+    [(3.64e-19, 1.0e15), (3.25e-22, 1.0e18)],
+)
+def test_correlator_rescale_is_a_data_driven_power_of_ten(typical_abs: float, expected_scale: float) -> None:
+    from lamet_agent.stages.correlator_analysis._inspection import (
+        _automatic_correlator_rescale,
+    )
+
+    data = EnsembleData(
+        None,
+        "bootstrap",
+        [np.full(8, typical_abs), np.full(8, typical_abs)],
+        ["t"],
+        {"t": list(range(8))},
+        attrs={"correlator_type": "two_point"},
+    )
+    result = _automatic_correlator_rescale({"two_point": data}, [{"tmin": 2, "tmax": 7}])
+    assert result["correlator_rescale"] == expected_scale
+    assert 1.0e-4 <= result["rescaled_typical_abs"] <= 1.0e-2
+
+
+def test_inspect_correlators_does_not_write_raw_correlator_plots(tmp_path) -> None:
+    from lamet_agent.stages.correlator_analysis._inspection import run
+
+    data = EnsembleData(
+        None,
+        "bootstrap",
+        [np.full(8, 1.0e-3), np.full(8, 1.1e-3)],
+        ["t"],
+        {"t": list(range(8))},
+        attrs={"correlator_type": "two_point"},
+    )
+    context = ToolContext(
+        {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "correlator_analysis",
+        "inspect",
+        {},
+        {},
+        {},
+        {"correlators": {"two_point": data}},
+        tmp_path,
+        np.random.default_rng(1),
+    )
+    observation = run(context)
+    assert observation["artifacts"] == []
+    assert isinstance(context.state["inspection"]["two_point"]["effective_mass"], str)
+    assert not list((tmp_path / "plots").glob("correlator_*.pdf"))
+
+
+def test_inspect_effective_mass_mask_follows_average_center(tmp_path) -> None:
+    from lamet_agent.stages.correlator_analysis._inspection import run
+
+    times = list(range(4))
+    samples = [
+        np.array([1.0, 1.0, 1.0, -1.0]),
+        np.array([1.0, 1.0, 1.0, -1.0]),
+        np.array([1.0, 1.0, 1.0, -1.0]),
+        np.array([1.0, 1.0, 1.0, 10.0]),
+        np.array([1.0, 1.0, 1.0, 10.0]),
+    ]
+    data = EnsembleData(
+        None,
+        "bootstrap",
+        samples,
+        ["t"],
+        {"t": times},
+        attrs={"correlator_type": "two_point"},
+    )
+
+    def _inspect(mode: str) -> dict[str, object]:
+        context = ToolContext(
+            {"metadata": {"workers": 1, "sample_error_mode": mode}},
+            tmp_path / "manifest.json",
+            "correlator_analysis",
+            "inspect",
+            {},
+            {},
+            {},
+            {"correlators": {"two_point": data}},
+            tmp_path,
+            np.random.default_rng(1),
+        )
+        run(context)
+        return context.state["inspection"]["two_point"]
+
+    covariance = _inspect("covariance")
+    one_sigma = _inspect("one_sigma")
+    assert covariance["usable_time_count"] == 4
+    assert one_sigma["usable_time_count"] == 3
+    assert "nan" not in one_sigma["effective_mass"]
+
+
+def test_matrix_fit_tool_records_a_numerically_rejected_candidate(monkeypatch, tmp_path) -> None:
+    import lamet_agent.stages.correlator_analysis._fit_matrix as tool
+
+    three_point = EnsembleData(
+        None,
+        "bootstrap",
+        [np.ones((1, 3, 1)), np.ones((1, 3, 1))],
+        ["tsep", "tau", "z"],
+        {"tsep": [8], "tau": [0, 1, 2], "z": [0]},
+        attrs={"correlator_type": "three_point"},
+    )
+    settings = {
+        "fitting_form": "Breit",
+        "fit_scope": ["3pt_ratio"],
+        "pt2_windows": [{"tmin": 3, "tmax": 8}, {"tmin": 4, "tmax": 8}],
+        "pt3_windows": [{"tsep_ls": [8], "tau_cut": 2}],
+        "svdcut": 1e-6,
+        "posterior_prior_error_scale": 10.0,
+        "q_min": 0.05,
+    }
+    params = {
+        "observable": "matrix_element",
+        "analysis_method": "lsqfit",
+        "component": "re",
+        "nstate": [2],
+        "prior_width": [1.0],
+        **settings,
+    }
+    context = ToolContext(
+        {"metadata": {"workers": 2, "sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "correlator_analysis",
+        "matrix",
+        params,
+        {},
+        {},
+        {"correlators": {"c3": three_point}, "correlator_rescale": 1.0},
+        tmp_path,
+        np.random.default_rng(2),
+    )
+
+    received = []
+
+    def fail_fit(*args, **kwargs):
+        received.append(kwargs)
+        if kwargs["tmin"] == 3:
+            raise FitNumericalError("sample-average fit failed: ZeroDivisionError: float division")
+        return None, {
+            "tune_z": kwargs["tune_z"],
+            "fit_scope": ["3pt_ratio"],
+            "Q": 0.8,
+            "chi2": 8.0,
+            "dof": 10,
+            "chi2_dof": 0.8,
+            "logGBF": 2.0,
+            "n_data": 12,
+            "n_params": 5,
+        }
+
+    monkeypatch.setattr(tool, "fit_matrix_element_samples", fail_fit)
+    observation = tool.run(context, tune_z_values=[0])
+    rejected, accepted = context.state["matrix_element_candidates"]
+    assert rejected["numerical_failure"] is True
+    assert rejected["feasible_at_all_tune_z"] is False
+    assert "ZeroDivisionError" in rejected["failure_reasons"]["0.0"]
+    assert accepted["feasible_at_all_tune_z"] is True
+    assert observation["metrics"]["recommended_candidate_id"] == "matrix_002"
+    assert all(call["fit_samples"] is False for call in received)
+    assert all(call["tune_z"] == 0 for call in received)
+
+
+def test_matrix_fit_tool_scans_authored_grid_in_reference_order(monkeypatch, tmp_path) -> None:
+    import lamet_agent.stages.correlator_analysis._fit_matrix as tool
+
+    three_point = EnsembleData(
+        None,
+        "bootstrap",
+        [np.ones((1, 4, 2)), np.ones((1, 4, 2))],
+        ["tsep", "tau", "z"],
+        {"tsep": [8], "tau": [0, 1, 2, 3], "z": [0, 1]},
+        attrs={"correlator_type": "three_point"},
+    )
+    settings = {
+        "fitting_form": "Breit",
+        "fit_scope": ["3pt_ratio"],
+        "pt2_windows": [{"tmin": 3, "tmax": 8}, {"tmin": 4, "tmax": 8}],
+        "pt3_windows": [
+            {"tsep_ls": [8], "tau_cut": 2},
+            {"tsep_ls": [8], "tau_cut": 3},
+        ],
+        "prior_width": [1.0],
+        "svdcut": 1e-6,
+        "posterior_prior_error_scale": 10.0,
+        "q_min": 0.05,
+    }
+    params = {
+        "observable": "matrix_element",
+        "analysis_method": "lsqfit",
+        "component": "re",
+        "nstate": [2],
+        **settings,
+    }
+    context = ToolContext(
+        {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "correlator_analysis",
+        "matrix",
+        params,
+        {},
+        {},
+        {
+            "correlators": {"c3": three_point},
+            "correlator_rescale": 1.0,
+        },
+        tmp_path,
+        np.random.default_rng(2),
+    )
+    calls = []
+
+    def tune(*args, **kwargs):
+        calls.append((kwargs["tmin"], kwargs["tau_min"], kwargs["tune_z"]))
+        return None, {
+            "tune_z": kwargs["tune_z"],
+            "fit_scope": ["3pt_ratio"],
+            "Q": 0.8,
+            "chi2": 8.0,
+            "dof": 10,
+            "chi2_dof": 0.8,
+            "logGBF": 2.0,
+            "n_data": 20 - kwargs["tmin"] - kwargs["tau_min"],
+            "n_params": 5,
+        }
+
+    monkeypatch.setattr(tool, "fit_matrix_element_samples", tune)
+    observation = tool.run(context, tune_z_values=[0, 1])
+
+    assert calls == [
+        (3, 2, 0.0),
+        (3, 2, 1.0),
+        (3, 3, 0.0),
+        (3, 3, 1.0),
+        (4, 2, 0.0),
+        (4, 2, 1.0),
+        (4, 3, 0.0),
+        (4, 3, 1.0),
+    ]
+    assert observation["metrics"]["candidate_count"] == 4
+    assert observation["metrics"]["recommended_candidate_id"] == "matrix_001"
+    assert all(candidate["feasible_at_all_tune_z"] for candidate in context.state["matrix_element_candidates"])
+
+
+def test_qda_fit_tool_tunes_every_window_before_full_application(monkeypatch, tmp_path) -> None:
+    import lamet_agent.stages.correlator_analysis._fit_qda as tool
+
+    source = EnsembleData(
+        _ensemble(0.1),
+        "bootstrap",
+        [np.ones((8, 3)), np.ones((8, 3))],
+        ["t", "z"],
+        {"t": list(range(8)), "z": [0, 1, 2]},
+        attrs={"correlator_type": "qda"},
+    )
+    settings = {
+        "fit_scope": ["qda_ratio"],
+        "pt2_windows": [{"tmin": 2, "tmax": 6}, {"tmin": 2, "tmax": 7}],
+        "prior_width": [1.0],
+        "posterior_prior_error_scale": 3.0,
+        "svdcut": 1e-6,
+        "q_min": 0.05,
+    }
+    params = {
+        "observable": "matrix_element",
+        "analysis_method": "lsqfit",
+        "component": "both",
+        "nstate": [1],
+        **settings,
+    }
+    context = ToolContext(
+        {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "correlator_analysis",
+        "qda",
+        params,
+        {},
+        {},
+        {"correlators": {"qda": source}},
+        tmp_path,
+        np.random.default_rng(2),
+    )
+    calls = []
+
+    def tune(*args, **kwargs):
+        calls.append((kwargs["fit_scope"], kwargs["tmin"], kwargs["tmax"], kwargs["tune_z"]))
+        q_value = 0.6 if kwargs["tmax"] == 6 else 0.8
+        return (
+            None,
+            {
+                "tune_z": kwargs["tune_z"],
+                "Q": q_value,
+                "chi2": 4.0,
+                "dof": 8,
+                "chi2_dof": 0.5,
+                "logGBF": 2.0,
+                "n_data": 2 * (kwargs["tmax"] - kwargs["tmin"]),
+                "n_params": 5,
+            },
+        )
+
+    monkeypatch.setattr(tool, "fit_qda_samples", tune)
+    observation = tool.run(context, tune_z_values=[1, 2])
+
+    assert calls == [
+        (["qda_ratio"], 2, 6, 1.0),
+        (["qda_ratio"], 2, 6, 2.0),
+        (["qda_ratio"], 2, 7, 1.0),
+        (["qda_ratio"], 2, 7, 2.0),
+    ]
+    assert observation["metrics"]["candidate_count"] == 2
+    assert observation["metrics"]["recommended_candidate_id"] == "matrix_002"
+    assert all(candidate.get("data") is None for candidate in context.state["matrix_element_candidates"])
+
+
+def test_publish_applies_only_the_selected_tuned_candidate_to_all_samples(monkeypatch, tmp_path) -> None:
+    import lamet_agent.stages.correlator_analysis._publish as tool
+
+    data = EnsembleData(
+        None,
+        "bootstrap",
+        [np.array([0.9, 0.7]), np.array([1.1, 0.8])],
+        ["z"],
+        {"z": [0, 1]},
+        attrs={"observable": "matrix_element"},
+        name="bare_matrix_element",
+    )
+    candidate = {
+        "id": "matrix_001",
+        "method": "lsqfit",
+        "fit_scope": ["3pt_ratio"],
+        "observable": "matrix_element",
+        "window": {"tmin": 3, "tmax": 8, "tau_min": 2},
+        "tsep_values": [8],
+        "nstate": 2,
+        "prior_width": 1.0,
+        "correlator_rescale": 1.0,
+        "quality_passed": True,
+        "numerical_failure": False,
+        "n_data": 8,
+        "n_params": 4,
+        "Q": 0.8,
+        "chi2_dof": 0.9,
+        "min_Q": 0.8,
+        "worst_chi2_dof": 0.9,
+    }
+    settings = {
+        "fitting_form": "Breit",
+        "fit_scope": ["3pt_ratio"],
+        "pt2_windows": [{"tmin": 3, "tmax": 8}],
+        "pt3_windows": [{"tsep_ls": [8], "tau_cut": 2}],
+        "svdcut": 1e-6,
+        "posterior_prior_error_scale": 10.0,
+        "q_min": 0.05,
+        "tune_z_values": [0],
+    }
+    params = {
+        "observable": "matrix_element",
+        "analysis_method": "lsqfit",
+        "component": "re",
+        "nstate": [2],
+        "prior_width": [1.0],
+        **settings,
+    }
+    context = ToolContext(
+        {"metadata": {"workers": 2, "sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "correlator_analysis",
+        "matrix",
+        params,
+        {},
+        {},
+        {"correlators": {"placeholder": object()}, "matrix_element_candidates": [candidate]},
+        tmp_path,
+        np.random.default_rng(2),
+    )
+    calls = []
+
+    def apply_fit(*args, **kwargs):
+        calls.append(kwargs)
+        if kwargs.get("fit_samples") is False:
+            return None, {"n_failed_samples": 0, "sample_failures": [], "fits": []}
+        return data, {"n_failed_samples": 0, "sample_failures": [], "fits": []}
+
+    monkeypatch.setattr(tool, "fit_matrix_element_samples", apply_fit)
+    tool.run(context, candidate_id="matrix_001")
+    assert len(calls) == 2
+    assert calls[0]["tune_z"] is None
+    assert calls[0]["fit_samples"] is False
+    assert "tune_z" not in calls[1]
+    assert "fit_samples" not in calls[1]
+    assert context.output is data
+
+
+def test_publish_model_average_applies_every_sibling_on_the_selected_dataset(monkeypatch, tmp_path) -> None:
+    import lamet_agent.stages.correlator_analysis._publish as tool
+
+    def _candidate(candidate_id: str, nstate: int, chi2_dof: float) -> dict[str, object]:
+        return {
+            "id": candidate_id,
+            "method": "lsqfit",
+            "fit_scope": ["3pt_ratio"],
+            "observable": "matrix_element",
+            "window": {"tmin": 3, "tmax": 8, "tau_min": 2},
+            "tsep_values": [8],
+            "nstate": nstate,
+            "prior_width": 1.0,
+            "correlator_rescale": 1.0,
+            "quality_passed": True,
+            "numerical_failure": False,
+            "n_data": 8,
+            "n_params": 4,
+            "Q": 0.8,
+            "chi2_dof": chi2_dof,
+            "min_Q": 0.8,
+            "worst_chi2_dof": chi2_dof,
+            "logGBF": float(nstate),
+        }
+
+    candidates = [_candidate("matrix_001", 1, 0.9), _candidate("matrix_002", 2, 0.7)]
+    settings = {
+        "fitting_form": "Breit",
+        "fit_scope": ["3pt_ratio"],
+        "pt2_windows": [{"tmin": 3, "tmax": 8}],
+        "pt3_windows": [{"tsep_ls": [8], "tau_cut": 2}],
+        "svdcut": 1e-6,
+        "posterior_prior_error_scale": 10.0,
+        "q_min": 0.05,
+        "model_average": True,
+        "tune_z_values": [0],
+    }
+    params = {
+        "observable": "matrix_element",
+        "analysis_method": "lsqfit",
+        "component": "re",
+        "nstate": [1, 2],
+        "prior_width": [1.0],
+        **settings,
+    }
+    context = ToolContext(
+        {"metadata": {"workers": 2, "sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "correlator_analysis",
+        "matrix",
+        params,
+        {},
+        {},
+        {"correlators": {"placeholder": object()}, "matrix_element_candidates": candidates},
+        tmp_path,
+        np.random.default_rng(2),
+    )
+    calls = []
+
+    def apply_fit(*args, **kwargs):
+        calls.append(kwargs)
+        nstate = int(kwargs["n_states"])
+        log_gbf = 1.0 if nstate == 1 else 4.0
+        value = 1.0 if nstate == 1 else 3.0
+        fit = {
+            "z": 0.0,
+            "Q": 0.8,
+            "chi2": 0.9,
+            "dof": 1.0,
+            "chi2_dof": 0.9,
+            "logGBF": log_gbf,
+            "sample_diagnostics": [
+                {"sample": 0, "chi2": 1.0, "dof": 1.0, "chi2_dof": 1.0, "Q": 0.8, "logGBF": log_gbf},
+                {"sample": 1, "chi2": 1.0, "dof": 1.0, "chi2_dof": 1.0, "Q": 0.8, "logGBF": log_gbf},
+            ],
+        }
+        if kwargs.get("fit_samples") is False:
+            return None, {"n_failed_samples": 0, "sample_failures": [], "fits": [fit]}
+        data = EnsembleData(
+            None,
+            "bootstrap",
+            [np.array([value]), np.array([value])],
+            ["z"],
+            {"z": [0.0]},
+            attrs={"observable": "matrix_element"},
+            name="bare_matrix_element",
+        )
+        return data, {"n_failed_samples": 0, "sample_failures": [], "fits": [fit]}
+
+    monkeypatch.setattr(tool, "fit_matrix_element_samples", apply_fit)
+    tool.run(context, candidate_id="matrix_002")
+    applied_nstates = sorted(call["n_states"] for call in calls if call.get("fit_samples") is not False)
+    assert applied_nstates == [1, 2]
+    assert context.summary["decisions"]["candidate_id"] == "matrix_002"
+    assert context.summary["decisions"]["model_average"] is True
+    assert set(context.summary["diagnostics"]["selected_models"]) == {"matrix_001", "matrix_002"}
+    weights = np.exp(np.array([1.0, 4.0]) - 4.0)
+    weights = weights / weights.sum()
+    assert context.output.values[0, 0] == pytest.approx(weights[0] * 1.0 + weights[1] * 3.0)
+    assert context.output.attrs["model_average"] == "true"
+
+
+def test_publish_fails_immediately_when_selected_candidate_fails_full_grid(monkeypatch, tmp_path) -> None:
+    import lamet_agent.stages.correlator_analysis._publish as tool
+
+    candidates = [
+        {
+            "id": "matrix_001",
+            "method": "lsqfit",
+            "fit_scope": ["3pt_ratio"],
+            "observable": "matrix_element",
+            "window": {"tmin": 3, "tmax": 8, "tau_min": 2},
+            "tsep_values": [8],
+            "nstate": 2,
+            "prior_width": 1.0,
+            "correlator_rescale": 1.0,
+            "quality_passed": True,
+            "numerical_failure": False,
+            "n_data": 9,
+            "n_params": 4,
+            "Q": 0.8,
+            "chi2_dof": 0.9,
+            "min_Q": 0.9,
+            "worst_chi2_dof": 0.9,
+        },
+        {
+            "id": "matrix_002",
+            "method": "lsqfit",
+            "fit_scope": ["3pt_ratio"],
+            "observable": "matrix_element",
+            "window": {"tmin": 4, "tmax": 8, "tau_min": 2},
+            "tsep_values": [8],
+            "nstate": 2,
+            "prior_width": 1.0,
+            "correlator_rescale": 1.0,
+            "quality_passed": True,
+            "numerical_failure": False,
+            "n_data": 8,
+            "n_params": 4,
+            "Q": 0.9,
+            "chi2_dof": 0.8,
+            "min_Q": 0.8,
+            "worst_chi2_dof": 0.8,
+        },
+    ]
+    settings = {
+        "fitting_form": "Breit",
+        "fit_scope": ["3pt_ratio"],
+        "pt2_windows": [{"tmin": 3, "tmax": 8}, {"tmin": 4, "tmax": 8}],
+        "pt3_windows": [{"tsep_ls": [8], "tau_cut": 2}],
+        "svdcut": 1e-6,
+        "posterior_prior_error_scale": 10.0,
+        "q_min": 0.05,
+        "tune_z_values": [0],
+    }
+    params = {
+        "observable": "matrix_element",
+        "analysis_method": "lsqfit",
+        "component": "re",
+        "nstate": [2],
+        "prior_width": [1.0],
+        **settings,
+    }
+    context = ToolContext(
+        {"metadata": {"workers": 2, "sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "correlator_analysis",
+        "matrix",
+        params,
+        {},
+        {},
+        {"correlators": {"placeholder": object()}, "matrix_element_candidates": candidates},
+        tmp_path,
+        np.random.default_rng(2),
+    )
+    calls = []
+
+    def apply_fit(*args, **kwargs):
+        calls.append(kwargs)
+        assert kwargs["tmin"] == 3
+        assert kwargs["fit_samples"] is False
+        raise FitNumericalError("sample-average posterior is unusable")
+
+    monkeypatch.setattr(tool, "fit_matrix_element_samples", apply_fit)
+    with pytest.raises(FitNumericalError, match="selected candidate matrix_001 failed full-grid"):
+        tool.run(context, candidate_id="matrix_001")
+    assert len(calls) == 1
+    assert candidates[0]["numerical_failure"] is True
+    assert context.output is None
+    assert candidates[1]["numerical_failure"] is False
+
+
+def test_numerically_rejected_matrix_fit_counts_as_an_evaluated_candidate(tmp_path) -> None:
+    import json
+    from lamet_agent.stages.correlator_analysis._publish import run
+
+    attrs = {"observable": "matrix_element", "sample_error_mode": "covariance"}
+    data = EnsembleData(
+        None,
+        "bootstrap",
+        [np.array([0.9]), np.array([1.1])],
+        ["z"],
+        {"z": [0]},
+        attrs=attrs,
+        name="bare_matrix_element",
+    )
+    candidates = [
+        {
+            "id": "matrix_001",
+            "method": "lsqfit",
+            "fit_scope": ["3pt_ratio"],
+            "observable": "matrix_element",
+            "window": {"tmin": 3, "tmax": 8, "tau_min": 2},
+            "tsep_values": [8],
+            "nstate": 2,
+            "prior_width": 1.0,
+            "quality_passed": False,
+            "numerical_failure": True,
+            "error": "sample-average fit failed",
+        },
+        {
+            "id": "matrix_002",
+            "method": "lsqfit",
+            "fit_scope": ["3pt_ratio"],
+            "observable": "matrix_element",
+            "window": {"tmin": 4, "tmax": 8, "tau_min": 2},
+            "tsep_values": [8],
+            "nstate": 2,
+            "prior_width": 1.0,
+            "quality_passed": True,
+            "numerical_failure": False,
+            "data": data,
+            "n_data": 8,
+            "n_params": 4,
+            "Q": 0.8,
+            "chi2_dof": 0.9,
+            "min_Q": 0.8,
+            "worst_chi2_dof": 0.9,
+        },
+    ]
+    params = {
+        "observable": "matrix_element",
+        "analysis_method": "lsqfit",
+        "nstate": [2],
+        "fit_scope": ["3pt_ratio"],
+        "prior_width": [1.0],
+        "pt2_windows": [{"tmin": 3, "tmax": 8}, {"tmin": 4, "tmax": 8}],
+        "pt3_windows": [{"tsep_ls": [8], "tau_cut": 2}],
+        "q_min": 0.05,
+    }
+    context = ToolContext(
+        {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "correlator_analysis",
+        "matrix",
+        params,
+        {},
+        {},
+        {"matrix_element_candidates": candidates},
+        tmp_path,
+        np.random.default_rng(2),
+    )
+    run(context, candidate_id="matrix_002")
+    table = json.loads((tmp_path / "diagnostics" / "candidates.json").read_text(encoding="utf-8"))["candidates"]
+    assert table[0]["numerical_failure"] is True
+    assert table[0]["error"] == "sample-average fit failed"
+
+
+@pytest.mark.parametrize(
+    "fit_scope",
+    [
+        ["2pt+3pt"],
+        ["2pt", "3pt"],
+        ["3pt"],
+        ["FH"],
+        ["3pt+FH"],
+        ["3pt_ratio"],
+        ["3pt_ratio+FH"],
+    ],
+)
+def test_native_matrix_element_fit_supports_composable_scopes(fit_scope: list[str]) -> None:
+    ensemble = EnsembleInfo("toy", "toy", 0.1, 0.1, 32, 32, 0.2)
+    times = np.arange(16)
+    tseps = np.asarray([8, 10])
+    tau = np.arange(11)
+    rng = np.random.default_rng(81)
+    c2_samples = []
+    c3_samples = []
+    for _ in range(32):
+        energy = 0.3 + rng.normal(0.0, 0.003)
+        overlap = 1.4 + rng.normal(0.0, 0.01)
+        matrix = 0.8 + rng.normal(0.0, 0.01)
+        c2 = overlap**2 / (2 * energy) * (np.exp(-energy * times) + np.exp(-energy * (ensemble.L_t - times)))
+        c2 = c2 + rng.normal(0.0, 2e-4, c2.shape)
+        c3 = np.zeros((tseps.size, tau.size, 1), dtype=complex)
+        for tsep_index, tsep in enumerate(tseps):
+            valid = tau <= tsep
+            ratio = matrix / (2 * energy) + rng.normal(0.0, 0.002, np.count_nonzero(valid))
+            c3[tsep_index, valid, 0] = ratio * c2[tsep]
+        c2_samples.append(c2.astype(complex))
+        c3_samples.append(c3)
+    common = {"source_momentum": "[1, 0, 0]", "sink_momentum": "[1, 0, 0]", "resample_id": "shared"}
+    c2_data = EnsembleData(
+        ensemble,
+        "bootstrap",
+        c2_samples,
+        ["t"],
+        {"t": times.tolist()},
+        attrs={**common, "correlator_type": "two_point"},
+    )
+    c3_data = EnsembleData(
+        ensemble,
+        "bootstrap",
+        c3_samples,
+        ["tsep", "tau", "z"],
+        {"tsep": tseps.tolist(), "tau": tau.tolist(), "z": [0]},
+        attrs={**common, "correlator_type": "three_point"},
+    )
+    result, diagnostics = fit_matrix_element_samples(
+        {"c2": c2_data, "c3": c3_data},
+        fitting_form="Breit",
+        fit_scope=fit_scope,
+        components="real",
+        tmin=3,
+        tmax=8,
+        tsep_values=tseps.tolist(),
+        tau_min=2,
+        n_states=1,
+        prior_width=1.0,
+        correlator_rescale=1.0,
+        svdcut=1e-8,
+        posterior_prior_error_scale=3.0,
+        workers=1,
+    )
+    assert result.dims == ["z"]
+    assert np.all(np.isfinite(result.values))
+    atoms = {atom for stage in fit_scope for atom in stage.split("+")}
+    if "3pt_ratio" in atoms or {"2pt", "3pt"}.issubset(atoms):
+        assert np.isclose(np.mean(np.real(result.values[:, 0])), 0.8 / 0.6, atol=0.16)
+    assert diagnostics["fit_scope"] == fit_scope
+    production_fit = diagnostics["fits"][0]
+    assert len(production_fit["sample_diagnostics"]) == result.n_sample
+    assert len(production_fit["E0_samples"]) == result.n_sample
+    final_atoms = set(fit_scope[-1].split("+"))
+    expected_kinds = ({"pt3_ratio"} if final_atoms & {"3pt", "3pt_ratio"} else set()) | (
+        {"fh"} if "FH" in final_atoms else set()
+    )
+    assert {plot["kind"] for plot in production_fit["sample0_plot"]["plots"]} == expected_kinds
+    if "pt3_ratio" in expected_kinds:
+        ratio_plot = next(plot for plot in production_fit["sample0_plot"]["plots"] if plot["kind"] == "pt3_ratio")
+        assert len(ratio_plot["series"]) == len(tseps)
+        for series in ratio_plot["series"]:
+            x = np.asarray(series["x"], dtype=float)
+            fit_x = np.asarray(series["fit_x"], dtype=float)
+            assert np.isclose(float(np.min(x) + np.max(x)), 0.0)
+            assert np.isclose(float(np.min(fit_x) + np.max(fit_x)), 0.0)
+    if fit_scope == ["2pt+3pt"]:
+        tuned, tuning = fit_matrix_element_samples(
+            {"c2": c2_data, "c3": c3_data},
+            fitting_form="Breit",
+            fit_scope=fit_scope,
+            components="real",
+            tmin=3,
+            tmax=8,
+            tsep_values=tseps.tolist(),
+            tau_min=2,
+            n_states=1,
+            prior_width=1.0,
+            correlator_rescale=1.0,
+            svdcut=1e-8,
+            posterior_prior_error_scale=3.0,
+            workers=2,
+            tune_z=0,
+            fit_samples=False,
+        )
+        assert tuned is None
+        assert tuning["tune_z"] == 0
+        assert len(tuning["fits"]) == 1
+        assert tuning["n_failed_samples"] == 0
+
+
+def test_native_nonbreit_fit_uses_distinct_source_and_sink_spectra() -> None:
+    ensemble = EnsembleInfo("toy", "toy", 0.1, 0.1, 32, 32, 0.2)
+    times = np.arange(16)
+    tseps = np.asarray([8, 10])
+    tau = np.arange(11)
+    rng = np.random.default_rng(18)
+    initial_samples = []
+    final_samples = []
+    three_point_samples = []
+    for _ in range(32):
+        energy_i = 0.25 + rng.normal(0.0, 0.002)
+        energy_f = 0.35 + rng.normal(0.0, 0.002)
+        overlap_i = 1.3 + rng.normal(0.0, 0.01)
+        overlap_f = 1.5 + rng.normal(0.0, 0.01)
+        target = 1.2 + rng.normal(0.0, 0.005)
+        initial = (
+            overlap_i**2 / (2 * energy_i) * (np.exp(-energy_i * times) + np.exp(-energy_i * (ensemble.L_t - times)))
+        )
+        final = overlap_f**2 / (2 * energy_f) * (np.exp(-energy_f * times) + np.exp(-energy_f * (ensemble.L_t - times)))
+        three_point = np.zeros((tseps.size, tau.size, 1), dtype=complex)
+        for tsep_index, tsep in enumerate(tseps):
+            valid = tau <= tsep
+            correction = (
+                initial[tsep - tau[valid]]
+                * final[tau[valid]]
+                * final[tsep]
+                / (final[tsep - tau[valid]] * initial[tau[valid]] * initial[tsep])
+            )
+            three_point[tsep_index, valid, 0] = target * final[tsep] / np.sqrt(correction)
+        initial_samples.append(initial.astype(complex))
+        final_samples.append(final.astype(complex))
+        three_point_samples.append(three_point)
+    common = {"resample_id": "shared"}
+    initial_data = EnsembleData(
+        ensemble,
+        "bootstrap",
+        initial_samples,
+        ["t"],
+        {"t": times.tolist()},
+        attrs={**common, "correlator_type": "two_point", "source_momentum": "[0, 0, 0]", "sink_momentum": "[0, 0, 0]"},
+    )
+    final_data = EnsembleData(
+        ensemble,
+        "bootstrap",
+        final_samples,
+        ["t"],
+        {"t": times.tolist()},
+        attrs={**common, "correlator_type": "two_point", "source_momentum": "[1, 0, 0]", "sink_momentum": "[1, 0, 0]"},
+    )
+    three_point_data = EnsembleData(
+        ensemble,
+        "bootstrap",
+        three_point_samples,
+        ["tsep", "tau", "z"],
+        {"tsep": tseps.tolist(), "tau": tau.tolist(), "z": [0]},
+        attrs={
+            **common,
+            "correlator_type": "three_point",
+            "source_momentum": "[0, 0, 0]",
+            "sink_momentum": "[1, 0, 0]",
+        },
+    )
+    result, diagnostics = fit_matrix_element_samples(
+        {"initial": initial_data, "final": final_data, "three_point": three_point_data},
+        fitting_form="NonBreit",
+        fit_scope=["2pt+3pt_ratio"],
+        components="real",
+        tmin=3,
+        tmax=8,
+        tsep_values=tseps.tolist(),
+        tau_min=2,
+        n_states=1,
+        prior_width=1.0,
+        correlator_rescale=1.0,
+        svdcut=1e-8,
+        posterior_prior_error_scale=3.0,
+        workers=1,
+    )
+    assert np.isclose(np.mean(np.real(result.values[:, 0])), 1.2, atol=0.05)
+    assert diagnostics["fitting_form"] == "NonBreit"
+
+
+def test_correlated_spectrum_fit_uses_authored_priors_and_sample_covariance() -> None:
+    rng = np.random.default_rng(8)
+    times = np.arange(2.0, 10.0)
+    extent = 64
+    energy = 0.27
+    overlap = 0.87
+    center = overlap**2 / (2 * energy) * (np.exp(-energy * times) + np.exp(-energy * (extent - times)))
+    samples = np.asarray([center + rng.normal(0.0, 2e-4, times.size) for _ in range(80)])
+    energies, diagnostics = fit_spectrum_samples(
+        samples,
+        times,
+        1,
+        extent=extent,
+        resample="bootstrap",
+        prior_means={"E0": 0.3, "z0": 0.9},
+        prior_widths={"E0": 0.2, "z0": 0.5},
+    )
+    assert np.isclose(np.mean(energies), 0.27, atol=5e-3)
+    assert diagnostics["dof"] == 8
+    assert 0.0 <= diagnostics["Q"] <= 1.0
+
+
+def test_extrapolation_supports_block_and_full_x_covariance() -> None:
+    rng = np.random.default_rng(81)
+    x = [-0.2, 0.2]
+    physical = np.asarray([0.8, 1.1])
+    data = []
+    for index, spacing in enumerate([0.05, 0.07, 0.09, 0.11]):
+        center = physical + 0.3 * spacing / 0.1
+        samples = [center + rng.normal(0.0, 0.01, 2) for _ in range(40)]
+        data.append(
+            EnsembleData(
+                _ensemble(spacing, f"ensemble_{index}"),
+                "bootstrap",
+                samples,
+                ["x"],
+                {"x": x},
+                attrs={
+                    "momentum_gev": 2.0,
+                    "resample_id": f"ensemble_{index}",
+                },
+            )
+        )
+    result, diagnostics = fit_candidate(
+        data, ["a"], 0.135, {"mean": 0.0, "sdev": 1.0}, x_range=(-0.2, 0.2), pdep_gev=[1.5, 2.0]
+    )
+    assert result.dims == ["x"]
+    assert np.allclose(np.asarray(result.mean), physical, atol=0.05)
+    assert diagnostics["dof"] > 0
+    assert 0.0 <= diagnostics["Q"] <= 1.0
+    assert [record["x"] for record in diagnostics["x_fit_quality"]] == x
+    assert all(0.0 <= record["Q"] <= 1.0 for record in diagnostics["x_fit_quality"])
+    assert set(diagnostics["parameter_mean"]) == {"h0", "a"}
+    assert set(diagnostics["parameter_sdev"]) == {"h0", "a"}
+    assert set(diagnostics["momentum_dependence"]) == {"1.5", "2"}
+    np.testing.assert_allclose(diagnostics["momentum_dependence"]["1.5"]["mean"], diagnostics["parameter_mean"]["h0"])
+    full_result, full_diagnostics = fit_candidate(
+        data,
+        ["a"],
+        0.135,
+        {"mean": 0.0, "sdev": 1.0},
+        x_range=(-0.2, 0.2),
+        x_independent_terms=["a"],
+        x_covariance=True,
+    )
+    assert full_result.attrs["x_covariance"] == 1
+    assert np.allclose(np.asarray(full_result.mean), physical, atol=0.05)
+    assert full_diagnostics["x_covariance"] is True
+    assert [record["x"] for record in full_diagnostics["x_fit_quality"]] == x
+    assert all(0.0 <= record["Q"] <= 1.0 for record in full_diagnostics["x_fit_quality"])
+    assert np.asarray(full_diagnostics["parameter_mean"]["a"]).ndim == 0
+
+
+def test_extrapolation_covariance_is_blocked_by_ensemble_source() -> None:
+    from lamet_agent.stages.extrapolation.physics import _grouped_centers_and_covariances
+
+    base = np.arange(12.0).reshape(6, 2)
+    values = np.stack([base, 2.0 * base, 3.0 * base, 4.0 * base])
+    ensemble_a = EnsembleInfo("test", "A", 0.1, 0.1, 32, 64, 0.14)
+    ensemble_b = EnsembleInfo("test", "B", 0.1, 0.1, 32, 64, 0.14)
+    data = [
+        EnsembleData(
+            ensemble_a if index < 2 else ensemble_b,
+            "bootstrap",
+            list(item),
+            ["x"],
+            {"x": [0.0, 1.0]},
+            attrs={"resample_id": "shared"},
+        )
+        for index, item in enumerate(values)
+    ]
+
+    _centers, per_x = _grouped_centers_and_covariances(values, data, "covariance", x_covariance=False)
+    assert per_x[0][0, 1] != 0.0
+    assert per_x[0][2, 3] != 0.0
+    assert np.allclose(per_x[0][:2, 2:], 0.0)
+    _centers, full = _grouped_centers_and_covariances(values, data, "covariance", x_covariance=True)
+    assert full[0, 2] != 0.0
+    assert full[4, 6] != 0.0
+    assert np.allclose(full[:4, 4:], 0.0)
+
+
+def test_extrapolation_comparison_requires_the_single_reference_candidate() -> None:
+    from lamet_agent.stages.extrapolation.workflow import select_single_candidate
+
+    data = EnsembleData(None, "bootstrap", [[0.8, 1.0], [0.9, 1.1]], ["x"], {"x": [-0.2, 0.2]})
+    candidate = {
+        "id": "extrapolation_001",
+        "terms": ["a"],
+        "excluded_ensembles": [],
+        "data": data,
+        "chi2": 1.0,
+        "dof": 2.0,
+        "chi2_dof": 0.5,
+        "Q": 0.8,
+        "aic": 3.0,
+        "parameter_mean": {"h0": [0.85, 1.05], "a": 0.1},
+        "parameter_sdev": {"h0": [0.05, 0.05], "a": 0.02},
+        "momentum_dependence": {"2": {"momentum_gev": 2.0, "mean": [0.85, 1.05], "sdev": [0.05, 0.05]}},
+    }
+    selected, comparison = select_single_candidate([candidate])
+    assert comparison["weights"] == [1.0]
+    assert selected is data
+    with pytest.raises(ValueError, match="exactly one"):
+        select_single_candidate([])
+
+
+def test_self_renormalization_factor_is_not_a_placeholder() -> None:
+    z = np.array([0.0, 0.1, 0.2])
+    spacings = [0.06, 0.12, 0.18]
+    references = []
+    for spacing in spacings:
+        known = log_m(z, spacing, k=0.4, lambda_qcd_gev=0.1, d=0.0, n_f=3, scale_gev=2.0)
+        g = 0.15 * z / 0.1973269804
+        f = 0.4 * spacing
+        center = np.exp(known + g + f)
+        references.append(
+            EnsembleData(
+                _ensemble(spacing, f"r{spacing}"),
+                "bootstrap",
+                [center * (1.0 + shift) for shift in (-0.002, 0.0, 0.002)],
+                ["z"],
+                {"z": z.tolist()},
+                attrs={"resample_id": f"r{spacing}"},
+            )
+        )
+    factor = fit_factor(
+        references,
+        short_distance_max_fm=0.2,
+        k=0.4,
+        lambda_qcd_gev=0.1,
+        d=0.0,
+        n_f=3,
+        scale_gev=2.0,
+        zms_kernel=load_renormalization_kernel("z_msbar_pdf_nlo"),
+        kernel_id="z_msbar_pdf_nlo",
+        svdcut=1e-12,
+    )
+    assert factor.dims == ["a", "z"]
+    assert factor.n_sample == 1
+    assert not np.allclose(factor.values, 1.0)
+    assert factor.attrs["m0_convention"] == "reference_inverse_fm"
+    assert factor.attrs["kernel_id"] == "z_msbar_pdf_nlo"
+    assert np.isfinite(float(factor.attrs["m0_gev"]))
+
+
+def test_self_renormalization_accepts_one_sample_bearing_a_z_reference() -> None:
+    z = np.array([0.0, 0.1, 0.2])
+    spacings = [0.06, 0.12, 0.18]
+    grids = []
+    for spacing in spacings:
+        known = log_m(z, spacing, k=0.4, lambda_qcd_gev=0.1, d=0.0, n_f=3, scale_gev=2.0)
+        grids.append(np.exp(known + 0.15 * z / HBAR_C_GEV_FM + 0.4 * spacing))
+    reference = EnsembleData(
+        None, "bootstrap", [np.stack(grids), np.stack(grids) * 1.001], ["a", "z"], {"a": spacings, "z": z.tolist()}
+    )
+    factor = fit_factor(
+        reference,
+        short_distance_max_fm=0.2,
+        k=0.4,
+        lambda_qcd_gev=0.1,
+        d=0.0,
+        n_f=3,
+        scale_gev=2.0,
+        zms_kernel=load_renormalization_kernel("z_msbar_pdf_nlo"),
+        kernel_id="z_msbar_pdf_nlo",
+        svdcut=1e-12,
+    )
+    assert factor.dims == ["a", "z"]
+    assert factor.n_sample == 1
+    assert np.allclose(factor.coords["a"], spacings)
+    assert factor.attrs["kernel_id"] == "z_msbar_pdf_nlo"
+
+
+def test_explicit_zmsbar_kernels_preserve_pdf_and_da_finite_terms() -> None:
+    z = np.array([0.1, 0.2])
+    pdf = np.asarray(load_renormalization_kernel("z_msbar_pdf_nlo")(z, mu=2.0), dtype=float)
+    da = np.asarray(load_renormalization_kernel("z_msbar_da_nlo")(z, mu=2.0), dtype=float)
+    assert np.all(np.isfinite(pdf)) and np.all(np.isfinite(da))
+    assert np.all(da > pdf)
+    with pytest.raises(ValueError, match="not available"):
+        load_renormalization_kernel("missing_renormalization_formula")
+
+
+def test_renormalization_kernel_mu_override_warns_and_replaces_context(capsys) -> None:
+    import lamet_agent.stages.renormalization.contract as contract
+    from lamet_agent.contract import CheckContext
+    from lamet_agent.stages.renormalization.physics import zmsbar_log
+
+    seen = {}
+
+    def kernel(z_fm: np.ndarray | float, mu: float = 2.0):
+        seen.update({"z_fm": np.asarray(z_fm), "mu": mu})
+        return np.ones_like(np.asarray(z_fm), dtype=float)
+
+    params = {
+        "strategy": "self_renormalization",
+        "kernel_id": "z_msbar_da_nlo",
+        "kernel_parameters": {"mu": 3.0},
+    }
+    context = CheckContext({}, "renormalization", "apply", params, {})
+    assert contract.check_kernel(context) == []
+    assert "ATTENTION: renormalization kernel_parameters overrides stage context" in capsys.readouterr().out
+    overrides = params["kernel_parameters"]
+    result = zmsbar_log(kernel, np.asarray([0.1, 0.2]), scale_gev=2.0, kernel_parameters=overrides)
+
+    assert seen["mu"] == 3.0
+    np.testing.assert_allclose(seen["z_fm"], [0.1, 0.2])
+    np.testing.assert_allclose(result, 0.0)
+
+
+def test_nla_tail_fit_recovers_a_complex_toy() -> None:
+    z = np.arange(-1.0, 1.01, 0.1)
+    parameters = {"A2": 0.8, "A2p": -0.2, "phi2": 0.25, "phi2p": -0.1, "Lambda": 0.7}
+    values = tail_model_values(np.where(np.abs(z) < 1e-12, 1e-6, z), "gi_nla", parameters, hadron="proton")
+    values[np.isclose(z, 0.0)] = 1.0
+    rng = np.random.default_rng(4)
+    samples = [
+        values + rng.normal(0.0, 2e-4, values.shape) + 1j * rng.normal(0.0, 2e-4, values.shape) for _ in range(32)
+    ]
+    data = EnsembleData(
+        None, "bootstrap", samples, ["z"], {"z": z.tolist()}, attrs={"coord_unit": "fm", "hadron": "proton"}
+    )
+    fitted, diagnostics = fit_tail_parameters(
+        data,
+        model_id="gi_nla",
+        z_min_fm=0.3,
+        z_max_fm=1.0,
+        prior_means=parameters,
+        prior_widths={key: 1.0 for key in parameters},
+        hadron="proton",
+    )
+    assert diagnostics["dof"] > 0
+    assert np.isclose(np.mean([record["Lambda"] for record in fitted]), parameters["Lambda"], atol=2e-2)
+
+
+def test_da_tail_uses_two_endpoint_phases_and_light_light_alias() -> None:
+    z = np.arange(-1.0, 1.01, 0.1)
+    parameters = {"A1": 0.7, "phi1": 0.2, "Lambda": 0.6}
+    nonzero = np.where(np.isclose(z, 0.0), 1e-6, z)
+    values = tail_model_values(
+        nonzero,
+        "gi_nla",
+        parameters,
+        order="LA",
+        observable="DA",
+        momentum_gev=2.0,
+        psi1_flavor_class="light",
+        psi2_flavor_class="light",
+        hadron="pion",
+    )
+    values[np.isclose(z, 0.0)] = 1.0
+    rng = np.random.default_rng(23)
+    samples = [values + rng.normal(0.0, 2e-4, z.size) + 1j * rng.normal(0.0, 2e-4, z.size) for _ in range(32)]
+    data = EnsembleData(
+        None,
+        "bootstrap",
+        samples,
+        ["z"],
+        {"z": z.tolist()},
+        attrs={"coord_unit": "fm", "momentum_gev": 2.0, "hadron": "pion"},
+    )
+    fitted, diagnostics = fit_tail_parameters(
+        data,
+        model_id="gi_nla",
+        z_min_fm=0.3,
+        z_max_fm=1.0,
+        prior_means=parameters,
+        prior_widths={key: 1.0 for key in parameters},
+        order="LA",
+        observable="DA",
+        psi1_flavor_class="light",
+        psi2_flavor_class="light",
+        hadron="pion",
+    )
+    assert diagnostics["Q"] >= 0.0
+    assert np.isclose(np.mean([record["Lambda"] for record in fitted]), parameters["Lambda"], atol=2e-2)
+
+
+@pytest.mark.parametrize(
+    ("observable", "hadron", "sector", "flavors", "family", "la_names"),
+    [
+        ("PDF", "pion", "valence", ("heavy", "heavy"), "pion_pdf_valence", ["A2", "A1", "phi1"]),
+        (
+            "PDF",
+            "pion",
+            "full",
+            ("heavy", "heavy"),
+            "pion_pdf",
+            ["A2", "phi2", "A1", "phi1", "A3", "phi3"],
+        ),
+        ("PDF", "proton", "singlet", ("heavy", "heavy"), "nucleon_pdf", ["A2", "phi2"]),
+        ("DA", "pion", "full", ("light", "light"), "pion_da", ["A1", "phi1"]),
+        ("DA", "kaon", "full", ("light", "light"), "meson_da", ["A1", "phi1", "A2", "phi2"]),
+        ("DA", "kaon", "full", ("light", "heavy"), "meson_da", ["A2", "phi2"]),
+        (
+            "GPD",
+            "pion",
+            "valence",
+            ("heavy", "heavy"),
+            "pion_gpd",
+            ["A1", "phi1", "A3", "phi3", "A2", "phi2", "At2", "phit2"],
+        ),
+        ("GPD", "pion", "sea", ("heavy", "heavy"), "pion_gpd_sea", ["A2", "phi2", "At2", "phit2"]),
+        ("GPD", "nucleon", "full", ("heavy", "heavy"), "nucleon_gpd", ["A2", "phi2", "At2", "phit2"]),
+    ],
+)
+def test_tail_dispatcher_selects_paper_family_and_parameters(
+    observable, hadron, sector, flavors, family, la_names
+) -> None:
+    from lamet_agent.stages.fourier_transform.physics import _tail_family, _tail_parameter_names
+
+    assert _tail_family(observable, hadron, sector, *flavors) == family
+    assert _tail_parameter_names("gi_nla", "LA", observable, *flavors, sector, hadron) == [*la_names, "Lambda"]
+    assert _tail_parameter_names("cg_nla", "NLA", observable, *flavors, sector, hadron) == [
+        *la_names,
+        *(name + "p" for name in la_names),
+        "Lambda",
+        "n",
+    ]
+
+
+def test_tail_dispatcher_rejects_unimplemented_pdf_and_gpd_hadrons() -> None:
+    from lamet_agent.stages.fourier_transform.physics import _tail_family
+
+    with pytest.raises(ValueError, match="PDF tails are not implemented"):
+        _tail_family("PDF", "kaon", "valence", "light", "light")
+    with pytest.raises(ValueError, match="GPD tails are not implemented"):
+        _tail_family("GPD", "kaon", "full", "light", "light")
+
+
+def test_pion_and_kaon_da_use_constrained_and_independent_endpoints() -> None:
+    z = np.asarray([-0.5, 0.5])
+    momentum = 1.7
+    pion = {"A1": 0.7, "phi1": 0.2, "Lambda": 0.6}
+    pion_values = tail_model_values(
+        z,
+        "gi_nla",
+        pion,
+        order="LA",
+        observable="DA",
+        momentum_gev=momentum,
+        psi1_flavor_class="light",
+        psi2_flavor_class="light",
+        hadron="pion",
+    )
+    pion_phase = np.sign(z) * pion["phi1"] - momentum * z / HBAR_C_GEV_FM
+    pion_expected = (
+        pion["A1"] * np.exp(1j * pion_phase) + pion["A1"] * np.exp(-1j * np.sign(z) * pion["phi1"])
+    ) * np.exp(-pion["Lambda"] * np.abs(z) / HBAR_C_GEV_FM)
+    np.testing.assert_allclose(pion_values, pion_expected)
+
+    kaon = {"A1": 0.7, "phi1": 0.2, "A2": 0.3, "phi2": -0.4, "Lambda": 0.6}
+    kaon_values = tail_model_values(
+        z,
+        "gi_nla",
+        kaon,
+        order="LA",
+        observable="DA",
+        momentum_gev=momentum,
+        psi1_flavor_class="light",
+        psi2_flavor_class="light",
+        hadron="kaon",
+    )
+    kaon_expected = (
+        kaon["A1"] * np.exp(1j * (np.sign(z) * kaon["phi1"] - momentum * z / HBAR_C_GEV_FM))
+        + kaon["A2"] * np.exp(1j * np.sign(z) * kaon["phi2"])
+    ) * np.exp(-kaon["Lambda"] * np.abs(z) / HBAR_C_GEV_FM)
+    np.testing.assert_allclose(kaon_values, kaon_expected)
+
+
+def test_pion_valence_nla_inverse_distance_uses_fm_coordinate() -> None:
+    z = np.asarray([0.4, 0.8])
+    parameters = {
+        "A2": 0.0,
+        "A1": 0.0,
+        "phi1": 0.0,
+        "A2p": 1.0,
+        "A1p": 0.0,
+        "phi1p": 0.0,
+        "Lambda": 0.7,
+    }
+    values = tail_model_values(
+        z,
+        "gi_nla",
+        parameters,
+        observable="PDF",
+        momentum_gev=2.0,
+        sector="valence",
+        hadron="pion",
+    )
+    np.testing.assert_allclose(values, np.exp(-parameters["Lambda"] * z / HBAR_C_GEV_FM) / z)
+
+
+def test_pion_full_pdf_uses_all_three_endpoint_frequencies() -> None:
+    z = np.asarray([-0.5, 0.5])
+    momentum = 1.6
+    parameters = {
+        "A2": 0.8,
+        "phi2": 0.2,
+        "A1": 0.3,
+        "phi1": -0.1,
+        "A3": -0.2,
+        "phi3": 0.4,
+        "Lambda": 0.7,
+    }
+    values = tail_model_values(
+        z,
+        "gi_nla",
+        parameters,
+        order="LA",
+        observable="PDF",
+        momentum_gev=momentum,
+        sector="full",
+        hadron="pion",
+    )
+    sign = np.sign(z)
+    expected = (
+        parameters["A2"] * np.exp(1j * sign * parameters["phi2"])
+        + parameters["A1"] * np.exp(1j * (sign * parameters["phi1"] - momentum * z / HBAR_C_GEV_FM))
+        + parameters["A3"] * np.exp(1j * (sign * parameters["phi3"] + momentum * z / HBAR_C_GEV_FM))
+    ) * np.exp(-parameters["Lambda"] * np.abs(z) / HBAR_C_GEV_FM)
+    np.testing.assert_allclose(values, expected)
+
+
+def test_pion_gpd_uses_initial_final_and_transfer_frequencies() -> None:
+    z = np.asarray([-0.4, 0.4])
+    initial, final = 0.9, 1.5
+    delta = final - initial
+    parameters = {
+        "A1": 0.5,
+        "phi1": 0.1,
+        "A3": 0.4,
+        "phi3": -0.2,
+        "A2": 0.3,
+        "phi2": 0.25,
+        "At2": -0.15,
+        "phit2": -0.35,
+        "Lambda": 0.6,
+    }
+    values = tail_model_values(
+        z,
+        "gi_nla",
+        parameters,
+        order="LA",
+        observable="GPD",
+        hadron="pion",
+        initial_momentum_gev=initial,
+        final_momentum_gev=final,
+        delta_momentum_gev=delta,
+        phase_transfer_gpd="barpsi_at_0",
+    )
+    sign = np.sign(z)
+    expected = (
+        parameters["A1"] * np.exp(1j * (sign * parameters["phi1"] - final * z / HBAR_C_GEV_FM))
+        + parameters["A3"] * np.exp(1j * (sign * parameters["phi3"] + initial * z / HBAR_C_GEV_FM))
+        + parameters["A2"] * np.exp(1j * sign * parameters["phi2"])
+        + parameters["At2"] * np.exp(1j * (sign * parameters["phit2"] - delta * z / HBAR_C_GEV_FM))
+    ) * np.exp(-parameters["Lambda"] * np.abs(z) / HBAR_C_GEV_FM)
+    np.testing.assert_allclose(values, expected)
+
+
+@pytest.mark.parametrize(
+    ("observable", "hadron", "sector", "flavors", "momentum", "gpd"),
+    [
+        ("PDF", "pion", "valence", ("heavy", "heavy"), 1.8, {}),
+        ("PDF", "pion", "full", ("heavy", "heavy"), 1.8, {}),
+        ("PDF", "proton", "full", ("heavy", "heavy"), None, {}),
+        ("DA", "pion", "full", ("light", "light"), 1.8, {}),
+        ("DA", "kaon", "full", ("light", "light"), 1.8, {}),
+        (
+            "GPD",
+            "pion",
+            "valence",
+            ("heavy", "heavy"),
+            1.2,
+            {"initial_momentum_gev": 1.0, "final_momentum_gev": 1.4, "delta_momentum_gev": 0.4},
+        ),
+        (
+            "GPD",
+            "proton",
+            "full",
+            ("heavy", "heavy"),
+            1.2,
+            {"initial_momentum_gev": 1.0, "final_momentum_gev": 1.4, "delta_momentum_gev": 0.4},
+        ),
+    ],
+)
+def test_cg_is_gi_times_one_common_fm_power(observable, hadron, sector, flavors, momentum, gpd) -> None:
+    from lamet_agent.stages.fourier_transform.physics import _tail_parameter_names
+
+    names = _tail_parameter_names("gi_nla", "LA", observable, *flavors, sector, hadron)
+    base = {name: 0.6 if name.startswith("A") else 0.2 if name.startswith("phi") else 0.7 for name in names}
+    cg = {**base, "n": 1.3}
+    kwargs = {
+        "order": "LA",
+        "observable": observable,
+        "momentum_gev": momentum,
+        "psi1_flavor_class": flavors[0],
+        "psi2_flavor_class": flavors[1],
+        "sector": sector,
+        "hadron": hadron,
+        **gpd,
+    }
+    z = np.asarray([0.3, 0.6, 0.9])
+    gi_values = tail_model_values(z, "gi_nla", base, **kwargs)
+    cg_values = tail_model_values(z, "cg_nla", cg, **kwargs)
+    np.testing.assert_allclose(cg_values, gi_values / z ** cg["n"])
+
+
+@pytest.mark.parametrize(
+    ("observable", "hadron", "sector", "flavors", "momentum", "gpd"),
+    [
+        ("PDF", "pion", "valence", ("heavy", "heavy"), 1.8, {}),
+        ("PDF", "pion", "full", ("heavy", "heavy"), 1.8, {}),
+        ("PDF", "proton", "full", ("heavy", "heavy"), None, {}),
+        ("DA", "pion", "full", ("light", "light"), 1.8, {}),
+        ("DA", "kaon", "full", ("light", "light"), 1.8, {}),
+        (
+            "GPD",
+            "pion",
+            "valence",
+            ("heavy", "heavy"),
+            1.2,
+            {"initial_momentum_gev": 1.0, "final_momentum_gev": 1.4, "delta_momentum_gev": 0.4},
+        ),
+        (
+            "GPD",
+            "proton",
+            "full",
+            ("heavy", "heavy"),
+            1.2,
+            {"initial_momentum_gev": 1.0, "final_momentum_gev": 1.4, "delta_momentum_gev": 0.4},
+        ),
+    ],
+)
+def test_every_nla_family_uses_the_same_inverse_fm_coordinate(
+    observable, hadron, sector, flavors, momentum, gpd
+) -> None:
+    from lamet_agent.stages.fourier_transform.physics import _tail_parameter_names
+
+    names = _tail_parameter_names("gi_nla", "LA", observable, *flavors, sector, hadron)
+    leading = {name: 0.6 if name.startswith("A") else 0.2 if name.startswith("phi") else 0.7 for name in names}
+    nla = {
+        **{name: 0.0 for name in names if name.startswith("A")},
+        **{name: 0.0 for name in names if name.startswith("phi")},
+        **{name + "p": value for name, value in leading.items() if name != "Lambda"},
+        "Lambda": leading["Lambda"],
+    }
+    kwargs = {
+        "observable": observable,
+        "momentum_gev": momentum,
+        "psi1_flavor_class": flavors[0],
+        "psi2_flavor_class": flavors[1],
+        "sector": sector,
+        "hadron": hadron,
+        **gpd,
+    }
+    z = np.asarray([0.3, 0.6, 0.9])
+    leading_values = tail_model_values(z, "gi_nla", leading, order="LA", **kwargs)
+    nla_values = tail_model_values(z, "gi_nla", nla, order="NLA", **kwargs)
+    np.testing.assert_allclose(nla_values, leading_values / z)
+
+
+@pytest.mark.parametrize("phase_transfer,shift_factor", [("barpsi_at_0", 0.0), ("mid_at_0", 0.5), ("psi_at_0", 1.0)])
+def test_proton_gpd_uses_signed_delta_momentum_and_global_phase_transfer(phase_transfer, shift_factor) -> None:
+    z = np.asarray([-0.6, -0.3, 0.3, 0.6])
+    initial, final = 1.0, 1.4
+    delta = final - initial
+    parameters = {"A2": 0.8, "phi2": 0.2, "At2": -0.1, "phit2": -0.3, "Lambda": 0.7}
+    values = tail_model_values(
+        z,
+        "gi_nla",
+        parameters,
+        order="LA",
+        observable="GPD",
+        hadron="proton",
+        initial_momentum_gev=initial,
+        final_momentum_gev=final,
+        delta_momentum_gev=delta,
+        phase_transfer_gpd=phase_transfer,
+    )
+    shift = shift_factor * delta
+    expected = (
+        parameters["A2"] * np.exp(1j * (np.sign(z) * parameters["phi2"] + shift * z / HBAR_C_GEV_FM))
+        + parameters["At2"] * np.exp(1j * (np.sign(z) * parameters["phit2"] + (-delta + shift) * z / HBAR_C_GEV_FM))
+    ) * np.exp(-parameters["Lambda"] * np.abs(z) / HBAR_C_GEV_FM)
+    np.testing.assert_allclose(values, expected)
+
+
+def test_tail_value_and_fit_evaluator_share_the_proton_gpd_endpoint_family() -> None:
+    from lamet_agent.stages.fourier_transform.physics import tail_fit_fcn
+
+    z = np.asarray([-0.6, -0.3, 0.3, 0.6])
+    parameters = {"A2": 0.8, "phi2": 0.2, "At2": -0.1, "phit2": -0.3, "Lambda": 0.7}
+    values = tail_model_values(
+        z,
+        "gi_nla",
+        parameters,
+        order="LA",
+        observable="GPD",
+        hadron="proton",
+        initial_momentum_gev=1.0,
+        final_momentum_gev=1.3,
+        delta_momentum_gev=0.3,
+    )
+    fitted = tail_fit_fcn(
+        {
+            "z": z,
+            "model_id": "gi_nla",
+            "order": "LA",
+            "component": "both",
+            "lambda0_gev": 0.0,
+            "observable": "GPD",
+            "momentum_gev": 1.15,
+            "psi1_flavor_class": "heavy",
+            "psi2_flavor_class": "heavy",
+            "sector": "full",
+            "hadron": "proton",
+            "initial_momentum_gev": 1.0,
+            "final_momentum_gev": 1.3,
+            "delta_momentum_gev": 0.3,
+            "phase_transfer_gpd": "barpsi_at_0",
+        },
+        parameters,
+    )
+    np.testing.assert_allclose(values, np.asarray(fitted[: z.size] + 1j * fitted[z.size :], dtype=complex))
+
+
+def test_cg_tail_applies_one_common_terminal_power_in_each_model_coordinate() -> None:
+    z = np.asarray([0.2, 0.4, 0.8])
+    base = {"A2": 0.8, "A2p": -0.1, "phi2": 0.2, "phi2p": -0.3, "Lambda": 0.7}
+    cg = {**base, "n": 1.5}
+    gi_values = tail_model_values(z, "gi_nla", base, order="NLA", observable="PDF", hadron="proton")
+    cg_values = tail_model_values(z, "cg_nla", cg, order="NLA", observable="PDF", hadron="proton")
+    np.testing.assert_allclose(cg_values, gi_values / z**1.5)
+
+
+def test_fourier_transform_parallel_chunks_match_serial_order() -> None:
+    z = np.linspace(-0.5, 0.5, 11)
+    x = np.linspace(-1.0, 1.0, 13).tolist()
+    rng = np.random.default_rng(91)
+    samples = [np.exp(-(z**2)) + 1j * z + rng.normal(0.0, 1e-3, z.size) for _ in range(12)]
+    data = EnsembleData(None, "bootstrap", samples, ["z"], {"z": z.tolist()}, attrs={"momentum_gev": 2.0})
+    serial = fourier_transform(data, x, momentum_gev=2.0, phase_sign=1, prefactor="pz_over_2pi", workers=1)
+    parallel = fourier_transform(data, x, momentum_gev=2.0, phase_sign=1, prefactor="pz_over_2pi", workers=2)
+    assert np.allclose(parallel.values, serial.values, rtol=1e-13, atol=1e-13)
+
+
+def test_fourier_transform_uses_dimensionless_lambda_measure_on_uniform_grid() -> None:
+    z = [-0.1, 0.0, 0.1]
+    momentum = 2.0
+    data = EnsembleData(None, "bootstrap", [np.ones(3)], ["z"], {"z": z})
+    transformed = fourier_transform(data, [0.0], momentum_gev=momentum, prefactor="pz_over_2pi")
+    expected = momentum * 0.1 * len(z) / (2.0 * np.pi * HBAR_C_GEV_FM)
+    assert np.allclose(transformed.values, [[expected]], rtol=1e-13, atol=1e-13)
+
+
+def test_native_fourier_scan_fits_and_transforms_with_one_parallel_entry(monkeypatch) -> None:
+    import lamet_agent.stages.fourier_transform.physics as fourier_physics
+
+    z = np.linspace(-1.0, 1.0, 21)
+    parameters = {"A2": 0.8, "A2p": -0.05, "phi2": 0.2, "phi2p": -0.1, "Lambda": 0.7}
+    center = tail_model_values(np.where(np.isclose(z, 0.0), 1e-6, z), "gi_nla", parameters, hadron="proton")
+    center[np.isclose(z, 0.0)] = 1.0
+    rng = np.random.default_rng(19)
+    samples = [center + rng.normal(0.0, 2e-3, z.size) + 1j * rng.normal(0.0, 2e-3, z.size) for _ in range(20)]
+    data = EnsembleData(
+        None,
+        "bootstrap",
+        samples,
+        ["z"],
+        {"z": z.tolist()},
+        attrs={
+            "coord_unit": "fm",
+            "momentum_gev": 2.0,
+            "hadron": "proton",
+            "symmetry": '{"imag":"odd","real":"even"}',
+        },
+    )
+    modes = []
+    actual_fit_tail_parameters = fourier_physics.fit_tail_parameters
+
+    def record_fit_mode(*args, **kwargs):
+        modes.append(kwargs.get("mode", "resamples"))
+        return actual_fit_tail_parameters(*args, **kwargs)
+
+    monkeypatch.setattr(fourier_physics, "fit_tail_parameters", record_fit_mode)
+    result = scan_fourier_transform(
+        data,
+        np.linspace(-1.0, 1.0, 17).tolist(),
+        transform={"phase_sign": 1, "x_shift": 0.0, "prefactor": "pz_over_2pi"},
+        tail={
+            "models": ["gi_nla"],
+            "z_min_fm": [0.3, 0.4],
+            "z_max_fm": [0.8, 1.0],
+            "extent_fm": 1.23,
+            "smoothing_method": "linear",
+        },
+        scan={
+            "orders": ["LA", "NLA"],
+            "sector": "full",
+            "lambda0_gev": 0.1,
+            "prior_widths": [1.0],
+            "model_average": False,
+            "max_schemes": 3,
+            "component": "both",
+            "output_scale": 1.0,
+            "q_min": 0.0,
+        },
+        workers=2,
+    )
+    assert result["data"].dims == ["x"]
+    assert result["data"].n_sample == data.n_sample
+    assert np.all(np.isfinite(result["data"].values))
+    assert result["data"].attrs["tail_family"] == "nucleon_pdf"
+    assert result["data"].attrs["power_coordinate_unit"] == "fm"
+    assert result["data"].attrs["cg_power_applied"] == "false"
+    assert 1 <= len(result["selected_labels"]) <= 2
+    assert np.sum(result["weights"]) == pytest.approx(1.0)
+    assert len(result["range_candidates"]) == 3
+    assert len(result["model_candidates"]) == 2
+    assert all("fit_parameters" in candidate for candidate in result["range_candidates"] if candidate["fit_success"])
+    assert all(candidate["tail_family"] == "nucleon_pdf" for candidate in result["range_candidates"])
+    assert all(candidate["power_coordinate_unit"] == "fm" for candidate in result["model_candidates"])
+    assert all(candidate["cg_power_applied"] is False for candidate in result["model_candidates"])
+    assert all(
+        set(candidate["parameter_mean"]) == set(candidate["parameter_sdev"]) for candidate in result["model_candidates"]
+    )
+    assert max(result["selected_candidate"]["extended"].coords["z"]) == pytest.approx(1.2)
+    assert modes == ["center"] * 3 + ["resamples"] * 2
+    assert result["workers"] == 2
+
+
+def test_fourier_scan_plot_draws_extrapolation_only_from_selected_zmin(monkeypatch, tmp_path) -> None:
+    import lamet_agent.stages.fourier_transform._scan as tool
+
+    z = [-0.3, -0.2, -0.1, 0.0, 0.1, 0.2, 0.3, 0.4]
+    source = EnsembleData(
+        _ensemble(0.1),
+        "bootstrap",
+        [np.exp(-np.abs(z)) + 0.1j * np.asarray(z), np.exp(-np.abs(z)) + 0.2j * np.asarray(z)],
+        ["z"],
+        {"z": z},
+        attrs={"coord_unit": "fm", "momentum_gev": 2.0},
+    )
+    extended = source.copy()
+    output = EnsembleData(
+        _ensemble(0.1),
+        "bootstrap",
+        [np.ones(3), 1.1 * np.ones(3)],
+        ["x"],
+        {"x": [-0.5, 0.0, 0.5]},
+    )
+    candidate = {
+        "label": "gi_nla_NLA_w1_linear_0p1",
+        "model_id": "gi_nla",
+        "z_min_fm": 0.2,
+        "z_max_fm": 0.3,
+        "order": "NLA",
+        "prior_width": 1.0,
+        "smoothing_method": "linear",
+        "smoothing_width_fm": 0.1,
+        "chi2": 1.0,
+        "dof": 2,
+        "chi2_dof": 0.5,
+        "Q": 0.8,
+        "logGBF": 2.0,
+        "extended": extended,
+    }
+    result = {
+        "data": output,
+        "selected_range": {"model_id": "gi_nla", "z_min_fm": 0.2, "z_max_fm": 0.3},
+        "model_candidates": [candidate],
+        "weights": [1.0],
+        "selected_labels": [candidate["label"]],
+        "selected_candidate": candidate,
+        "range_candidates": [candidate],
+        "workers": 1,
+    }
+    monkeypatch.setattr(tool, "scan_fourier_transform", lambda *args, **kwargs: result)
+    plotted = []
+    boundaries = []
+    configured = []
+    monkeypatch.setattr(tool, "start_plot", lambda: None)
+    monkeypatch.setattr(tool, "configure_plot", lambda **kwargs: configured.append(kwargs))
+    monkeypatch.setattr(tool, "save_figure", lambda path: Path(path).touch())
+    monkeypatch.setattr(tool, "errorband", lambda x, values, **kwargs: plotted.append((kwargs["label"], list(x))))
+    monkeypatch.setattr(tool, "vline", lambda value, **kwargs: boundaries.append((value, kwargs)))
+    params = {
+        "parton": "quark",
+        "gfix": "GI",
+        "quasi_y_ls": [-0.5, 0.0, 0.5],
+        "transform": {"phase_sign": 1, "x_shift": 0.0, "prefactor": "pz_over_2pi"},
+        "tail_models": ["gi_nla"],
+        "zmin_fm": [0.2],
+        "tail_window_step_offset": 0,
+        "zmax_fm": [0.3],
+        "zmax_ext_fm": 0.4,
+        "smooth": "linear",
+        "scheme_scan": {
+            "order": ["NLA"],
+            "sector": "full",
+            "Lambda0_gev": 0.1,
+            "posterior_prior_error_scale": [1.0],
+            "model_average": False,
+            "max_schemes": 1,
+            "component": "both",
+            "output_scale": 1.0,
+            "q_min": 0.9,
+        },
+    }
+    context = ToolContext(
+        {"metadata": {"workers": 1, "target_observable": "pdf", "sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "fourier_transform",
+        "fourier",
+        params,
+        {"metadata": {"sample_error_mode": "covariance"}},
+        {},
+        {
+            "tail_inspection": {},
+            "fourier_input": source,
+            "fourier_conventions": {
+                "parton": "quark",
+                "gfix": "GI",
+                "transform": {"phase_sign": 1, "x_shift": 0.0, "prefactor": "pz_over_2pi"},
+                "tail_models": ["gi_nla"],
+                "component": "both",
+                "output_scale": 1.0,
+                "q_min": 0.05,
+            },
+        },
+        tmp_path,
+        np.random.default_rng(2),
+    )
+
+    tool.run(context)
+
+    assert context.summary is not None
+    assert context.summary["decisions"]["fallback_no_q_passing"] is True
+    assert context.summary["diagnostics"]["fallback_no_q_passing"] is True
+
+    scale = 2.0 / HBAR_C_GEV_FM
+    input_curves = [x for label, x in plotted if label == "input"]
+    extrapolation_curves = [x for label, x in plotted if label == "extrapolation"]
+    assert len(input_curves) == 2
+    assert len(extrapolation_curves) == 2
+    for coordinates in input_curves:
+        np.testing.assert_allclose(coordinates, np.asarray([0.0, 0.1, 0.2, 0.3, 0.4]) * scale)
+        assert all(value >= -1e-12 for value in coordinates)
+    for coordinates in extrapolation_curves:
+        np.testing.assert_allclose(coordinates, np.asarray([0.2, 0.3, 0.4]) * scale)
+        assert all(value >= -1e-12 for value in coordinates)
+    np.testing.assert_allclose([value for value, _ in boundaries], np.asarray([0.2, 0.3, 0.2, 0.3]) * scale)
+    assert all(item == {"color": "black", "linestyle": "dashed"} for _, item in boundaries)
+    assert [item["xlabel"] for item in configured[-2:]] == [r"$\lambda = zP^z$", r"$\lambda = zP^z$"]
+    assert configured[0]["xlabel"] == r"$x$"
+    assert configured[0]["ylabel"] == r"$\tilde q(x)$"
+
+
+def test_fourier_inspection_applies_systematic_offset_from_ensemble(tmp_path: Path) -> None:
+    from lamet_agent.stages.fourier_transform._inspection import effective_zmin_fm, run
+
+    data = EnsembleData(
+        _ensemble(0.1),
+        "bootstrap",
+        [np.ones(11), np.ones(11)],
+        ["z"],
+        {"z": [-0.25, -0.2, -0.15, -0.1, -0.05, 0.0, 0.05, 0.1, 0.15, 0.2, 0.25]},
+        attrs={
+            "hadron": "pion",
+            "coord_unit": "fm",
+            "momentum_gev": 2.0,
+            "parton": "quark",
+            "gfix": "GI",
+            "polarization": "unpolarized",
+        },
+    )
+    source = tmp_path / "input.nc"
+    data.to_netcdf(source)
+    data = EnsembleData.from_netcdf(source)
+    context = ToolContext(
+        {"metadata": {"target_observable": "pdf", "parton": "quark"}},
+        Path("manifest.json"),
+        "fourier_transform",
+        "offset",
+        {
+            "zmin_fm": [0.05],
+            "zmax_fm": [0.2],
+            "zmax_ext_fm": 0.25,
+            "tail_window_step_offset": 1,
+            "scheme_scan": {"sector": "full"},
+        },
+        {"input": data},
+        {},
+        {},
+        Path("."),
+        np.random.default_rng(1),
+    )
+
+    run(context)
+
+    assert effective_zmin_fm(context, data) == [0.15]
+    assert context.state["tail_inspection"]["z_grid_step_fm"] == 0.05
+
+
+@pytest.mark.parametrize("observable", ["pdf", "gpd"])
+@pytest.mark.parametrize("hadron", ["kaon", ""])
+def test_fourier_input_rejects_unsupported_hadron_before_recommendation(observable, hadron) -> None:
+    from types import SimpleNamespace
+
+    from lamet_agent.stages.fourier_transform.ask import ensure
+
+    data = EnsembleData(
+        None, "bootstrap", [np.ones(2), np.ones(2)], ["z"], {"z": [0.0, 0.1]},
+        attrs={"hadron": hadron} if hadron else {},
+    )
+    context = SimpleNamespace(
+        state={}, inputs={"input": data}, manifest={"metadata": {"target_observable": observable}},
+    )
+    session = SimpleNamespace(has_context=lambda key: False)
+    with pytest.raises(ValueError, match=f"Fourier input hadron.*got {hadron or '<missing>'}"):
+        ensure(context, session)
+    assert "fourier_input" not in context.state
+
+
+def test_gpd_fourier_preparation_records_signed_longitudinal_momenta(tmp_path: Path) -> None:
+    from lamet_agent.stages.fourier_transform._inspection import prepare
+
+    ensemble = _ensemble(0.1)
+    z = [0.0, 0.1, 0.2]
+    common_attrs = {
+        "coord_unit": "fm",
+        "momentum_gev": 1.0,
+        "parton": "quark",
+        "gfix": "GI",
+        "polarization": "unpolarized",
+        "hadron": "pion",
+    }
+    primary = EnsembleData(
+        ensemble,
+        "bootstrap",
+        [np.ones(3, dtype=complex), np.ones(3, dtype=complex)],
+        ["z"],
+        {"z": z},
+        attrs={**common_attrs, "source_momentum": [0, 0, 2], "sink_momentum": [0, 0, 3]},
+    )
+    partner = EnsembleData(
+        ensemble,
+        "bootstrap",
+        [np.ones(3, dtype=complex), np.ones(3, dtype=complex)],
+        ["z"],
+        {"z": z},
+        attrs={**common_attrs, "source_momentum": [0, 0, 3], "sink_momentum": [0, 0, 2]},
+    )
+    context = ToolContext(
+        {"metadata": {"workers": 1, "target_observable": "gpd", "parton": "quark"}},
+        tmp_path / "manifest.json",
+        "fourier_transform",
+        "gpd",
+        {"phase_transfer_gpd": "mid_at_0", "scheme_scan": {"sector": "valence"}},
+        {"input": primary, "hermitian_partner": partner},
+        {},
+        {},
+        tmp_path,
+        np.random.default_rng(1),
+    )
+
+    prepared, spacing = prepare(context)
+
+    expected_initial = 2.0 * ensemble.k_s
+    expected_final = 3.0 * ensemble.k_s
+    assert spacing == pytest.approx(0.1)
+    assert prepared.attrs["initial_momentum_gev"] == pytest.approx(expected_initial)
+    assert prepared.attrs["final_momentum_gev"] == pytest.approx(expected_final)
+    assert prepared.attrs["delta_momentum_gev"] == pytest.approx(expected_final - expected_initial)
+    assert prepared.attrs["phase_transfer_gpd"] == "mid_at_0"
+
+
+def test_fourier_model_choice_is_made_per_sample() -> None:
+    from lamet_agent.stages.fourier_transform.physics import _sample_model_weights
+
+    candidates = [
+        {
+            "sample_failures": [None, None],
+            "sample_diagnostics": [
+                {"Q": 0.8, "logGBF": 4.0},
+                {"Q": 0.8, "logGBF": 1.0},
+            ],
+        },
+        {
+            "sample_failures": [None, None],
+            "sample_diagnostics": [
+                {"Q": 0.8, "logGBF": 1.0},
+                {"Q": 0.8, "logGBF": 4.0},
+            ],
+        },
+    ]
+    weights = _sample_model_weights(candidates, n_sample=2, q_min=0.05, model_average=False)
+    np.testing.assert_array_equal(weights, np.eye(2))
+
+
+def test_fourier_range_selection_matches_original_q_and_loggbf_rule() -> None:
+    from lamet_agent.stages.fourier_transform.physics import _select_fourier_range
+
+    passing = [
+        {"id": "lower_evidence", "fit_success": True, "Q": 0.7, "logGBF": 1.0},
+        {"id": "higher_evidence", "fit_success": True, "Q": 0.2, "logGBF": 4.0},
+        {"id": "failed", "fit_success": False, "Q": 0.9, "logGBF": 8.0},
+    ]
+    assert _select_fourier_range(passing, q_min=0.05)["id"] == "higher_evidence"
+
+    fallback = [
+        {"id": "largest_q", "fit_success": True, "Q": 0.04, "logGBF": float("nan")},
+        {"id": "lower_q", "fit_success": True, "Q": 0.03, "logGBF": 20.0},
+    ]
+    assert _select_fourier_range(fallback, q_min=0.05)["id"] == "largest_q"
+
+
+def test_fourier_model_selection_requires_finite_q_and_preserves_the_evidence_rule() -> None:
+    from lamet_agent.parallel import FitNumericalError
+    from lamet_agent.stages.fourier_transform.physics import _select_fourier_model
+
+    fallback = [
+        {"id": "nonfinite", "Q": float("nan"), "logGBF": 30.0},
+        {"id": "failed", "Q": 0.9, "logGBF": 40.0, "error": "fit failed"},
+        {"id": "largest_q", "Q": 0.04, "logGBF": 1.0},
+        {"id": "lower_q", "Q": 0.03, "logGBF": 20.0},
+    ]
+    assert _select_fourier_model(fallback, q_min=0.05)["id"] == "largest_q"
+
+    passing = [
+        {"id": "largest_q", "Q": 0.8, "logGBF": 1.0},
+        {"id": "largest_evidence", "Q": 0.2, "logGBF": 4.0},
+    ]
+    assert _select_fourier_model(passing, q_min=0.05)["id"] == "largest_evidence"
+
+    with pytest.raises(FitNumericalError, match="no Fourier model candidate has a usable center fit"):
+        _select_fourier_model([{"id": "invalid", "Q": None}], q_min=0.05)
+
+
+@pytest.mark.parametrize(
+    "selected",
+    [
+        {"Q": None},
+        {"Q": float("nan")},
+        {"Q": float("inf")},
+        {"Q": 0.8, "error": "fit failed"},
+    ],
+)
+def test_fourier_publish_rejects_an_invalid_selection_before_writing(tmp_path: Path, selected: dict) -> None:
+    from lamet_agent.parallel import FitNumericalError
+    from lamet_agent.stages.fourier_transform._scan import publish
+
+    context = ToolContext(
+        {"metadata": {}},
+        tmp_path / "manifest.json",
+        "fourier_transform",
+        "fourier",
+        {"scheme_scan": {"q_min": 0.05}},
+        {},
+        {},
+        {},
+        tmp_path,
+        np.random.default_rng(1),
+    )
+    with pytest.raises(FitNumericalError, match="selected Fourier model candidate"):
+        publish(context, {"selected_candidate": selected})
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_fourier_scan_uses_original_fixed_first_pass_priors() -> None:
+    from lamet_agent.stages.fourier_transform.physics import _scan_tail_priors
+
+    means, widths = _scan_tail_priors(
+        model_id="cg_nla",
+        order="NLA",
+        lambda0_gev=0.1,
+        hadron="proton",
+    )
+    assert means == {
+        "A2": 1.0,
+        "phi2": 0.0,
+        "A2p": 0.1,
+        "phi2p": 0.0,
+        "Lambda": 0.4,
+        "n": 0.5,
+    }
+    assert set(widths.values()) == {3.0}
+
+
+def test_extrapolation_lattice_spacing_basis_uses_original_units() -> None:
+    data = EnsembleData(
+        _ensemble(0.08, L_s=32),
+        "bootstrap",
+        [[1.0], [1.0]],
+        ["x"],
+        {"x": [0.0]},
+        attrs={"momentum_gev": 2.0},
+    )
+    assert basis_terms(data, ["a", "a2", "a4", "ap4"], 0.135) == pytest.approx(
+        [0.08, 0.08**2, 0.08**4, (0.08 * 2.0) ** 4]
+    )
+
+
+def test_extrapolation_systematics_budget_uses_envelopes_and_quadrature(monkeypatch, tmp_path) -> None:
+    import xarray as xr
+
+    from lamet_agent.plotting import COLOR_CYCLE
+    from lamet_agent.stages.extrapolation._systematics_budget import run
+
+    x = [0.0, 0.5, 1.0]
+    attrs = {"sample_error_mode": "covariance"}
+
+    def distribution(first, second):
+        return EnsembleData(
+            None,
+            "bootstrap",
+            [np.asarray(first, dtype=float), np.asarray(second, dtype=float)],
+            ["x"],
+            {"x": x},
+            attrs=attrs,
+        )
+
+    main = distribution([1.0, 2.0, 3.0], [1.2, 2.2, 3.2])
+    lambda_low = distribution([0.8, 1.8, 2.8], [1.0, 2.0, 3.0])
+    lambda_high = distribution([1.3, 2.3, 3.3], [1.5, 2.5, 3.5])
+    mu = distribution([1.0, 1.9, 3.0], [1.2, 2.1, 3.2])
+    bar_colors: list[str] = []
+    band_colors: list[str] = []
+    line_colors: list[str] = []
+    import lamet_agent.stages.extrapolation._systematics_budget as tool
+
+    original_bar = tool.bar
+    original_band = tool.band
+    original_line = tool.line
+    monkeypatch.setattr(
+        tool,
+        "bar",
+        lambda *args, **kwargs: bar_colors.append(str(kwargs.get("color"))) or original_bar(*args, **kwargs),
+    )
+    monkeypatch.setattr(
+        tool,
+        "band",
+        lambda *args, **kwargs: band_colors.append(str(kwargs.get("color"))) or original_band(*args, **kwargs),
+    )
+    monkeypatch.setattr(
+        tool,
+        "line",
+        lambda *args, **kwargs: line_colors.append(str(kwargs.get("color"))) or original_line(*args, **kwargs),
+    )
+    context = ToolContext(
+        {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "extrapolation",
+        "budget",
+        {
+            "operation": "systematics_budget",
+            "systematics_prescription": "variant_envelope_quadrature",
+            "systematics_groups": {
+                "main": 0,
+                "zs": [],
+                "lambda_extrapolation": [1, 2],
+                "lamet_scale": [3],
+                "other_extrapolations": [],
+            },
+        },
+        {"distributions": [main, lambda_low, lambda_high, mu]},
+        {},
+        {},
+        tmp_path,
+        np.random.default_rng(2),
+    )
+
+    run(context)
+
+    output = xr.load_dataset(tmp_path / "output.nc")
+    lambda_error = np.full(3, 0.5)
+    mu_error = np.asarray([0.0, 0.1, 0.0])
+    expected_systematic = np.sqrt(lambda_error**2 + mu_error**2)
+    assert np.allclose(output["lambda_extrapolation"], lambda_error)
+    assert np.allclose(output["lamet_scale"], mu_error)
+    assert np.allclose(output["total_systematic_error"], expected_systematic)
+    assert np.allclose(
+        output["total_error"],
+        np.sqrt(np.asarray(main.sdev) ** 2 + expected_systematic**2),
+    )
+    assert context.output is main
+    assert context.summary["result"] == "systematics_budget"
+    assert bar_colors == [COLOR_CYCLE[0], COLOR_CYCLE[1]]
+    assert band_colors == [COLOR_CYCLE[1], COLOR_CYCLE[0]]
+    assert line_colors == [COLOR_CYCLE[0]]
+
+
+def test_matching_component_follows_resummation_part() -> None:
+    from lamet_agent.stages.perturbative_matching._inspection import _matching_component
+
+    assert _matching_component("re", {}) == "re"
+    assert _matching_component("im", {}) == "im"
+    assert _matching_component("im", {"component": "imaginary"}) == "im"
+    assert _matching_component("re", {"component": "both"}) == "re"
+    assert _matching_component("", {"component": "im"}) == "im"
+    assert _matching_component("", {}) == "re"
+    for part, declared in (("re", "im"), ("im", "real")):
+        with pytest.raises(ValueError, match="component"):
+            _matching_component(part, {"component": declared})
+
+
+def test_matching_kernel_id_uses_upstream_provenance_and_new_suffix_order() -> None:
+    from lamet_agent.kernels import matching_kernel_id
+
+    attrs = {
+        "parton": "quark",
+        "target_observable": "pdf",
+        "gfix": "CG",
+        "kernel_operator": "gt",
+    }
+    assert matching_kernel_id(attrs, scheme="hybrid", order="nlo") == "quark_pdf_cg_gt_hybrid_nlo"
+    assert (
+        matching_kernel_id(attrs, scheme="hybrid", order="nlo", resummation="rgr", resummation_part="re")
+        == "quark_pdf_cg_gt_hybrid_nlo_rgr_re"
+    )
+    assert matching_kernel_id(attrs, scheme="hybrid", order="nlo", resummation="lrr") == "quark_pdf_cg_gt_hybrid_nlo_lrr"
+    with pytest.raises(ValueError, match="only 'nlo'"):
+        matching_kernel_id(attrs, scheme="hybrid", order="nnlo")
+    with pytest.raises(ValueError, match="require.*resummation_part"):
+        matching_kernel_id(attrs, scheme="hybrid", order="nlo", resummation="rgr")
+    with pytest.raises(ValueError, match="(?i)lrr"):
+        matching_kernel_id(attrs, scheme="hybrid", order="nlo", resummation="lrr", resummation_part="im")
+
+
+def test_matching_inspection_reduces_the_component_named_by_resummation_part(tmp_path) -> None:
+    from lamet_agent.stages.perturbative_matching._inspection import run
+
+    values = [np.array([1.0 + 4.0j, 2.0 + 5.0j]), np.array([1.5 + 4.5j, 2.5 + 5.5j])]
+    quasi = EnsembleData(
+        None,
+        "bootstrap",
+        values,
+        ["x"],
+        {"x": [0.25, 0.75]},
+        attrs={
+            "momentum_gev": 2.0,
+            "gfix": "CG",
+            "parton": "quark",
+            "kernel_operator": "gt",
+            "target_observable": "pdf",
+            "renormalization_scheme": "msbar",
+        },
+        name="quasi_distribution",
+    )
+    params = {
+        "scheme": "msbar",
+        "order": "nlo",
+        "resummation": "rgr",
+        "resummation_part": "im",
+        "mu": 2.0,
+        "lc_x_ls": [0.25, 0.75],
+        "kernel_parameters": {},
+    }
+    context = ToolContext(
+        {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "perturbative_matching",
+        "match",
+        params,
+        {"quasi": quasi},
+        {},
+        {},
+        tmp_path,
+        np.random.default_rng(1),
+    )
+    run(context)
+    reduced = context.state["quasi"]
+    assert not np.iscomplexobj(reduced.values)
+    assert np.allclose(np.asarray(reduced.values)[0], [4.0, 5.0])
+    assert reduced.attrs["matching_component"] == "im"
+    assert context.state["kernel_inspection"]["matching_component"] == "im"
+
+    context.params["resummation_part"] = "both"
+    context.state.clear()
+    with pytest.raises(ValueError, match="kernel 'quark_pdf_cg_gt_msbar_nlo_rgr_both' is not available"):
+        run(context)
+    assert context.params["kernel_id"] == "quark_pdf_cg_gt_msbar_nlo_rgr_both"
+    assert "matching_result" not in context.state
+
+
+def test_matching_terminal_writes_original_quasi_matched_plot_pair(tmp_path) -> None:
+    from lamet_agent.stages.perturbative_matching._apply import run
+
+    x = [-0.5, 0.0, 0.5]
+    quasi = EnsembleData(
+        None,
+        "bootstrap",
+        [np.array([0.2, 1.0, 0.3]), np.array([0.3, 1.1, 0.4])],
+        ["x"],
+        {"x": x},
+        attrs={"momentum_gev": 1.722, "sample_error_mode": "covariance"},
+        name="quasi_distribution",
+    )
+
+    def selection_kernel(x_out, x_in, *, momentum_gev, scale_gev):
+        assert momentum_gev == 2.5
+        assert scale_gev == 3.0
+        assert list(x_out) == [-0.5, 0.5]
+        return np.asarray([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+
+    params = {
+        "kernel_id": "quark_pdf_cg_gt_ratio_nlo",
+        "scheme": "ratio",
+        "order": "nlo",
+        "mu": 2.0,
+        "lc_x_ls": [-0.5, 0.5],
+        "kernel_parameters": {"momentum_gev": 2.5, "scale_gev": 3.0},
+    }
+    context = ToolContext(
+        {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "perturbative_matching",
+        "match",
+        params,
+        {},
+        {},
+        {
+            "kernel": selection_kernel,
+            "quasi": quasi,
+            "kernel_inspection": {"document": "Kernel formula."},
+        },
+        tmp_path,
+        np.random.default_rng(1),
+    )
+    observation = run(context)
+    assert (tmp_path / "plots" / "result.pdf").is_file()
+    assert (tmp_path / "plots" / "result.svg").is_file()
+    assert "plots/result.pdf" in context.summary["artifacts"]
+    assert "plots/result.svg" in observation["artifacts"]
+    assert "report.md" not in context.summary["artifacts"]
+    assert not (tmp_path / "report.md").exists()
+    result_svg = (tmp_path / "plots" / "result.svg").read_text(encoding="utf-8")
+    assert "FillBetweenPolyCollection" in result_svg
+    assert "quasi" in result_svg
+    assert r"$P_z=1.72\,\mathrm{GeV}$" in result_svg
+    assert r"$x$" in result_svg
+    np.testing.assert_allclose(context.output.values, quasi.values[:, [0, 2]])
+
+
+def test_matching_plot_crops_even_quasi_to_nonnegative_x(monkeypatch, tmp_path) -> None:
+    import lamet_agent.stages.perturbative_matching._apply as tool
+
+    x = [-0.5, 0.0, 0.5]
+    quasi = EnsembleData(
+        None,
+        "bootstrap",
+        [np.array([0.3, 1.0, 0.3]), np.array([0.4, 1.1, 0.4])],
+        ["x"],
+        {"x": x},
+        attrs={"momentum_gev": 1.722, "sample_error_mode": "covariance"},
+        name="quasi_distribution",
+    )
+
+    def identity_kernel(x_out, x_in, *, momentum_gev, scale_gev):
+        return np.eye(len(x_out), len(x_in))
+
+    plotted = []
+    limits = []
+    monkeypatch.setattr(tool, "start_plot", lambda: None)
+    monkeypatch.setattr(tool, "hline", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        tool, "errorband", lambda x_values, values, **kwargs: plotted.append((kwargs["label"], list(x_values)))
+    )
+    monkeypatch.setattr(tool, "configure_plot", lambda **kwargs: limits.append(kwargs))
+    monkeypatch.setattr(
+        tool,
+        "save_figure",
+        lambda *paths: [Path(path).parent.mkdir(parents=True, exist_ok=True) or Path(path).touch() for path in paths],
+    )
+    params = {
+        "kernel_id": "quark_pdf_cg_gt_ratio_nlo",
+        "scheme": "ratio",
+        "order": "nlo",
+        "mu": 2.0,
+        "lc_x_ls": x,
+        "kernel_parameters": {},
+    }
+    context = ToolContext(
+        {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "perturbative_matching",
+        "match",
+        params,
+        {},
+        {},
+        {"kernel": identity_kernel, "quasi": quasi, "kernel_inspection": {"document": ""}},
+        tmp_path,
+        np.random.default_rng(1),
+    )
+    tool.run(context)
+    assert plotted[0][0] == r"quasi, $P_z=1.72\,\mathrm{GeV}$"
+    assert plotted[1][0] == "light-cone"
+    for _label, coordinates in plotted:
+        np.testing.assert_allclose(coordinates, [0.0, 0.5])
+    assert limits[0]["xlim"][0] >= -0.01
+
+
+def test_extrapolation_terminal_writes_one_pdf_per_lattice_spacing(monkeypatch, tmp_path) -> None:
+    import lamet_agent.stages.extrapolation._publish as tool
+
+    x = [-0.5, 0.0, 0.5]
+    inputs = []
+    momenta = [1.0, 2.0, 3.0]
+    for spacing_index, spacing in enumerate([0.06, 0.09, 0.12]):
+        for momentum_index, momentum in enumerate(momenta):
+            center = np.asarray([0.2, 1.0, 0.3]) + 0.01 * spacing_index + 0.02 * momentum_index
+            inputs.append(
+                EnsembleData(
+                    EnsembleInfo("test", f"a{spacing_index}p{momentum_index}", spacing, spacing, 64, 128, 0.13),
+                    "bootstrap",
+                    [center, center + 0.01],
+                    ["x"],
+                    {"x": x},
+                    attrs={"momentum_gev": momentum, "sample_error_mode": "one_sigma"},
+                )
+            )
+    output = EnsembleData(
+        None,
+        "bootstrap",
+        [np.asarray([0.2, 1.0, 0.3]), np.asarray([0.21, 1.01, 0.31])],
+        ["x"],
+        {"x": x},
+        attrs={"extrapolation_terms": "a2,inv_p2", "sample_error_mode": "one_sigma"},
+    )
+    comparison = {
+        "candidate_ids": ["extrapolation_001"],
+        "candidates": [
+            {
+                "momentum_dependence": {
+                    f"{momentum:g}": {
+                        "momentum_gev": momentum,
+                        "mean": [0.2, 1.0, 0.3],
+                        "sdev": [0.01, 0.01, 0.01],
+                    }
+                    for momentum in [1.5, 2.0, 2.5]
+                }
+            }
+        ],
+    }
+    labels: list[str | None] = []
+    original_errorband = tool.errorband
+
+    def capture_errorband(x_values, values, **kwargs):
+        labels.append(kwargs.get("label"))
+        return original_errorband(x_values, values, **kwargs)
+
+    monkeypatch.setattr(tool, "errorband", capture_errorband)
+    context = ToolContext(
+        {"metadata": {"workers": 1, "sample_error_mode": "one_sigma"}},
+        tmp_path / "manifest.json",
+        "extrapolation",
+        "fit",
+        {"operation": "fit", "pdep_gev": [1.5, 2.0, 2.5]},
+        {},
+        {},
+        {"scaling_data": inputs, "extrapolation_selected_data": output, "extrapolation_comparison": comparison},
+        tmp_path,
+        np.random.default_rng(1),
+    )
+
+    observation = tool.run(context)
+
+    assert not (tmp_path / "plots" / "distribution.pdf").exists()
+    assert (tmp_path / "plots" / "momentum_dependence.pdf").is_file()
+    assert not (tmp_path / "plots" / "momentum_dependence.svg").exists()
+    for spacing in ["0p06", "0p09", "0p12"]:
+        assert (tmp_path / "plots" / f"distribution_a_{spacing}.pdf").is_file()
+        assert not (tmp_path / "plots" / f"distribution_a_{spacing}.svg").exists()
+    assert observation["artifacts"].count("plots/distribution_a_0p06.pdf") == 1
+    assert "plots/distribution.pdf" not in observation["artifacts"]
+    assert not any(item.endswith(".svg") for item in observation["artifacts"])
+    assert any(label and "P_z=1" in label for label in labels)
+    assert any(label and "P_z=2" in label for label in labels)
+    assert any(label and "P_z=3" in label for label in labels)
+    assert any(label == r"$P_z\to\infty$" for label in labels)
+    assert any(label == r"$a\to0,\;P_z\to\infty$" for label in labels)
+
+
+def test_external_renormalization_terminal_writes_publication_artifacts(tmp_path) -> None:
+    from lamet_agent.stages.renormalization._apply import run
+    from lamet_agent.stages.renormalization._inspection import run as inspect
+
+    target = EnsembleData(
+        _ensemble(0.1),
+        "bootstrap",
+        [np.array([2.0, 4.0]), np.array([2.2, 4.4])],
+        ["z"],
+        {"z": [0.0, 0.1]},
+        attrs={"coord_unit": "fm", "resample_id": "shared"},
+    )
+    denominator = EnsembleData(
+        _ensemble(0.1),
+        "bootstrap",
+        [np.array([2.0, 2.0]), np.array([2.2, 2.2])],
+        ["z"],
+        {"z": [0.0, 0.1]},
+        attrs={"coord_unit": "fm", "resample_id": "shared"},
+    )
+    context = ToolContext(
+        {"metadata": {"sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "renormalization",
+        "apply",
+        {"type": "apply", "scheme": "ratio", "strategy": "external_denominator", "normalization": False},
+        {"target": target, "denominator": denominator},
+        {},
+        {},
+        tmp_path,
+        np.random.default_rng(1),
+    )
+    inspect(context)
+    observation = run(context)
+    assert observation["summary"] == "published renormalized matrix element"
+    assert (tmp_path / "output.nc").is_file()
+    assert (tmp_path / "plots" / "result.pdf").is_file()
+    assert "report.md" not in observation["artifacts"]
+    assert not (tmp_path / "report.md").exists()
+    assert np.allclose(context.output.values, [[1.0, 2.0], [1.0, 2.0]])
+
+
+def test_self_renormalization_fit_publishes_pdf_svg_diagnostics_without_job_report(tmp_path) -> None:
+    from lamet_agent.stages.renormalization._fit import run
+
+    z = np.asarray([0.0, 0.1, 0.2, 0.3])
+    spacings = [0.06, 0.12, 0.18]
+    grids = []
+    for spacing in spacings:
+        known = log_m(z, spacing, k=0.4, lambda_qcd_gev=0.1, d=0.0, n_f=3, scale_gev=2.0)
+        grids.append(np.exp(known + 0.15 * z / HBAR_C_GEV_FM + 0.4 * spacing))
+    reference = EnsembleData(
+        None,
+        "bootstrap",
+        [np.stack(grids), np.stack(grids) * 1.001],
+        ["a", "z"],
+        {"a": spacings, "z": z.tolist()},
+        attrs={"coord_unit": "fm"},
+    )
+    context = ToolContext(
+        {"metadata": {"sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "renormalization",
+        "rn_zr_fit",
+        {
+            "type": "fit",
+            "scheme": "msbar",
+            "strategy": "self_renormalization",
+            "kernel_id": "z_msbar_pdf_nlo",
+            "kernel_parameters": {},
+            "normalization": False,
+            "mu": 2.0,
+            "LambdaQCD_gev": 0.1,
+            "d": 0.0,
+            "svdcut": 1e-12,
+        },
+        {"reference": reference},
+        {},
+        {"aligned_inputs": {"reference": reference}},
+        tmp_path,
+        np.random.default_rng(1),
+    )
+
+    observation = run(context)
+
+    stems = ("factor", "fit_lnM_vs_inv_a", "fit_mR_zmsbar", "fit_m_over_zR", "fit_f1")
+    for stem in stems:
+        assert (tmp_path / "plots" / f"{stem}.pdf").is_file()
+        assert (tmp_path / "plots" / f"{stem}.svg").is_file()
+        assert f"plots/{stem}.pdf" in observation["artifacts"]
+        assert f"plots/{stem}.svg" in observation["artifacts"]
+    assert "report.md" not in observation["artifacts"]
+    assert not (tmp_path / "report.md").exists()
+    assert set(context.summary["diagnostics"]["fit_quality"]) == {"reference", "m0_matching"}
+
+
+def _self_coverage_context(tmp_path, *, policy: str, scheme: str = "msbar") -> ToolContext:
+    factor = EnsembleData(
+        None,
+        "bootstrap",
+        [np.asarray([[2.0, 2.5, 3.0, 4.0]]), np.asarray([[2.0, 2.5, 3.0, 4.0]])],
+        ["a", "z"],
+        {"a": [0.1], "z": [0.05, 0.1, 0.15, 0.2]},
+        attrs={"coord_unit": "fm", "d": 0.0, "m0_gev": 0.0, "k": 0.65, "n_f": 3, "scale_gev": 2.0},
+    )
+    target = EnsembleData(
+        _ensemble(0.1),
+        "bootstrap",
+        [np.asarray([1.0, 2.0, 4.0, 8.0]), np.asarray([1.0, 2.0, 4.0, 8.0])],
+        ["z"],
+        {"z": [0.0, 0.1, 0.2, 0.3]},
+        attrs={"coord_unit": "fm"},
+    )
+    inputs = {"target": target, "zR": factor}
+    if scheme == "hybrid":
+        inputs["denominator"] = EnsembleData(
+            _ensemble(0.1),
+            "bootstrap",
+            [np.full(4, 2.0), np.full(4, 2.0)],
+            ["z"],
+            {"z": [0.0, 0.1, 0.2, 0.3]},
+            attrs={"coord_unit": "fm"},
+        )
+    params = {
+        "type": "apply",
+        "scheme": scheme,
+        "strategy": "self_renormalization",
+        "kernel_id": "z_msbar_da_nlo",
+        "kernel_parameters": {},
+        "normalization": False,
+        "mu": 2.0,
+        "LambdaQCD_gev": 0.1,
+        "d": 0.0,
+        "m0_gev": 0.0,
+        "z_coverage_policy": policy,
+    }
+    if scheme == "hybrid":
+        params["zs_fm"] = 0.1
+    return ToolContext(
+        {"metadata": {"sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "renormalization",
+        "apply",
+        params,
+        inputs,
+        {},
+        {},
+        tmp_path,
+        np.random.default_rng(1),
+    )
+
+
+def test_self_renormalization_strict_rejects_uncovered_target_z(tmp_path) -> None:
+    from lamet_agent.stages.renormalization._apply import run
+    from lamet_agent.stages.renormalization._inspection import run as inspect
+
+    context = _self_coverage_context(tmp_path, policy="strict")
+    inspect(context)
+    with pytest.raises(ValueError, match="outside the fitted zR range"):
+        run(context)
+
+
+@pytest.mark.parametrize("scheme", ["msbar", "hybrid"])
+def test_self_renormalization_intersection_trims_the_output_grid(tmp_path, scheme) -> None:
+    from lamet_agent.stages.renormalization._apply import run
+    from lamet_agent.stages.renormalization._inspection import run as inspect
+
+    context = _self_coverage_context(tmp_path, policy="intersection", scheme=scheme)
+    inspect(context)
+    run(context)
+
+    assert context.output.coords["z"] == [0.0, 0.1, 0.2]
+    assert context.output.attrs["z_coverage_policy"] == "intersection"
+    assert context.output.attrs["n_z_dropped"] == 1
+    assert context.summary["diagnostics"]["n_z_coverage_dropped"] == 1
+    assert context.summary["diagnostics"]["n_z_extrapolated"] == 0
+
+
+def test_hybrid_self_renormalization_extrapolates_the_completed_factor(tmp_path) -> None:
+    from lamet_agent.stages.renormalization._apply import run
+    from lamet_agent.stages.renormalization._inspection import run as inspect
+
+    context = _self_coverage_context(tmp_path, policy="extrapolate", scheme="hybrid")
+    inspect(context)
+    run(context)
+
+    assert context.output.coords["z"] == [0.0, 0.1, 0.2, 0.3]
+    assert np.all(np.isfinite(context.output.values))
+    assert context.summary["diagnostics"]["n_z_extrapolated"] == 1
+
+
+def test_self_renormalization_completes_the_authored_long_distance_ansatz(tmp_path) -> None:
+    from lamet_agent.kernels import load_renormalization_kernel
+    from lamet_agent.stages.renormalization._apply import run
+    from lamet_agent.stages.renormalization._inspection import run as inspect
+    from lamet_agent.stages.renormalization.physics import zmsbar_log
+
+    spacing = 0.1
+    z_factor = np.array([0.05, 0.1, 0.15, 0.2])
+    z_target = np.array([0.0, 0.1, 0.2, 0.3])
+    k = 0.6551255749279999
+    d = -0.08
+    m0 = -0.02
+    lambda_qcd = 0.1
+    scale = 2.0
+    baseline = log_m(z_factor, spacing, k=k, lambda_qcd_gev=lambda_qcd, d=d, n_f=3, scale_gev=scale) + m0 * z_factor
+    factor_values = np.exp(baseline + 0.4 * z_factor**2 * spacing)
+    factor = EnsembleData(
+        None,
+        "bootstrap",
+        [[factor_values], [factor_values]],
+        ["a", "z"],
+        {"a": [spacing], "z": z_factor.tolist()},
+        attrs={"coord_unit": "fm", "d": d, "m0_gev": m0, "k": k, "n_f": 3, "scale_gev": scale},
+    )
+    target = EnsembleData(
+        _ensemble(spacing),
+        "bootstrap",
+        [np.ones(4), np.ones(4)],
+        ["z"],
+        {"z": z_target.tolist()},
+        attrs={"coord_unit": "fm"},
+    )
+    params = {
+        "type": "apply",
+        "scheme": "ratio",
+        "strategy": "self_renormalization",
+        "kernel_id": "z_msbar_da_nlo",
+        "kernel_parameters": {},
+        "normalization": False,
+        "mu": scale,
+        "LambdaQCD_gev": lambda_qcd,
+        "d": d,
+        "m0_gev": m0,
+        "z_coverage_policy": "extrapolate",
+    }
+    context = ToolContext(
+        {"metadata": {"target_observable": "pdf", "sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "renormalization",
+        "apply",
+        params,
+        {"target": target, "zR": factor},
+        {},
+        {},
+        tmp_path,
+        np.random.default_rng(1),
+    )
+    inspect(context)
+    run(context)
+    assert context.output.coords["z"] == z_target.tolist()
+    assert np.all(np.isfinite(context.output.values))
+    assert context.output.attrs["kernel_id"] == "z_msbar_da_nlo"
+    assert context.output.attrs["z_coverage_policy"] == "extrapolate"
+    assert context.output.attrs["n_z_extrapolated"] == 1
+    assert context.output.attrs["z_extrapolation_method"] == "quadratic_f1_tail"
+    expected_factor = np.ones_like(z_target)
+    expected_factor[1:] = np.exp(
+        log_m(
+            z_target[1:],
+            spacing,
+            k=k,
+            lambda_qcd_gev=lambda_qcd,
+            d=d,
+            n_f=3,
+            scale_gev=scale,
+        )
+        + m0 * z_target[1:]
+        + 0.4 * z_target[1:] ** 2 * spacing
+    )
+    expected_factor[1:] *= np.exp(
+        zmsbar_log(load_renormalization_kernel("z_msbar_da_nlo"), z_target[1:], scale_gev=scale)
+    )
+    expected = np.tile(1.0 / expected_factor[None, :], (target.n_sample, 1))
+    np.testing.assert_allclose(context.output.values, expected, rtol=1e-10, atol=1e-12)
+
+
+def test_every_migrated_kernel_owns_its_callable_and_formula_document() -> None:
+    from lamet_agent.kernels import implementation
+
+    root = Path(__file__).parents[2] / "lamet_agent" / "kernels"
+    kernel_ids = list_kernel_ids()
+    assert len(kernel_ids) == 46
+    assert set(kernel_ids) == {path.stem for path in root.glob("*.md")}
+    for kernel_id in kernel_ids:
+        assert not hasattr(implementation, kernel_id)
+        source = (root / f"{kernel_id}.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        assert any(isinstance(node, ast.FunctionDef) and node.name == "kernel" for node in tree.body)
+        for node in tree.body:
+            if isinstance(node, ast.ImportFrom) and node.module == "lamet_agent.kernels.implementation":
+                assert all(alias.name != kernel_id and alias.asname != "_implementation" for alias in node.names)
+        parameters = {"zs_fm": 0.2} if "_hybrid_" in kernel_id else {}
+        accepted, required = inspect_callable(load_kernel(kernel_id), parameter_values=parameters)
+        assert set(required).issubset(parameters)
+        assert "zs_fm" in accepted if "_hybrid_" in kernel_id else "zs_fm" not in accepted
+        document = load_kernel_document(kernel_id)
+        assert document and kernel_id in document
+    with pytest.raises(ValueError, match="not available"):
+        load_kernel("implementation")
+
+
+def test_kernel_implementation_owns_the_unit_conversion_constant() -> None:
+    from lamet_agent import data
+    from lamet_agent.kernels.implementation import GEV_FM
+
+    assert HBAR_C_GEV_FM == 0.1973269804
+    assert GEV_FM is HBAR_C_GEV_FM
+    assert "HBAR_C_GEV_FM" not in data.__all__
+    assert "GEV_FM" not in data.__all__
+    assert not hasattr(data, "HBAR_C_GEV_FM")
+    assert not hasattr(data, "GEV_FM")
+
+
+def test_migrated_kernel_code_has_no_legacy_imports_or_embedded_documentation() -> None:
+    root = Path(__file__).parents[2] / "lamet_agent" / "kernels"
+    paths = [root / "implementation.py", *(root / f"{kernel_id}.py" for kernel_id in list_kernel_ids())]
+    for path in paths:
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("lamet_agent."):
+                assert node.module == "lamet_agent.kernels.implementation"
+            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                assert ast.get_docstring(node, clean=False) is None
+        comments = [
+            token.string
+            for token in tokenize.generate_tokens(io.StringIO(source).readline)
+            if token.type == tokenize.COMMENT
+        ]
+        assert comments == []
+
+
+def test_ratio_kernel_executes_the_migrated_physics_function() -> None:
+    kernel = load_kernel("quark_pdf_cg_gt_ratio_nlo")
+    grid = np.array([-0.5, 0.5])
+    matrix = kernel(grid, grid, momentum_gev=2.0, scale_gev=2.0)
+    assert matrix.shape == (2, 2)
+    assert np.all(np.isfinite(matrix))
+
+
+def test_extrapolation_fit_uses_reference_median_covariance(monkeypatch) -> None:
+    rng = np.random.default_rng(12)
+    x = [-0.2, 0.2]
+    physical = np.array([0.45, 0.35])
+    data = []
+    for index, spacing in enumerate((0.06, 0.08, 0.10, 0.12)):
+        center = physical + 0.3 * spacing / 0.1
+        samples = [center + rng.normal(0.0, 0.003, 2) for _ in range(60)]
+        attrs = {
+            "momentum_gev": 2.0,
+            "resample_id": f"ensemble-{index}",
+            "sample_error_mode": "one_sigma",
+        }
+        data.append(
+            EnsembleData(
+                _ensemble(spacing, f"ensemble-{index}", L_s=32, m_pi=0.2),
+                "bootstrap",
+                samples,
+                ["x"],
+                {"x": x},
+                attrs=attrs,
+            )
+        )
+    result, diagnostics = fit_candidate(
+        data,
+        ["a"],
+        0.135,
+        {"mean": 0.0, "sdev": 2.0},
+        x_range=(-0.2, 0.2),
+        x_independent_terms=["a"],
+    )
+    assert result.dims == ["x"]
+    assert result.resample == "bootstrap"
+    assert result.n_sample == 60
+    assert np.allclose(result.mean, physical, atol=2e-2)
+    assert diagnostics["dof"] > 0
+    assert json.loads(result.attrs["x_independent_terms"]) == ["a"]
+
+
+def test_stage_fourier_uniform_grid_keeps_full_endpoint_weights() -> None:
+    z = [-0.1, 0.0, 0.1]
+    data = EnsembleData(None, "bootstrap", [np.ones(3), np.ones(3)], ["z"], {"z": z})
+    result = stage_fourier_transform(
+        data,
+        [0.0],
+        momentum_gev=HBAR_C_GEV_FM,
+        prefactor="pz_over_2pi",
+        workers=1,
+    )
+    assert np.allclose(result.values[:, 0], 0.3 / (2.0 * np.pi))
+    assert result.attrs["quadrature"] == "reference_uniform_rectangle"
+
+
+def test_renormalization_loader_maps_reference_m_pi_metadata(tmp_path: Path) -> None:
+    import xarray as xr
+
+    path = tmp_path / "reference.nc"
+    array = xr.DataArray(
+        np.ones((2, 2, 2)),
+        dims=["resample", "a", "z"],
+        coords={"resample": [0, 1], "a": [0.06, 0.12], "z": [0.1, 0.2]},
+        attrs={
+            "ensemble": '{"series":"MILC","id":"reference","a_s":0.12,"a_t":0.12,"L_s":0,"L_t":0,"m_pi":0.0}',
+            "resample": "bootstrap",
+        },
+        name="reference",
+    )
+    array.to_netcdf(path, format="NETCDF4")
+    loaded = load_renormalization_data(path)
+    assert loaded.ensemble is not None
+    assert loaded.ensemble.m_pi == 0.0
+    assert loaded.dims == ["a", "z"]

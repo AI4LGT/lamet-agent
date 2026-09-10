@@ -1,0 +1,628 @@
+{
+  "metadata": {
+    "run_id": "kaon_da_gi",
+    "root_directory": "..",
+    "artifacts_directory": "runs/kaon_da_gi/artifacts",
+    "random_seed": 1984,
+    "workers": 8,
+    "target_observable": "da",
+    "parton": "quark",
+    "resample_mode": "bootstrap",
+    "bin_size": 10,
+    "sample_error_mode": "one_sigma",
+    "samples": 100,
+    "parameter_recommendation_retries": 0
+  },
+  "stages": {
+    "correlator_analysis": {
+      "defaults": {
+        "component": "both",
+        "nstate": [
+          1
+        ],
+        "fit_scope": [
+          "2pt+qda"
+        ],
+        "fitting_form": "Breit",
+        "model_average": false,
+        "svdcut": 1e-06,
+        "posterior_prior_error_scale": 3.0,
+        "q_min": 0.05
+      },
+      "jobs": [
+        {
+          "id": "ca_a06m130_pz6",
+          "inputs": {
+            "correlators": [
+              {"json": "examples/kaon_da_gi_correlators.json", "id": "a06m130_qda_pz6"}
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 12,
+              "tmax": 17
+            }
+          ]
+        },
+        {
+          "id": "ca_a09m130_pz6",
+          "inputs": {
+            "correlators": [
+              {"json": "examples/kaon_da_gi_correlators.json", "id": "a09m130_qda_pz6"}
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 8,
+              "tmax": 12
+            }
+          ]
+        },
+        {
+          "id": "ca_a12m130_pz6",
+          "inputs": {
+            "correlators": [
+              {"json": "examples/kaon_da_gi_correlators.json", "id": "a12m130_qda_pz6"}
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 6,
+              "tmax": 11
+            }
+          ]
+        },
+        {
+          "id": "ca_a06m130_pz8",
+          "inputs": {
+            "correlators": [
+              {"json": "examples/kaon_da_gi_correlators.json", "id": "a06m130_qda_pz8"}
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 8,
+              "tmax": 11
+            }
+          ]
+        },
+        {
+          "id": "ca_a09m130_pz8",
+          "inputs": {
+            "correlators": [
+              {"json": "examples/kaon_da_gi_correlators.json", "id": "a09m130_qda_pz8"}
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 6,
+              "tmax": 9
+            }
+          ]
+        },
+        {
+          "id": "ca_a12m130_pz8",
+          "inputs": {
+            "correlators": [
+              {"json": "examples/kaon_da_gi_correlators.json", "id": "a12m130_qda_pz8"}
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 4,
+              "tmax": 7
+            }
+          ]
+        },
+        {
+          "id": "ca_a06m130_pz10",
+          "inputs": {
+            "correlators": [
+              {"json": "examples/kaon_da_gi_correlators.json", "id": "a06m130_qda_pz10"}
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 7,
+              "tmax": 12
+            }
+          ]
+        },
+        {
+          "id": "ca_a09m130_pz10",
+          "inputs": {
+            "correlators": [
+              {"json": "examples/kaon_da_gi_correlators.json", "id": "a09m130_qda_pz10"}
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 5,
+              "tmax": 8
+            }
+          ]
+        },
+        {
+          "id": "ca_a12m130_pz10",
+          "inputs": {
+            "correlators": [
+              {"json": "examples/kaon_da_gi_correlators.json", "id": "a12m130_qda_pz10"}
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 3,
+              "tmax": 6
+            }
+          ]
+        }
+      ]
+    },
+    "renormalization": {
+      "defaults": {
+        "strategy": "self_renormalization",
+        "normalization": false,
+        "scheme": "ratio",
+        "kernel_id": "z_msbar_da_nlo",
+        "mu": 2.0,
+        "LambdaQCD_gev": 0.1
+      },
+      "jobs": [
+        {
+          "id": "rn_zr_fit",
+          "inputs": {
+            "reference": {
+              "file": "data_kaon_da_gi/correlators/self_renormalization/pion_zero_momentum_reference.nc"
+            }
+          },
+          "type": "fit",
+          "kernel_id": "z_msbar_pdf_nlo",
+          "d": -0.08183
+        },
+        {
+          "id": "rn_a06m130_pz6",
+          "inputs": {
+            "target": "ca_a06m130_pz6",
+            "zR": "rn_zr_fit"
+          },
+          "d": 0.19,
+          "m0_gev": -0.094
+        },
+        {
+          "id": "rn_a09m130_pz6",
+          "inputs": {
+            "target": "ca_a09m130_pz6",
+            "zR": "rn_zr_fit"
+          },
+          "d": 0.19,
+          "m0_gev": -0.094
+        },
+        {
+          "id": "rn_a12m130_pz6",
+          "inputs": {
+            "target": "ca_a12m130_pz6",
+            "zR": "rn_zr_fit"
+          },
+          "d": 0.19,
+          "m0_gev": -0.094
+        },
+        {
+          "id": "rn_a06m130_pz8",
+          "inputs": {
+            "target": "ca_a06m130_pz8",
+            "zR": "rn_zr_fit"
+          },
+          "d": 0.19,
+          "m0_gev": -0.094
+        },
+        {
+          "id": "rn_a09m130_pz8",
+          "inputs": {
+            "target": "ca_a09m130_pz8",
+            "zR": "rn_zr_fit"
+          },
+          "d": 0.19,
+          "m0_gev": -0.094
+        },
+        {
+          "id": "rn_a12m130_pz8",
+          "inputs": {
+            "target": "ca_a12m130_pz8",
+            "zR": "rn_zr_fit"
+          },
+          "d": 0.19,
+          "m0_gev": -0.094
+        },
+        {
+          "id": "rn_a06m130_pz10",
+          "inputs": {
+            "target": "ca_a06m130_pz10",
+            "zR": "rn_zr_fit"
+          },
+          "d": 0.19,
+          "m0_gev": -0.094
+        },
+        {
+          "id": "rn_a09m130_pz10",
+          "inputs": {
+            "target": "ca_a09m130_pz10",
+            "zR": "rn_zr_fit"
+          },
+          "d": 0.19,
+          "m0_gev": -0.094
+        },
+        {
+          "id": "rn_a12m130_pz10",
+          "inputs": {
+            "target": "ca_a12m130_pz10",
+            "zR": "rn_zr_fit"
+          },
+          "d": 0.19,
+          "m0_gev": -0.094
+        }
+      ]
+    },
+    "fourier_transform": {
+      "defaults": {
+        "quasi_y_ls": {
+          "start": -1.0,
+          "stop": 2.0,
+          "num": 600
+        },
+        "scheme_scan": {
+          "order": [
+            "LA",
+            "NLA"
+          ],
+          "sector": "full",
+          "Lambda0_gev": 0.0,
+          "posterior_prior_error_scale": [
+            2.0,
+            3.0,
+            5.0
+          ],
+          "model_average": true
+        },
+        "phase_transfer_da": false,
+        "psi1_flavor_class": "light",
+        "psi2_flavor_class": "light"
+      },
+      "jobs": [
+        {
+          "id": "ft_a06m130_pz6",
+          "inputs": {
+            "input": "rn_a06m130_pz6"
+          },
+          "zmin_fm": [
+            0.7462
+          ],
+          "zmax_fm": [
+            1.4924
+          ],
+          "smooth": "linear",
+          "zmax_ext_fm": 3
+        },
+        {
+          "id": "ft_a09m130_pz6",
+          "inputs": {
+            "input": "rn_a09m130_pz6"
+          },
+          "zmin_fm": [
+            0.6174
+          ],
+          "zmax_fm": [
+            1.4994
+          ],
+          "smooth": "linear",
+          "zmax_ext_fm": 3
+        },
+        {
+          "id": "ft_a12m130_pz6",
+          "inputs": {
+            "input": "rn_a12m130_pz6"
+          },
+          "zmin_fm": [
+            0.9704
+          ],
+          "zmax_fm": [
+            1.213
+          ],
+          "smooth": "linear",
+          "zmax_ext_fm": 3
+        },
+        {
+          "id": "ft_a06m130_pz8",
+          "inputs": {
+            "input": "rn_a06m130_pz8"
+          },
+          "zmin_fm": [
+            0.7462
+          ],
+          "zmax_fm": [
+            1.2628
+          ],
+          "smooth": "linear",
+          "zmax_ext_fm": 3
+        },
+        {
+          "id": "ft_a09m130_pz8",
+          "inputs": {
+            "input": "rn_a09m130_pz8"
+          },
+          "zmin_fm": [
+            0.6174
+          ],
+          "zmax_fm": [
+            0.9702
+          ],
+          "smooth": "linear",
+          "zmax_ext_fm": 3
+        },
+        {
+          "id": "ft_a12m130_pz8",
+          "inputs": {
+            "input": "rn_a12m130_pz8"
+          },
+          "zmin_fm": [
+            0.7278
+          ],
+          "zmax_fm": [
+            0.9704
+          ],
+          "smooth": "linear",
+          "zmax_ext_fm": 3
+        },
+        {
+          "id": "ft_a06m130_pz10",
+          "inputs": {
+            "input": "rn_a06m130_pz10"
+          },
+          "zmin_fm": [
+            0.7462
+          ],
+          "zmax_fm": [
+            1.2054
+          ],
+          "smooth": "linear",
+          "zmax_ext_fm": 3
+        },
+        {
+          "id": "ft_a09m130_pz10",
+          "inputs": {
+            "input": "rn_a09m130_pz10"
+          },
+          "zmin_fm": [
+            0.7938
+          ],
+          "zmax_fm": [
+            0.9702
+          ],
+          "smooth": "linear",
+          "zmax_ext_fm": 3
+        },
+        {
+          "id": "ft_a12m130_pz10",
+          "inputs": {
+            "input": "rn_a12m130_pz10"
+          },
+          "zmin_fm": [
+            0.8491
+          ],
+          "zmax_fm": [
+            1.0917
+          ],
+          "smooth": "linear",
+          "zmax_ext_fm": 3
+        }
+      ]
+    },
+    "perturbative_matching": {
+      "defaults": {
+        "scheme": "ratio",
+        "order": "nlo",
+        "resummation": "",
+        "resummation_part": "",
+        "mu": 2.0,
+        "lc_x_ls": {
+          "start": -1.0,
+          "stop": 2.0
+        }
+      },
+      "jobs": [
+        {
+          "id": "mt_a06m130_pz6",
+          "inputs": {
+            "quasi": "ft_a06m130_pz6"
+          }
+        },
+        {
+          "id": "mt_a09m130_pz6",
+          "inputs": {
+            "quasi": "ft_a09m130_pz6"
+          }
+        },
+        {
+          "id": "mt_a12m130_pz6",
+          "inputs": {
+            "quasi": "ft_a12m130_pz6"
+          }
+        },
+        {
+          "id": "mt_a06m130_pz8",
+          "inputs": {
+            "quasi": "ft_a06m130_pz8"
+          }
+        },
+        {
+          "id": "mt_a09m130_pz8",
+          "inputs": {
+            "quasi": "ft_a09m130_pz8"
+          }
+        },
+        {
+          "id": "mt_a12m130_pz8",
+          "inputs": {
+            "quasi": "ft_a12m130_pz8"
+          }
+        },
+        {
+          "id": "mt_a06m130_pz10",
+          "inputs": {
+            "quasi": "ft_a06m130_pz10"
+          }
+        },
+        {
+          "id": "mt_a09m130_pz10",
+          "inputs": {
+            "quasi": "ft_a09m130_pz10"
+          }
+        },
+        {
+          "id": "mt_a12m130_pz10",
+          "inputs": {
+            "quasi": "ft_a12m130_pz10"
+          }
+        }
+      ]
+    },
+    "extrapolation": {
+      "defaults": {
+        "x_independent_terms": [
+          "a2"
+        ],
+        "x_dependent_terms": [
+          "inv_p2",
+          "ap2",
+          "inv_p4"
+        ],
+        "pdep_gev": [
+          1.5,
+          2.0,
+          2.5
+        ],
+        "posterior_prior_error_scale": 3.0
+      },
+      "jobs": [
+        {
+          "id": "extrapolate_all",
+          "inputs": {
+            "distributions": [
+              "mt_a06m130_pz6",
+              "mt_a09m130_pz6",
+              "mt_a12m130_pz6",
+              "mt_a06m130_pz8",
+              "mt_a09m130_pz8",
+              "mt_a12m130_pz8",
+              "mt_a06m130_pz10",
+              "mt_a09m130_pz10",
+              "mt_a12m130_pz10"
+            ]
+          }
+        }
+      ]
+    },
+    "review": {
+      "defaults": {
+        "catalog": "builtin",
+        "max_papers": 4,
+        "report_language": "en",
+        "checks": [
+          "identity",
+          "units",
+          "kinematics",
+          "schemes",
+          "grids",
+          "resampling",
+          "extrapolation"
+        ]
+      },
+      "jobs": [
+        {
+          "id": "review",
+          "inputs": {
+            "results": [
+              "ca_a06m130_pz6",
+              "ca_a09m130_pz6",
+              "ca_a12m130_pz6",
+              "ca_a06m130_pz8",
+              "ca_a09m130_pz8",
+              "ca_a12m130_pz8",
+              "ca_a06m130_pz10",
+              "ca_a09m130_pz10",
+              "ca_a12m130_pz10",
+              "rn_zr_fit",
+              "rn_a06m130_pz6",
+              "rn_a09m130_pz6",
+              "rn_a12m130_pz6",
+              "rn_a06m130_pz8",
+              "rn_a09m130_pz8",
+              "rn_a12m130_pz8",
+              "rn_a06m130_pz10",
+              "rn_a09m130_pz10",
+              "rn_a12m130_pz10",
+              "ft_a06m130_pz6",
+              "ft_a09m130_pz6",
+              "ft_a12m130_pz6",
+              "ft_a06m130_pz8",
+              "ft_a09m130_pz8",
+              "ft_a12m130_pz8",
+              "ft_a06m130_pz10",
+              "ft_a09m130_pz10",
+              "ft_a12m130_pz10",
+              "mt_a06m130_pz6",
+              "mt_a09m130_pz6",
+              "mt_a12m130_pz6",
+              "mt_a06m130_pz8",
+              "mt_a09m130_pz8",
+              "mt_a12m130_pz8",
+              "mt_a06m130_pz10",
+              "mt_a09m130_pz10",
+              "mt_a12m130_pz10",
+              "extrapolate_all"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "systematics": {
+    "fourier_transform": {
+      "variants": [
+        {
+          "id": "lambda_low",
+          "tail_window_step_offset": -1
+        }
+      ]
+    },
+    "perturbative_matching": {
+      "variants": [
+        {
+          "id": "mu_low",
+          "mu_factor": 0.7071067811865475
+        },
+        {
+          "id": "mu_high",
+          "mu_factor": 1.4142135623730951
+        }
+      ]
+    },
+    "extrapolation": {
+      "variants": [
+        {
+          "id": "a_model",
+          "append_x_independent_terms": ["a4"]
+        },
+        {
+          "id": "inv_p_model",
+          "remove_x_dependent_terms": ["inv_p4"]
+        },
+        {
+          "id": "ap_model",
+          "append_x_dependent_terms": [
+            "ap4"
+          ]
+        }
+      ]
+    }
+  }
+}

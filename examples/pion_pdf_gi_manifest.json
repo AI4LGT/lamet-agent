@@ -1,0 +1,190 @@
+{
+  "metadata": {
+    "run_id": "pion_pdf_gi",
+    "root_directory": "..",
+    "artifacts_directory": "runs/pion_pdf_gi/artifacts",
+    "random_seed": 1984,
+    "workers": 4,
+    "target_observable": "pdf",
+    "parton": "quark",
+    "resample_mode": "jackknife",
+    "bin_size": 1,
+    "sample_error_mode": "variance"
+  },
+  "stages": {
+    "correlator_analysis": {
+      "defaults": {
+        "component": "re",
+        "nstate": [
+          2
+        ],
+        "fit_scope": [
+          "2pt+3pt_ratio"
+        ],
+        "fitting_form": "Breit",
+        "model_average": false,
+        "pt2_windows": [
+          {
+            "tmin": 4,
+            "tmax": 12
+          },
+          {
+            "tmin": 5,
+            "tmax": 12
+          },
+          {
+            "tmin": 6,
+            "tmax": 12
+          }
+        ],
+        "pt3_windows": [
+          {
+            "tsep_ls": [
+              8,
+              10
+            ],
+            "tau_cut": 3
+          }
+        ],
+        "svdcut": 0.000001,
+        "posterior_prior_error_scale": 10.0,
+        "q_min": 0.05
+      },
+      "jobs": [
+        {
+          "id": "ca_p0",
+          "inputs": {
+            "correlators": [
+              {"json": "examples/pion_pdf_gi_correlators.json", "id": "p0_2pt"},
+              {"json": "examples/pion_pdf_gi_correlators.json", "id": "p0_3pt"}
+            ]
+          }
+        },
+        {
+          "id": "ca_p4",
+          "inputs": {
+            "correlators": [
+              {"json": "examples/pion_pdf_gi_correlators.json", "id": "p4_2pt"},
+              {"json": "examples/pion_pdf_gi_correlators.json", "id": "p4_3pt"}
+            ]
+          }
+        }
+      ]
+    },
+    "renormalization": {
+      "defaults": {
+        "strategy": "external_denominator",
+        "normalization": true,
+        "scheme": "hybrid",
+        "zs_fm": 0.18,
+        "m0_gev": 0.1232,
+        "delta_m_gev": 0.5207366666666666
+      },
+      "jobs": [
+        {
+          "id": "rn_p4",
+          "inputs": {
+            "target": "ca_p4",
+            "denominator": "ca_p0"
+          }
+        }
+      ]
+    },
+    "fourier_transform": {
+      "defaults": {
+        "quasi_y_ls": {
+          "start": -2.0,
+          "stop": 2.0,
+          "num": 200
+        },
+        "zmin_fm": [
+          0.66,
+          0.72,
+          0.78,
+          0.84
+        ],
+        "zmax_fm": [
+          1.08,
+          1.14,
+          1.2,
+          1.26
+        ],
+        "smooth": "linear",
+        "zmax_ext_fm": 1.5,
+        "scheme_scan": {
+          "order": [
+            "LA",
+            "NLA"
+          ],
+          "sector": "valence",
+          "Lambda0_gev": 0.1,
+          "posterior_prior_error_scale": [
+            3.0,
+            4.0,
+            5.0
+          ],
+          "model_average": false
+        }
+      },
+      "jobs": [
+        {
+          "id": "ft_p4",
+          "inputs": {
+            "input": "rn_p4"
+          }
+        }
+      ]
+    },
+    "perturbative_matching": {
+      "defaults": {
+        "scheme": "hybrid",
+        "order": "nlo",
+        "resummation": "lrr",
+        "resummation_part": "",
+        "mu": 2.0,
+        "lc_x_ls": {
+          "start": 0.0,
+          "stop": 1.0
+        },
+        "zs_fm": 0.18
+      },
+      "jobs": [
+        {
+          "id": "mt_p4",
+          "inputs": {
+            "quasi": "ft_p4"
+          }
+        }
+      ]
+    },
+    "review": {
+      "defaults": {
+        "catalog": "builtin",
+        "max_papers": 4,
+        "report_language": "en",
+        "checks": [
+          "identity",
+          "units",
+          "kinematics",
+          "schemes",
+          "grids",
+          "resampling"
+        ]
+      },
+      "jobs": [
+        {
+          "id": "review",
+          "inputs": {
+            "results": [
+              "ca_p0",
+              "ca_p4",
+              "rn_p4",
+              "ft_p4",
+              "mt_p4"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
