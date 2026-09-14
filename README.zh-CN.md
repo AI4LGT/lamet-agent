@@ -16,7 +16,7 @@
 `--api-key-file`。
 
 ```bash
-git clone https://github.com/Greyyy-HJC/lamet-agent.git && cd lamet-agent
+git clone https://github.com/AI4LGT/lamet-agent.git && cd lamet-agent
 python3 -m venv .venv && source .venv/bin/activate
 python3 -m pip install --upgrade pip && python3 -m pip install -e ".[codex]"
 ```
@@ -366,133 +366,6 @@ pion_3pt.h5
 动量是整数三元组。非 null 的 `current` 恰好包含 `kernel_operator`、`parton` 和 `renormalization_scheme`。descriptor 是所有 coordinates 和 provenance fields 的权威来源。同一 job 中选定的 records 必须具有相同的 ensemble 和 configuration count。
 
 完整 descriptors 参见 `examples/pion_pdf_cg_correlators.json` 和 `examples/pion_da_gi_correlators.json`。
-
-## 跨 Stage 的 Manifest 语义
-
-本节记录跨越 stage 边界的约定。各参数的具体细节仍由 stage contracts 和示例 manifests 定义。
-
-### Ratio 重整化
-
-Renormalization 将物理 `scheme` 与实现 `strategy` 分开：
-
-- `scheme`：`ratio`、`hybrid` 或 `msbar`；
-- `strategy`：`external_denominator` 或 `self_renormalization`。
-
-external-denominator ratio 对保留的每个 target sample 逐点相除，
-
-$$
-h_s^R(z)=\frac{h_s^{\mathrm{target}}(z)}
-{h_s^{\mathrm{denominator}}(z)}.
-$$
-
-denominator 可以是先前的 job、NetCDF 文件，或者 contract 允许的有限非零常量。Hybrid jobs 还使用 `zs_fm`、`m0_gev` 和 `delta_m_gev` 来衔接短程与长程 prescription。
-
-`scheme` 和 hybrid 的 `zs_fm` 只在 renormalization 中配置，输出将其记录为 `EnsembleData.attrs` 中的 `renormalization_scheme` 和 `zs_fm`，经过 Fourier 传递后由 matching 直接读取。Matching 配置 `order` 和 `resummation`，目前 `order` 只支持 `nlo`。kernel id 根据这些选择和上游 attrs（`parton`、`target_observable`、`gfix`、`kernel_operator`、`renormalization_scheme`、`source_component`）自动生成。`rgr` 使用来源通道 `re` 或 `im` 作为后缀，`lrr` 不带通道后缀。`source_component` 记录矩阵元来源，`output_component` 记录 x 空间数值分量；标准 Hermitian 补全输出实数，成对非前向 GPD flow 可以保留复数。已有 manifest 需删除 matching 中的 `scheme`、`zs_fm` 和 `resummation_part`；缺少上述 attrs 的旧 Fourier artifact 需重新生成。加载实际 kernel 后会按函数注解检查 kernel 参数类型，`kernel_parameters` 不允许覆盖 `zs_fm`。
-
-### `inputs.correlators[].polarization` 和 Fourier sectors
-
-关联函数 descriptors 保留 hadron、current、gauge-fixing/link convention、source 和 sink momentum 以及 polarization provenance。Renormalization 将这些 provenance 写入其 NetCDF 输出。Fourier 根据上游结果和 manifest metadata 推导 tail family 和 projection。
-
-PDF jobs 使用 `unpolarized`、`helicity` 或 `transversity` polarization，以及 `valence`、`singlet` 或 `full` Fourier sector。DA 使用完整复数结果，并可以选择有序的 light/heavy endpoint flavor classes。GPD 通过可选的 `hermitian_partner` role 和 phase-transfer convention 支持成对的 forward/exchanged flows。
-
-Fourier 输入的 `z` coordinates 是以 fm 为单位的物理距离。Tail ranges 使用 `zmin_fm`、`zmax_fm` 和 `zmax_ext_fm`；momentum 和 lattice provenance 从上游数据读取，而不作为编写的 stage 参数重复声明。
-
-### 每个 job 的 hybrid `zs_fm`
-
-hybrid switch distance 属于使用它的数值 job。应分别在 renormalization 和 perturbative matching 下声明。两者均可获得时，Review 会检查完整 manifest chain 中的值。外部 partial workflow 可能无法提供足够 provenance 来验证这种关系，此时会如实报告。
-
-### `metadata.random_seed`、`metadata.samples`、`metadata.sample_error_mode`、`metadata.bin_size`、`metadata.workers`
-
-这些字段是全局运行 sampling 和 parallelism 配置的来源：
-
-- `random_seed` 为可复现的 bootstrap/jackknife 和运行时数值建议设置 seed；
-- `samples` 选择 bootstrap replica 数量；
-- `sample_error_mode` 选择 covariance、variance-only 或 median one-sigma summaries；
-- `bin_size` 在重采样前对原始 configurations 求平均；
-- `workers` 限制独立进程工作量。
-
-## Self-Renormalization 策略
-
-`strategy: "self_renormalization"` 将 reusable factor 的拟合与其在一个或多个 targets 上的应用分开。
-
-fit job 使用 `inputs.reference`，它可以是不同 lattice spacings 的有序列表。该 job 使用选定的 coordinate-space MSbar kernel、QCD scale、finite correction 和 covariance regularization，在正 physical-z grid 上确定一个携带 samples 的 factor。前三个正 z 坐标定义当前实现的短程拟合范围。
-
-apply job 使用 `inputs.target` 和 `inputs.zR`。当 factor 具有 `a` 维度时，它选择匹配的 lattice spacing，验证 scale 和 provenance，可选地在 `z=0` 处归一化，并逐 sample 应用选定的 ratio、hybrid 或 MSbar prescription。
-
-覆盖范围由 `z_coverage_policy` 控制：
-
-- `strict`：要求 target grid 完全位于拟合 factor 内；
-- `intersection`：仅保留共同 grid；
-- `extrapolate`：仅允许使用已实现的 quadratic finite-term tail 向更大的长程 z 补全。
-
-### 工作流
-
-```text
-reference source(s)
-        │
-        ▼
-┌──────────────────────────┐
-│ self-renormalization fit │
-│ type = fit               │
-└────────────┬─────────────┘
-             │ zR job id / output.nc
-             ▼
-┌──────────────────────────┐
-│ target application       │
-│ type = apply             │
-└────────────┬─────────────┘
-             ▼
- renormalized matrix element
-```
-
-### Manifest 结构
-
-```json
-{
-  "stages": {
-    "renormalization": {
-      "defaults": {
-        "strategy": "self_renormalization",
-        "scheme": "ratio",
-        "normalization": false,
-        "kernel_id": "z_msbar_pdf_nlo",
-        "kernel_parameters": {},
-        "mu": 2.0,
-        "LambdaQCD_gev": 0.1,
-        "z_coverage_policy": "extrapolate"
-      },
-      "jobs": [
-        {
-          "id": "rn_factor",
-          "type": "fit",
-          "d": -0.08183,
-          "inputs": {"reference": [{"file": "reference_a06.nc"}]}
-        },
-        {
-          "id": "rn_target",
-          "type": "apply",
-          "d": 0.19,
-          "m0_gev": -0.094,
-          "inputs": {
-            "target": "ca_target",
-            "zR": "rn_factor"
-          }
-        }
-      ]
-    }
-  }
-}
-```
-
-### 参数
-
-contract 区分 fit-only、apply-only 和 hybrid-only 参数。常见 self-renormalization 字段包括 `kernel_id`、`kernel_parameters`、`mu`、`LambdaQCD_gev`、`svdcut` 和 `z_coverage_policy`。fit 要求 reference operator 的 `d`；apply 要求 target operator 的 `d` 和 `m0_gev`。Hybrid application 还要求 `zs_fm` 和 denominator。
-
-### 输出
-
-- fit jobs 为 reusable factor 写出 `output.nc`、`diagnostics/self_renormalization.json` 以及 `plots/` 下的 fit panels。
-- apply jobs 写出重整化后的 `output.nc`、`diagnostics/renormalization.json` 和结果图。
-- stage report 链接每个已声明的 artifact，并总结 coverage、parameter provenance 和 fit quality。
 
 ## 开发
 
