@@ -27,7 +27,6 @@ from lamet_agent.agent import (
 from lamet_agent.contract import (
     CheckContext,
     Depends,
-    Issue,
     List,
     Provides,
     Recommends,
@@ -1715,6 +1714,17 @@ def test_correlator_fit_scope_rejects_legacy_mixed_and_duplicate_pipelines(fit_s
         parse_fit_scope(fit_scope)
 
 
+def test_nstate_combinations_expand_per_atom_grids() -> None:
+    from lamet_agent.stages.correlator_analysis._scope import nstate_combinations
+
+    assert nstate_combinations({"2pt": [1, 2], "3pt_ratio": [1]}, ["2pt+3pt_ratio"]) == [
+        {"2pt": 1, "3pt_ratio": 1},
+        {"2pt": 2, "3pt_ratio": 1},
+    ]
+    with pytest.raises(ValueError, match="individual correlator atoms"):
+        nstate_combinations({"2pt+3pt_ratio": [2]}, ["2pt+3pt_ratio"])
+
+
 def test_manifest_enforces_global_sampling_relationships(tmp_path: Path) -> None:
     metadata = _valid_metadata(tmp_path, resample_mode="bootstrap")
     manifest = Manifest(tmp_path / "manifest.json", {"metadata": metadata, "stages": {}})
@@ -1986,8 +1996,8 @@ def test_correlator_contract_keeps_lanczos_and_ground_fit_parameters_exclusive()
     ground_fit = {
         "analysis_method": "lsqfit",
         "component": "re",
-        "nstate": [2],
         "fit_scope": ["2pt"],
+        "nstate": {"2pt": [2]},
         "fitting_form": "Breit",
         "model_average": False,
         "pt2_windows": [{"tmin": 2, "tmax": 8}],
@@ -2009,12 +2019,14 @@ def test_correlator_contract_keeps_lanczos_and_ground_fit_parameters_exclusive()
 @pytest.mark.parametrize("state_counts", [[2], [1, 2]])
 @pytest.mark.parametrize("fit_scope", [["qda_ratio"], ["2pt", "qda"], ["2pt+qda"]])
 def test_correlator_contract_allows_qda_candidate_grid(state_counts: list[int], fit_scope: list[str]) -> None:
+    from lamet_agent.stages.correlator_analysis._scope import parse_fit_scope
+
     contract = _load_stage_contract("correlator_analysis")
     qda_fit = {
         "analysis_method": "lsqfit",
         "component": "both",
-        "nstate": state_counts,
         "fit_scope": fit_scope,
+        "nstate": {atom: state_counts for atom in parse_fit_scope(fit_scope).atoms},
         "fitting_form": "Breit",
         "model_average": False,
         "pt2_windows": [{"tmin": 2, "tmax": 14}],
@@ -2034,13 +2046,77 @@ def test_correlator_contract_allows_qda_candidate_grid(state_counts: list[int], 
     )
 
 
+def test_correlator_contract_requires_nstate_keys_to_match_fit_scope() -> None:
+    contract = _load_stage_contract("correlator_analysis")
+    params = {
+        "analysis_method": "lsqfit",
+        "component": "re",
+        "fit_scope": ["2pt", "3pt_ratio"],
+        "nstate": {"2pt": [2]},
+        "fitting_form": "Breit",
+        "model_average": False,
+        "pt2_windows": [{"tmin": 3, "tmax": 8}],
+        "pt3_windows": [{"tsep_ls": [8], "tau_cut": 2}],
+        "svdcut": 1e-6,
+        "posterior_prior_error_scale": 1.0,
+        "q_min": 0.05,
+    }
+    assert evaluate_rules(params, contract.PARAM_RULES) == []
+    issues = evaluate_checks(contract.CHECKS, CheckContext({}, "correlator_analysis", "job", params, {}))
+    assert any(issue.path == "nstate" and "fit_scope" in issue.message for issue in issues)
+
+
+def test_correlator_contract_rejects_joint_nstate_keys() -> None:
+    contract = _load_stage_contract("correlator_analysis")
+    params = {
+        "analysis_method": "lsqfit",
+        "component": "re",
+        "fit_scope": ["2pt+3pt_ratio"],
+        "nstate": {"2pt+3pt_ratio": [2]},
+        "fitting_form": "Breit",
+        "model_average": False,
+        "pt2_windows": [{"tmin": 3, "tmax": 8}],
+        "pt3_windows": [{"tsep_ls": [8], "tau_cut": 2}],
+        "svdcut": 1e-6,
+        "posterior_prior_error_scale": 1.0,
+        "q_min": 0.05,
+    }
+    issues = evaluate_rules(params, contract.PARAM_RULES)
+    assert any(issue.path == "nstate" for issue in issues)
+
+
+def test_correlator_contract_allows_unequal_atom_nstates() -> None:
+    contract = _load_stage_contract("correlator_analysis")
+    params = {
+        "analysis_method": "lsqfit",
+        "component": "re",
+        "fit_scope": ["2pt+3pt_ratio"],
+        "nstate": {"2pt": [2], "3pt_ratio": [1]},
+        "fitting_form": "Breit",
+        "model_average": False,
+        "pt2_windows": [{"tmin": 3, "tmax": 8}],
+        "pt3_windows": [{"tsep_ls": [8], "tau_cut": 2}],
+        "svdcut": 1e-6,
+        "posterior_prior_error_scale": 1.0,
+        "q_min": 0.05,
+    }
+    assert evaluate_rules(params, contract.PARAM_RULES) == []
+    assert (
+        evaluate_checks(
+            contract.CHECKS,
+            CheckContext({}, "correlator_analysis", "job", params, {}),
+        )
+        == []
+    )
+
+
 def test_correlator_contract_allows_model_average() -> None:
     contract = _load_stage_contract("correlator_analysis")
     params = {
         "analysis_method": "lsqfit",
         "component": "re",
-        "nstate": [1, 2],
         "fit_scope": ["2pt+3pt"],
+        "nstate": {"2pt": [1, 2], "3pt": [1, 2]},
         "fitting_form": "Breit",
         "model_average": True,
         "pt2_windows": [{"tmin": 3, "tmax": 8}],
@@ -2064,8 +2140,8 @@ def test_correlator_contract_rejects_nonbreit_without_a_three_point_path() -> No
     params = {
         "analysis_method": "lsqfit",
         "component": "re",
-        "nstate": [1],
         "fit_scope": ["2pt"],
+        "nstate": {"2pt": [1]},
         "fitting_form": "NonBreit",
         "model_average": False,
         "pt2_windows": [{"tmin": 2, "tmax": 8}],
@@ -2120,52 +2196,37 @@ def test_correlator_descriptors_use_physical_field_names() -> None:
                 assert "observable" not in current
 
 
-def test_matching_check_reports_resummation_part_constraints() -> None:
+def test_matching_contract_rejects_removed_resummation_part() -> None:
     contract = _load_stage_contract("perturbative_matching")
-    context = CheckContext(
-        {},
-        "perturbative_matching",
-        "job",
-        {
-            "scheme": "ratio",
-            "order": "nlo",
-            "resummation": "",
-            "resummation_part": "re",
-            "zs_fm": 0.2,
-        },
-        {"quasi": "earlier"},
-    )
-    issues = evaluate_checks(contract.CHECKS, context)
-    assert [(issue.path, issue.message) for issue in issues] == [
-        ("resummation_part", "requires resummation='rgr'")
-    ]
+    params = {
+        "order": "nlo",
+        "resummation": "rgr",
+        "resummation_part": "re",
+        "mu": 2.0,
+        "lc_x_ls": [0.0, 1.0],
+        "kernel_parameters": {},
+    }
+    issues = evaluate_rules(params, contract.PARAM_RULES)
+    assert [(issue.path, issue.message) for issue in issues] == [("resummation_part", "unknown key 'resummation_part'")]
 
 
 def test_matching_contract_accepts_resummation_combinations() -> None:
     contract = _load_stage_contract("perturbative_matching")
 
-    def issues(resummation: str, part: str):
+    def issues(resummation: str):
         params = {
-            "scheme": "hybrid",
             "order": "nlo",
             "resummation": resummation,
-            "resummation_part": part,
             "mu": 2.0,
             "lc_x_ls": [0.0, 1.0],
             "kernel_parameters": {},
-            "zs_fm": 0.18,
         }
         context = CheckContext({}, "perturbative_matching", "job", params, {"quasi": "earlier"})
         return evaluate_checks(contract.CHECKS, context)
 
-    assert issues("", "") == []
-    assert issues("rgr", "re") == []
-    assert issues("rgr", "im") == []
-    assert issues("rgr", "both") == []
-    assert issues("lrr", "") == []
-    assert issues("", "re")[0].path == "resummation_part"
-    assert issues("lrr", "im")[0].path == "resummation_part"
-    assert issues("rgr", "")[0].path == "resummation_part"
+    assert issues("") == []
+    assert issues("rgr") == []
+    assert issues("lrr") == []
 
 
 def test_matching_kernel_parameter_rules_require_a_dict_and_required_signature_values() -> None:
@@ -2587,7 +2648,6 @@ def test_deterministic_stage_workflow_bypasses_the_backend(tmp_path: Path, monke
         {
             "scheme": "ratio",
             "resummation": "",
-            "resummation_part": "",
             "mu": 2.0,
             "lc_x_ls": [0.0, 1.0],
             "kernel_parameters": {},
@@ -2767,7 +2827,7 @@ def test_joint_qda_null_hook_and_tune_z_share_one_recommendation(tmp_path: Path)
         {
             "component": "re",
             "fit_scope": ["qda_ratio"],
-            "nstate": [1],
+            "nstate": {"qda_ratio": [1]},
         },
         {},
         {},
@@ -2822,7 +2882,7 @@ def test_spectrum_recommendation_describes_its_initial_request(tmp_path: Path) -
         tmp_path / "manifest.json",
         "correlator_analysis",
         "spectrum",
-        {"component": "re", "nstate": [1, 2]},
+        {"component": "re", "fit_scope": ["2pt"], "nstate": {"2pt": [1, 2]}},
         {},
         {},
         {
@@ -3561,3 +3621,11 @@ def test_finish_rejects_a_declared_artifact_that_does_not_exist(tmp_path: Path) 
     }
     with pytest.raises(FileNotFoundError, match="missing.md"):
         context.finish("report", summary)
+
+
+@pytest.mark.parametrize(("key", "value"), [("scheme", "hybrid"), ("zs_fm", 0.18)])
+def test_matching_contract_rejects_manual_renormalization_settings(key, value) -> None:
+    contract = _load_stage_contract("perturbative_matching")
+    params = {"order": "nlo", "mu": 2.0, "lc_x_ls": [0.25, 0.75], "kernel_parameters": {}, key: value}
+    issues = evaluate_rules(params, contract.PARAM_RULES)
+    assert [(issue.path, issue.message) for issue in issues] == [(key, f"unknown key '{key}'")]

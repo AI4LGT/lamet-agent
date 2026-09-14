@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from lamet_agent.data import EnsembleData, EnsembleInfo
 from lamet_agent.stages._reporting import StageReportRecord
@@ -28,8 +29,8 @@ def _correlator_lsqfit_params() -> dict:
     return {
         "analysis_method": "lsqfit",
         "component": "re",
-        "nstate": [2],
         "fit_scope": ["2pt+3pt"],
+        "nstate": {"2pt": [2], "3pt": [2]},
         "fitting_form": "Breit",
         "pt2_windows": [{"tmin": 3, "tmax": 8}],
         "pt3_windows": [{"tsep_ls": [8], "tau_cut": 2}],
@@ -126,8 +127,8 @@ def test_correlator_stage_report_contains_method_candidates_and_artifacts(tmp_pa
     params = {
         "analysis_method": "lsqfit",
         "component": "re",
-        "nstate": [2],
         "fit_scope": ["2pt+3pt"],
+        "nstate": {"2pt": [2], "3pt": [2]},
         "fitting_form": "Breit",
         "pt2_windows": [{"tmin": 3, "tmax": 8}],
         "pt3_windows": [{"tsep_ls": [8], "tau_cut": 2}],
@@ -595,6 +596,38 @@ def test_correlator_dispersion_fit_requires_more_momenta_than_parameters(tmp_pat
     assert all(width < 1.0 for width in band_widths)
 
 
+@pytest.mark.parametrize("second_spacing", [0.06, 0.06000000000001, 0.09])
+def test_renormalization_discrete_effect_requires_distinct_spacings(tmp_path: Path, second_spacing: float) -> None:
+    from lamet_agent.stages.renormalization.reporting import _grouped_overlay_lines
+
+    records = []
+    for job_id, scheme, spacing in [("rn_p4_re", "hybrid", 0.06), ("rn_p4_im", "msbar", second_spacing)]:
+        output = EnsembleData(
+            EnsembleInfo("test", job_id, spacing, spacing, 64, 128, 0.13),
+            "bootstrap",
+            [[0.8 + 0.1j, 0.7 + 0.2j], [0.9 + 0.2j, 0.8 + 0.3j]],
+            ["z"],
+            {"z": [0, 1]},
+            attrs={"momentum": "PX4PY4PZ0"},
+        )
+        records.append(_record(
+            tmp_path, job_id, params={"type": "apply", "scheme": scheme},
+            output=output, summary={"artifacts": []},
+        ))
+
+    text = "\n".join(_grouped_overlay_lines(tuple(records), tmp_path))
+
+    expected = second_spacing == 0.09
+    assert ("Fixed momentum: lattice-spacing dependence" in text) == expected
+    for component in ("real", "imag"):
+        for extension in ("svg", "pdf"):
+            filename = f"discrete_effect_px4py4pz0_{component}.{extension}"
+            assert (filename in text) == expected
+            assert (tmp_path / "plots" / filename).is_file() == expected
+    if not expected:
+        assert "renormalized_a0p06fm" in text
+
+
 def test_renormalization_stage_report_contains_scheme_formula(tmp_path: Path) -> None:
     from lamet_agent.stages.renormalization.reporting import write_stage_report
 
@@ -869,28 +902,36 @@ def test_matching_stage_report_embeds_shipped_kernel_document(tmp_path: Path) ->
     from lamet_agent.stages.perturbative_matching.reporting import write_stage_report
 
     stage = tmp_path / "04_perturbative_matching"
-    quasi = _data(attrs={"momentum_gev": 2.0, "output_scale": 1.0, "component": "both"})
+    quasi = _data(
+        attrs={"momentum_gev": 2.0, "output_scale": 1.0, "source_component": "both", "output_component": "both"}
+    )
     quasi = EnsembleData(
         None,
         "bootstrap",
         [np.asarray(sample) + 0.2j * np.asarray(sample) for sample in quasi.values],
         ["x"],
         {"x": quasi.coords["x"]},
-        attrs={"momentum_gev": 2.0, "output_scale": 1.0, "component": "both"},
+        attrs={
+            "momentum_gev": 2.0,
+            "output_scale": 1.0,
+            "source_component": "both",
+            "output_component": "both",
+        },
     )
     output = _data(
         attrs={
             "momentum_gev": 2.0,
             "output_scale": 1.0,
+            "source_component": "both",
+            "output_component": "both",
             "kernel_id": "quark_da_gi_gzg5_ratio_nlo",
+            "renormalization_scheme": "ratio",
         },
         values=[[0.7, 0.9], [0.8, 1.0]],
     )
     params = {
-        "scheme": "ratio",
         "order": "nlo",
         "resummation": "",
-        "resummation_part": "",
         "mu": 2.0,
         "kernel_parameters": {},
     }

@@ -473,8 +473,9 @@ def test_qda_two_state_ratio_recovers_ground_state_plateau() -> None:
     samples = []
     for _ in range(48):
         scale = 1.0 + rng.normal(0.0, 0.004)
+        point_noise = 1.0 + rng.normal(0.0, 0.002, times.size)
         numerator = correlator(o_re) + 1j * correlator(o_im)
-        samples.append(np.column_stack([local_c * scale, numerator * scale]))
+        samples.append(np.column_stack([local_c * scale * point_noise, numerator * scale * point_noise]))
     source = EnsembleData(
         ensemble,
         "bootstrap",
@@ -658,7 +659,10 @@ def test_qda_rejects_multiple_or_incompatible_explicit_two_point_inputs() -> Non
     ("fit_scope", "expected_n_data"),
     [(["2pt+qda_ratio"], 15), (["2pt", "qda_ratio"], 10)],
 )
-def test_qda_scope_pipeline_uses_local_denominator(fit_scope: list[str], expected_n_data: int) -> None:
+@pytest.mark.parametrize("ratio_states", [1, 2])
+def test_qda_scope_pipeline_uses_local_denominator(
+    fit_scope: list[str], expected_n_data: int, ratio_states: int
+) -> None:
     rng = np.random.default_rng(23)
     ensemble = _ensemble(0.1)
     times = np.arange(8.0)
@@ -691,6 +695,7 @@ def test_qda_scope_pipeline_uses_local_denominator(fit_scope: list[str], expecte
         tune_z=1.0,
         fit_samples=False,
         fit_scope=fit_scope,
+        n_states={"2pt": 1, "qda_ratio": ratio_states},
     )
 
     assert values is None
@@ -841,7 +846,7 @@ def test_correlator_publish_requires_complete_scan_and_deterministic_best_candid
             "id": "matrix_001",
             "method": "lsqfit",
             "fit_scope": ["qda_ratio"],
-            "nstate": 1,
+            "nstate": {"qda_ratio": 1},
             "prior_width": 1.0,
             "observable": "matrix_element",
             "window": {"tmin": 2, "tmax": 5, "tau_min": None},
@@ -859,7 +864,7 @@ def test_correlator_publish_requires_complete_scan_and_deterministic_best_candid
             "id": "matrix_002",
             "method": "lsqfit",
             "fit_scope": ["qda_ratio"],
-            "nstate": 1,
+            "nstate": {"qda_ratio": 1},
             "prior_width": 1.0,
             "observable": "matrix_element",
             "window": {"tmin": 3, "tmax": 6, "tau_min": None},
@@ -877,8 +882,8 @@ def test_correlator_publish_requires_complete_scan_and_deterministic_best_candid
     params = {
         "observable": "matrix_element",
         "analysis_method": "lsqfit",
-        "nstate": [1],
         "fit_scope": ["qda_ratio"],
+        "nstate": {"qda_ratio": [1]},
         "prior_width": [1.0],
         "q_min": 0.9,
         "tune_z_values": [1],
@@ -1041,7 +1046,7 @@ def test_combine_matrix_samples_weights_per_sample_and_skips_failed_siblings() -
 
     combined = combine_matrix_samples(
         [
-            _model("low", [[1.0], [1.0]], [1.0, None]),
+            _model("low", [[1.0], [np.nan]], [1.0, None]),
             _model("high", [[3.0], [5.0]], [4.0, 4.0]),
         ]
     )
@@ -1068,6 +1073,29 @@ def test_matrix_element_prior_keeps_original_inactive_component_parameters() -> 
     assert float(prior["O00_im"].mean) == 1.0
     assert "log(E0)" in prior
     assert float(prior["E0"].mean) > 0.0
+
+
+def test_matrix_element_prior_unions_per_atom_state_counts() -> None:
+    two_plus_one = matrix_element_prior(
+        {"2pt": 2, "3pt_ratio": 1},
+        form="Breit",
+        scope=("2pt", "3pt_ratio"),
+        components=("re",),
+        width_scale=1.0,
+    )
+    assert "log(dE1)" in two_plus_one and "z1" in two_plus_one
+    assert "O00_re" in two_plus_one
+    assert "O01_re" not in two_plus_one and "O11_re" not in two_plus_one
+
+    one_plus_two = matrix_element_prior(
+        {"2pt": 1, "3pt_ratio": 2},
+        form="Breit",
+        scope=("2pt", "3pt_ratio"),
+        components=("re",),
+        width_scale=1.0,
+    )
+    assert "log(dE1)" in one_plus_two and "z1" in one_plus_two
+    assert "O00_re" in one_plus_two and "O01_re" in one_plus_two and "O11_re" in one_plus_two
 
 
 @pytest.mark.parametrize(
@@ -1188,7 +1216,7 @@ def test_matrix_fit_tool_records_a_numerically_rejected_candidate(monkeypatch, t
         "observable": "matrix_element",
         "analysis_method": "lsqfit",
         "component": "re",
-        "nstate": [2],
+        "nstate": {settings["fit_scope"][0]: [2]},
         "prior_width": [1.0],
         **settings,
     }
@@ -1263,7 +1291,7 @@ def test_matrix_fit_tool_scans_authored_grid_in_reference_order(monkeypatch, tmp
         "observable": "matrix_element",
         "analysis_method": "lsqfit",
         "component": "re",
-        "nstate": [2],
+        "nstate": {settings["fit_scope"][0]: [2]},
         **settings,
     }
     context = ToolContext(
@@ -1338,7 +1366,7 @@ def test_qda_fit_tool_tunes_every_window_before_full_application(monkeypatch, tm
         "observable": "matrix_element",
         "analysis_method": "lsqfit",
         "component": "both",
-        "nstate": [1],
+        "nstate": {settings["fit_scope"][0]: [1]},
         **settings,
     }
     context = ToolContext(
@@ -1405,7 +1433,7 @@ def test_publish_applies_only_the_selected_tuned_candidate_to_all_samples(monkey
         "observable": "matrix_element",
         "window": {"tmin": 3, "tmax": 8, "tau_min": 2},
         "tsep_values": [8],
-        "nstate": 2,
+        "nstate": {"3pt_ratio": 2},
         "prior_width": 1.0,
         "correlator_rescale": 1.0,
         "quality_passed": True,
@@ -1431,7 +1459,7 @@ def test_publish_applies_only_the_selected_tuned_candidate_to_all_samples(monkey
         "observable": "matrix_element",
         "analysis_method": "lsqfit",
         "component": "re",
-        "nstate": [2],
+        "nstate": {settings["fit_scope"][0]: [2]},
         "prior_width": [1.0],
         **settings,
     }
@@ -1465,7 +1493,10 @@ def test_publish_applies_only_the_selected_tuned_candidate_to_all_samples(monkey
     assert context.output is data
 
 
-def test_publish_model_average_applies_every_sibling_on_the_selected_dataset(monkeypatch, tmp_path) -> None:
+@pytest.mark.parametrize(("selected_fails", "primary_nstate"), [(False, 2), (True, 1), (False, 1)])
+def test_publish_model_average_applies_every_sibling_on_the_selected_dataset(
+    monkeypatch, tmp_path, selected_fails, primary_nstate
+) -> None:
     import lamet_agent.stages.correlator_analysis._publish as tool
 
     def _candidate(candidate_id: str, nstate: int, chi2_dof: float) -> dict[str, object]:
@@ -1476,7 +1507,7 @@ def test_publish_model_average_applies_every_sibling_on_the_selected_dataset(mon
             "observable": "matrix_element",
             "window": {"tmin": 3, "tmax": 8, "tau_min": 2},
             "tsep_values": [8],
-            "nstate": nstate,
+            "nstate": {"3pt_ratio": nstate},
             "prior_width": 1.0,
             "correlator_rescale": 1.0,
             "quality_passed": True,
@@ -1506,7 +1537,7 @@ def test_publish_model_average_applies_every_sibling_on_the_selected_dataset(mon
         "observable": "matrix_element",
         "analysis_method": "lsqfit",
         "component": "re",
-        "nstate": [1, 2],
+        "nstate": {settings["fit_scope"][0]: [1, 2]},
         "prior_width": [1.0],
         **settings,
     }
@@ -1526,8 +1557,10 @@ def test_publish_model_average_applies_every_sibling_on_the_selected_dataset(mon
 
     def apply_fit(*args, **kwargs):
         calls.append(kwargs)
-        nstate = int(kwargs["n_states"])
-        log_gbf = 1.0 if nstate == 1 else 4.0
+        nstate = int(kwargs["n_states"]["3pt_ratio"])
+        if selected_fails and nstate == 2:
+            raise FitNumericalError("selected model failed full-grid application")
+        log_gbf = 4.0 if nstate == primary_nstate else 1.0
         value = 1.0 if nstate == 1 else 3.0
         fit = {
             "z": 0.0,
@@ -1556,12 +1589,25 @@ def test_publish_model_average_applies_every_sibling_on_the_selected_dataset(mon
 
     monkeypatch.setattr(tool, "fit_matrix_element_samples", apply_fit)
     tool.run(context, candidate_id="matrix_002")
-    applied_nstates = sorted(call["n_states"] for call in calls if call.get("fit_samples") is not False)
+    applied_nstates = sorted(call["n_states"]["3pt_ratio"] for call in calls if call.get("fit_samples") is not False)
+    if selected_fails:
+        assert applied_nstates == [1]
+        assert context.summary["decisions"]["candidate_id"] == "matrix_001"
+        assert context.summary["diagnostics"]["selected_models"] == ["matrix_001"]
+        assert json.loads(context.output.attrs["selected_models"]) == ["matrix_001"]
+        assert context.summary["diagnostics"]["selected_application_fit"] is not None
+        table = context.summary["diagnostics"]["candidates"]
+        assert [(row["candidate_id"], row["model_weight"]) for row in table] == [
+            ("matrix_001", 1.0),
+            ("matrix_002", 0.0),
+        ]
+        np.testing.assert_allclose(context.output.values, 1.0)
+        return
     assert applied_nstates == [1, 2]
-    assert context.summary["decisions"]["candidate_id"] == "matrix_002"
+    assert context.summary["decisions"]["candidate_id"] == f"matrix_{primary_nstate:03d}"
     assert context.summary["decisions"]["model_average"] is True
     assert set(context.summary["diagnostics"]["selected_models"]) == {"matrix_001", "matrix_002"}
-    weights = np.exp(np.array([1.0, 4.0]) - 4.0)
+    weights = np.exp(np.array([4.0 if state == primary_nstate else 1.0 for state in (1, 2)]) - 4.0)
     weights = weights / weights.sum()
     assert context.output.values[0, 0] == pytest.approx(weights[0] * 1.0 + weights[1] * 3.0)
     assert context.output.attrs["model_average"] == "true"
@@ -1578,7 +1624,7 @@ def test_publish_fails_immediately_when_selected_candidate_fails_full_grid(monke
             "observable": "matrix_element",
             "window": {"tmin": 3, "tmax": 8, "tau_min": 2},
             "tsep_values": [8],
-            "nstate": 2,
+            "nstate": {"3pt_ratio": 2},
             "prior_width": 1.0,
             "correlator_rescale": 1.0,
             "quality_passed": True,
@@ -1597,7 +1643,7 @@ def test_publish_fails_immediately_when_selected_candidate_fails_full_grid(monke
             "observable": "matrix_element",
             "window": {"tmin": 4, "tmax": 8, "tau_min": 2},
             "tsep_values": [8],
-            "nstate": 2,
+            "nstate": {"3pt_ratio": 2},
             "prior_width": 1.0,
             "correlator_rescale": 1.0,
             "quality_passed": True,
@@ -1624,7 +1670,7 @@ def test_publish_fails_immediately_when_selected_candidate_fails_full_grid(monke
         "observable": "matrix_element",
         "analysis_method": "lsqfit",
         "component": "re",
-        "nstate": [2],
+        "nstate": {settings["fit_scope"][0]: [2]},
         "prior_width": [1.0],
         **settings,
     }
@@ -1679,7 +1725,7 @@ def test_numerically_rejected_matrix_fit_counts_as_an_evaluated_candidate(tmp_pa
             "observable": "matrix_element",
             "window": {"tmin": 3, "tmax": 8, "tau_min": 2},
             "tsep_values": [8],
-            "nstate": 2,
+            "nstate": {"3pt_ratio": 2},
             "prior_width": 1.0,
             "quality_passed": False,
             "numerical_failure": True,
@@ -1692,7 +1738,7 @@ def test_numerically_rejected_matrix_fit_counts_as_an_evaluated_candidate(tmp_pa
             "observable": "matrix_element",
             "window": {"tmin": 4, "tmax": 8, "tau_min": 2},
             "tsep_values": [8],
-            "nstate": 2,
+            "nstate": {"3pt_ratio": 2},
             "prior_width": 1.0,
             "quality_passed": True,
             "numerical_failure": False,
@@ -1708,8 +1754,8 @@ def test_numerically_rejected_matrix_fit_counts_as_an_evaluated_candidate(tmp_pa
     params = {
         "observable": "matrix_element",
         "analysis_method": "lsqfit",
-        "nstate": [2],
         "fit_scope": ["3pt_ratio"],
+        "nstate": {"3pt_ratio": [2]},
         "prior_width": [1.0],
         "pt2_windows": [{"tmin": 3, "tmax": 8}, {"tmin": 4, "tmax": 8}],
         "pt3_windows": [{"tsep_ls": [8], "tau_cut": 2}],
@@ -1743,6 +1789,7 @@ def test_numerically_rejected_matrix_fit_counts_as_an_evaluated_candidate(tmp_pa
         ["3pt+FH"],
         ["3pt_ratio"],
         ["3pt_ratio+FH"],
+        ["3pt_ratio", "FH"],
     ],
 )
 def test_native_matrix_element_fit_supports_composable_scopes(fit_scope: list[str]) -> None:
@@ -1792,7 +1839,7 @@ def test_native_matrix_element_fit_supports_composable_scopes(fit_scope: list[st
         tmax=8,
         tsep_values=tseps.tolist(),
         tau_min=2,
-        n_states=1,
+        n_states={"3pt_ratio": 2, "FH": 1} if fit_scope == ["3pt_ratio", "FH"] else 1,
         prior_width=1.0,
         correlator_rescale=1.0,
         svdcut=1e-8,
@@ -1809,6 +1856,9 @@ def test_native_matrix_element_fit_supports_composable_scopes(fit_scope: list[st
     assert len(production_fit["sample_diagnostics"]) == result.n_sample
     assert len(production_fit["E0_samples"]) == result.n_sample
     final_atoms = set(fit_scope[-1].split("+"))
+    if fit_scope == ["3pt_ratio", "FH"]:
+        assert production_fit["n_params"] == 4
+        final_atoms.add("3pt_ratio")
     expected_kinds = ({"pt3_ratio"} if final_atoms & {"3pt", "3pt_ratio"} else set()) | (
         {"fh"} if "FH" in final_atoms else set()
     )
@@ -1926,6 +1976,145 @@ def test_native_nonbreit_fit_uses_distinct_source_and_sink_spectra() -> None:
     )
     assert np.isclose(np.mean(np.real(result.values[:, 0])), 1.2, atol=0.05)
     assert diagnostics["fitting_form"] == "NonBreit"
+
+
+def test_chained_matrix_fit_transfers_posteriors_sample_by_sample(monkeypatch) -> None:
+    import gvar as gv
+    import lamet_agent.stages.correlator_analysis.physics as physics
+
+    ensemble = EnsembleInfo("toy", "toy", 0.1, 0.1, 32, 32, 0.2)
+    times = np.arange(16)
+    tseps = np.asarray([8, 10])
+    tau = np.arange(11)
+    rng = np.random.default_rng(81)
+    c2_samples = []
+    c3_samples = []
+    for _ in range(16):
+        energy = 0.3 + rng.normal(0.0, 0.003)
+        overlap = 1.4 + rng.normal(0.0, 0.01)
+        matrix = 0.8 + rng.normal(0.0, 0.01)
+        c2 = overlap**2 / (2 * energy) * (np.exp(-energy * times) + np.exp(-energy * (ensemble.L_t - times)))
+        c2 = c2 + rng.normal(0.0, 2e-4, c2.shape)
+        c3 = np.zeros((tseps.size, tau.size, 1), dtype=complex)
+        for tsep_index, tsep in enumerate(tseps):
+            valid = tau <= tsep
+            ratio = matrix / (2 * energy) + rng.normal(0.0, 0.002, np.count_nonzero(valid))
+            c3[tsep_index, valid, 0] = ratio * c2[tsep]
+        c2_samples.append(c2.astype(complex))
+        c3_samples.append(c3)
+    common = {"source_momentum": "[1, 0, 0]", "sink_momentum": "[1, 0, 0]", "resample_id": "shared"}
+    correlators = {
+        "c2": EnsembleData(
+            ensemble,
+            "bootstrap",
+            c2_samples,
+            ["t"],
+            {"t": times.tolist()},
+            attrs={**common, "correlator_type": "two_point"},
+        ),
+        "c3": EnsembleData(
+            ensemble,
+            "bootstrap",
+            c3_samples,
+            ["tsep", "tau", "z"],
+            {"tsep": tseps.tolist(), "tau": tau.tolist(), "z": [0]},
+            attrs={**common, "correlator_type": "three_point"},
+        ),
+    }
+    calls: list[dict[str, object]] = []
+    real_fit = physics.nonlinear_fit
+
+    def wrapped(data, fcn, prior, **kwargs):
+        result = real_fit(data, fcn, prior, **kwargs)
+        x = data[0]
+        calls.append(
+            {
+                "atoms": tuple(x["atoms"]),
+                "sample_prior_scale": kwargs.get("sample_prior_scale"),
+                "sample_priors": kwargs.get("sample_priors"),
+                "e0": [None if parameters is None else float(parameters["E0"]) for parameters in result.samples],
+            }
+        )
+        return result
+
+    monkeypatch.setattr(physics, "nonlinear_fit", wrapped)
+    fit_matrix_element_samples(
+        correlators,
+        fitting_form="Breit",
+        fit_scope=["2pt", "3pt_ratio"],
+        components="real",
+        tmin=3,
+        tmax=8,
+        tsep_values=tseps.tolist(),
+        tau_min=2,
+        n_states={"2pt": 1, "3pt_ratio": 1},
+        prior_width=1.0,
+        correlator_rescale=1.0,
+        svdcut=1e-8,
+        posterior_prior_error_scale=3.0,
+        workers=1,
+    )
+    assert [call["atoms"] for call in calls] == [("2pt",), ("3pt_ratio",)]
+    assert calls[0]["sample_priors"] is None
+    assert calls[0]["sample_prior_scale"] == 3.0
+    assert calls[1]["sample_prior_scale"] is None
+    sample_priors = calls[1]["sample_priors"]
+    assert sample_priors is not None
+    assert len(sample_priors) == len(calls[0]["e0"])
+    for prior, energy in zip(sample_priors, calls[0]["e0"], strict=True):
+        assert prior is not None
+        assert energy is not None
+        assert np.isclose(gv.mean(prior["E0"]), energy)
+        assert gv.sdev(prior["E0"]) > 0
+
+
+def test_qda_ratio_samples_use_the_center_posterior_prior(monkeypatch) -> None:
+    import lamet_agent.stages.correlator_analysis.physics as physics
+
+    rng = np.random.default_rng(17)
+    times = np.arange(8.0)
+    samples = []
+    for _ in range(12):
+        denominator = np.exp(-0.25 * times) * (1.0 + rng.normal(0.0, 0.01))
+        ratio = 0.72 + rng.normal(0.0, 0.003, times.size)
+        samples.append(np.column_stack([denominator, denominator * ratio]))
+    source = EnsembleData(
+        _ensemble(0.1),
+        "bootstrap",
+        samples,
+        ["t", "z"],
+        {"t": times.tolist(), "z": [0.0, 1.0]},
+        attrs={"correlator_type": "qda"},
+    )
+    calls: list[dict[str, object]] = []
+    real_fit = physics.nonlinear_fit
+
+    def wrapped(*args, **kwargs):
+        calls.append(
+            {
+                "sample_prior_scale": kwargs.get("sample_prior_scale"),
+                "sample_priors": kwargs.get("sample_priors"),
+            }
+        )
+        return real_fit(*args, **kwargs)
+
+    monkeypatch.setattr(physics, "nonlinear_fit", wrapped)
+    fit_qda_samples(
+        {"qda": source},
+        fit_scope=["qda_ratio"],
+        components="real",
+        tmin=2,
+        tmax=7,
+        n_states={"qda_ratio": 1},
+        prior_width=1.0,
+        svdcut=1e-8,
+        posterior_prior_error_scale=3.0,
+        sample_error_mode="variance",
+        workers=1,
+    )
+    assert calls
+    assert all(call["sample_priors"] is None for call in calls)
+    assert all(call["sample_prior_scale"] == 3.0 for call in calls)
 
 
 def test_correlated_spectrum_fit_uses_authored_priors_and_sample_covariance() -> None:
@@ -2559,7 +2748,7 @@ def test_tail_value_and_fit_evaluator_share_the_proton_gpd_endpoint_family() -> 
             "z": z,
             "model_id": "gi_nla",
             "order": "LA",
-            "component": "both",
+            "source_component": "both",
             "lambda0_gev": 0.0,
             "observable": "GPD",
             "momentum_gev": 1.15,
@@ -2604,6 +2793,39 @@ def test_fourier_transform_uses_dimensionless_lambda_measure_on_uniform_grid() -
     transformed = fourier_transform(data, [0.0], momentum_gev=momentum, prefactor="pz_over_2pi")
     expected = momentum * 0.1 * len(z) / (2.0 * np.pi * HBAR_C_GEV_FM)
     assert np.allclose(transformed.values, [[expected]], rtol=1e-13, atol=1e-13)
+
+
+@pytest.mark.parametrize("source_component", ["re", "im", "both"])
+def test_fourier_xspace_projection_is_real_independently_of_source_component(source_component: str) -> None:
+    from lamet_agent.stages.fourier_transform.physics import _project_xspace_output
+
+    data = EnsembleData(
+        None,
+        "bootstrap",
+        [np.array([1.0 + 4.0j, 2.0 + 5.0j]), np.array([1.5 + 4.5j, 2.5 + 5.5j])],
+        ["x"],
+        {"x": [0.25, 0.75]},
+        attrs={"component": source_component, "matching_component": "re", "resummation_part": "re"},
+    )
+    projected = _project_xspace_output(
+        data,
+        source_component=source_component,
+        output_component="re",
+    )
+    assert not np.iscomplexobj(projected.values)
+    np.testing.assert_allclose(projected.values[0], [1.0, 2.0])
+    assert projected.attrs == {"source_component": source_component, "output_component": "re"}
+
+
+def test_fourier_xspace_projection_preserves_paired_flow_gpd_complex_values() -> None:
+    from lamet_agent.stages.fourier_transform.physics import _project_xspace_output
+
+    values = [np.array([1.0 + 4.0j, 2.0 + 5.0j]), np.array([1.5 + 4.5j, 2.5 + 5.5j])]
+    data = EnsembleData(None, "bootstrap", values, ["x"], {"x": [0.25, 0.75]})
+    projected = _project_xspace_output(data, source_component="both", output_component="both")
+    assert np.iscomplexobj(projected.values)
+    np.testing.assert_allclose(projected.values, values)
+    assert projected.attrs == {"source_component": "both", "output_component": "both"}
 
 
 def test_native_fourier_scan_fits_and_transforms_with_one_parallel_entry(monkeypatch) -> None:
@@ -2654,7 +2876,7 @@ def test_native_fourier_scan_fits_and_transforms_with_one_parallel_entry(monkeyp
             "prior_widths": [1.0],
             "model_average": False,
             "max_schemes": 3,
-            "component": "both",
+            "source_component": "both",
             "output_scale": 1.0,
             "q_min": 0.0,
         },
@@ -2663,6 +2885,9 @@ def test_native_fourier_scan_fits_and_transforms_with_one_parallel_entry(monkeyp
     assert result["data"].dims == ["x"]
     assert result["data"].n_sample == data.n_sample
     assert np.all(np.isfinite(result["data"].values))
+    assert not np.iscomplexobj(result["data"].values)
+    assert result["data"].attrs["source_component"] == "both"
+    assert result["data"].attrs["output_component"] == "re"
     assert result["data"].attrs["tail_family"] == "nucleon_pdf"
     assert result["data"].attrs["power_coordinate_unit"] == "fm"
     assert result["data"].attrs["cg_power_applied"] == "false"
@@ -2701,6 +2926,7 @@ def test_fourier_scan_plot_draws_extrapolation_only_from_selected_zmin(monkeypat
         [np.ones(3), 1.1 * np.ones(3)],
         ["x"],
         {"x": [-0.5, 0.0, 0.5]},
+        attrs={"source_component": "both", "output_component": "re"},
     )
     candidate = {
         "label": "gi_nla_NLA_w1_linear_0p1",
@@ -2755,7 +2981,6 @@ def test_fourier_scan_plot_draws_extrapolation_only_from_selected_zmin(monkeypat
             "posterior_prior_error_scale": [1.0],
             "model_average": False,
             "max_schemes": 1,
-            "component": "both",
             "output_scale": 1.0,
             "q_min": 0.9,
         },
@@ -2776,7 +3001,7 @@ def test_fourier_scan_plot_draws_extrapolation_only_from_selected_zmin(monkeypat
                 "gfix": "GI",
                 "transform": {"phase_sign": 1, "x_shift": 0.0, "prefactor": "pz_over_2pi"},
                 "tail_models": ["gi_nla"],
-                "component": "both",
+                "source_component": "both",
                 "output_scale": 1.0,
                 "q_min": 0.05,
             },
@@ -3143,20 +3368,6 @@ def test_extrapolation_systematics_budget_uses_envelopes_and_quadrature(monkeypa
     assert line_colors == [COLOR_CYCLE[0]]
 
 
-def test_matching_component_follows_resummation_part() -> None:
-    from lamet_agent.stages.perturbative_matching._inspection import _matching_component
-
-    assert _matching_component("re", {}) == "re"
-    assert _matching_component("im", {}) == "im"
-    assert _matching_component("im", {"component": "imaginary"}) == "im"
-    assert _matching_component("re", {"component": "both"}) == "re"
-    assert _matching_component("", {"component": "im"}) == "im"
-    assert _matching_component("", {}) == "re"
-    for part, declared in (("re", "im"), ("im", "real")):
-        with pytest.raises(ValueError, match="component"):
-            _matching_component(part, {"component": declared})
-
-
 def test_matching_kernel_id_uses_upstream_provenance_and_new_suffix_order() -> None:
     from lamet_agent.kernels import matching_kernel_id
 
@@ -3165,22 +3376,21 @@ def test_matching_kernel_id_uses_upstream_provenance_and_new_suffix_order() -> N
         "target_observable": "pdf",
         "gfix": "CG",
         "kernel_operator": "gt",
+        "source_component": "re",
+        "renormalization_scheme": "hybrid",
     }
-    assert matching_kernel_id(attrs, scheme="hybrid", order="nlo") == "quark_pdf_cg_gt_hybrid_nlo"
-    assert (
-        matching_kernel_id(attrs, scheme="hybrid", order="nlo", resummation="rgr", resummation_part="re")
-        == "quark_pdf_cg_gt_hybrid_nlo_rgr_re"
-    )
-    assert matching_kernel_id(attrs, scheme="hybrid", order="nlo", resummation="lrr") == "quark_pdf_cg_gt_hybrid_nlo_lrr"
+    assert matching_kernel_id(attrs, order="nlo") == "quark_pdf_cg_gt_hybrid_nlo"
+    assert matching_kernel_id(attrs, order="nlo", resummation="rgr") == "quark_pdf_cg_gt_hybrid_nlo_rgr_re"
+    assert matching_kernel_id(attrs, order="nlo", resummation="lrr") == "quark_pdf_cg_gt_hybrid_nlo_lrr"
     with pytest.raises(ValueError, match="only 'nlo'"):
-        matching_kernel_id(attrs, scheme="hybrid", order="nnlo")
-    with pytest.raises(ValueError, match="require.*resummation_part"):
-        matching_kernel_id(attrs, scheme="hybrid", order="nlo", resummation="rgr")
-    with pytest.raises(ValueError, match="(?i)lrr"):
-        matching_kernel_id(attrs, scheme="hybrid", order="nlo", resummation="lrr", resummation_part="im")
+        matching_kernel_id(attrs, order="nnlo")
+    for source_component in ("", "both"):
+        invalid = {**attrs, "source_component": source_component}
+        with pytest.raises(ValueError, match="source_component='re' or 'im'"):
+            matching_kernel_id(invalid, order="nlo", resummation="rgr")
 
 
-def test_matching_inspection_reduces_the_component_named_by_resummation_part(tmp_path) -> None:
+def test_matching_inspection_uses_real_xspace_quasi_and_source_component_for_rgr(tmp_path) -> None:
     from lamet_agent.stages.perturbative_matching._inspection import run
 
     values = [np.array([1.0 + 4.0j, 2.0 + 5.0j]), np.array([1.5 + 4.5j, 2.5 + 5.5j])]
@@ -3197,14 +3407,14 @@ def test_matching_inspection_reduces_the_component_named_by_resummation_part(tmp
             "kernel_operator": "gt",
             "target_observable": "pdf",
             "renormalization_scheme": "msbar",
+            "source_component": "im",
+            "output_component": "re",
         },
         name="quasi_distribution",
     )
     params = {
-        "scheme": "msbar",
         "order": "nlo",
         "resummation": "rgr",
-        "resummation_part": "im",
         "mu": 2.0,
         "lc_x_ls": [0.25, 0.75],
         "kernel_parameters": {},
@@ -3224,16 +3434,66 @@ def test_matching_inspection_reduces_the_component_named_by_resummation_part(tmp
     run(context)
     reduced = context.state["quasi"]
     assert not np.iscomplexobj(reduced.values)
-    assert np.allclose(np.asarray(reduced.values)[0], [4.0, 5.0])
-    assert reduced.attrs["matching_component"] == "im"
-    assert context.state["kernel_inspection"]["matching_component"] == "im"
+    assert np.allclose(np.asarray(reduced.values)[0], [1.0, 2.0])
+    assert reduced.attrs["source_component"] == "im"
+    assert reduced.attrs["output_component"] == "re"
+    assert context.state["kernel_inspection"]["source_component"] == "im"
+    assert context.params["kernel_id"] == "quark_pdf_cg_gt_msbar_nlo_rgr_im"
 
-    context.params["resummation_part"] = "both"
+    quasi.array.attrs["source_component"] = "both"
     context.state.clear()
-    with pytest.raises(ValueError, match="kernel 'quark_pdf_cg_gt_msbar_nlo_rgr_both' is not available"):
+    with pytest.raises(ValueError, match="source_component='re' or 'im'"):
         run(context)
-    assert context.params["kernel_id"] == "quark_pdf_cg_gt_msbar_nlo_rgr_both"
     assert "matching_result" not in context.state
+
+
+def test_matching_output_drops_legacy_component_attrs(tmp_path) -> None:
+    from lamet_agent.stages.perturbative_matching._apply import run
+
+    quasi = EnsembleData(
+        None,
+        "bootstrap",
+        [np.array([1.0, 2.0]), np.array([1.1, 2.1])],
+        ["x"],
+        {"x": [-0.5, 0.5]},
+        attrs={
+            "renormalization_scheme": "ratio",
+            "momentum_gev": 2.0,
+            "source_component": "re",
+            "output_component": "re",
+            "component": "re",
+            "matching_component": "re",
+            "resummation_part": "re",
+        },
+        name="quasi_distribution",
+    )
+    context = ToolContext(
+        {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "perturbative_matching",
+        "match",
+        {
+            "kernel_id": "quark_pdf_cg_gt_ratio_nlo",
+            "order": "nlo",
+            "mu": 2.0,
+            "lc_x_ls": [-0.5, 0.5],
+            "kernel_parameters": {},
+        },
+        {},
+        {},
+        {
+            "kernel": lambda x_out, x_in, *, momentum_gev, scale_gev: np.eye(2),
+            "quasi": quasi,
+            "kernel_inspection": {"document": ""},
+        },
+        tmp_path,
+        np.random.default_rng(1),
+    )
+
+    run(context)
+
+    assert context.output is not None
+    assert not {"component", "matching_component", "resummation_part"} & context.output.attrs.keys()
 
 
 def test_matching_terminal_writes_original_quasi_matched_plot_pair(tmp_path) -> None:
@@ -3246,7 +3506,13 @@ def test_matching_terminal_writes_original_quasi_matched_plot_pair(tmp_path) -> 
         [np.array([0.2, 1.0, 0.3]), np.array([0.3, 1.1, 0.4])],
         ["x"],
         {"x": x},
-        attrs={"momentum_gev": 1.722, "sample_error_mode": "covariance"},
+        attrs={
+            "renormalization_scheme": "ratio",
+            "momentum_gev": 1.722,
+            "sample_error_mode": "covariance",
+            "source_component": "re",
+            "output_component": "re",
+        },
         name="quasi_distribution",
     )
 
@@ -3258,7 +3524,6 @@ def test_matching_terminal_writes_original_quasi_matched_plot_pair(tmp_path) -> 
 
     params = {
         "kernel_id": "quark_pdf_cg_gt_ratio_nlo",
-        "scheme": "ratio",
         "order": "nlo",
         "mu": 2.0,
         "lc_x_ls": [-0.5, 0.5],
@@ -3305,7 +3570,13 @@ def test_matching_plot_crops_even_quasi_to_nonnegative_x(monkeypatch, tmp_path) 
         [np.array([0.3, 1.0, 0.3]), np.array([0.4, 1.1, 0.4])],
         ["x"],
         {"x": x},
-        attrs={"momentum_gev": 1.722, "sample_error_mode": "covariance"},
+        attrs={
+            "renormalization_scheme": "ratio",
+            "momentum_gev": 1.722,
+            "sample_error_mode": "covariance",
+            "source_component": "re",
+            "output_component": "re",
+        },
         name="quasi_distribution",
     )
 
@@ -3327,7 +3598,6 @@ def test_matching_plot_crops_even_quasi_to_nonnegative_x(monkeypatch, tmp_path) 
     )
     params = {
         "kernel_id": "quark_pdf_cg_gt_ratio_nlo",
-        "scheme": "ratio",
         "order": "nlo",
         "mu": 2.0,
         "lc_x_ls": x,
@@ -3620,6 +3890,8 @@ def test_hybrid_self_renormalization_extrapolates_the_completed_factor(tmp_path)
     inspect(context)
     run(context)
 
+    assert context.output.attrs["renormalization_scheme"] == "hybrid"
+    assert context.output.attrs["zs_fm"] == 0.1
     assert context.output.coords["z"] == [0.0, 0.1, 0.2, 0.3]
     assert np.all(np.isfinite(context.output.values))
     assert context.summary["diagnostics"]["n_z_extrapolated"] == 1
@@ -3847,3 +4119,131 @@ def test_renormalization_loader_maps_reference_m_pi_metadata(tmp_path: Path) -> 
     assert loaded.ensemble is not None
     assert loaded.ensemble.m_pi == 0.0
     assert loaded.dims == ["a", "z"]
+
+
+@pytest.mark.parametrize("strategy", ["self_renormalization", "external_denominator"])
+def test_matching_inherits_hybrid_provenance_through_fourier_and_netcdf(monkeypatch, tmp_path, strategy) -> None:
+    from lamet_agent.stages.renormalization._apply import run as renormalize
+    from lamet_agent.stages.renormalization._inspection import run as inspect_renormalization
+    from lamet_agent.stages.fourier_transform.physics import complete_signed_z, _project_xspace_output
+    from lamet_agent.stages.perturbative_matching import _inspection, _apply
+
+    renorm_path = tmp_path / "renorm"
+    renorm_path.mkdir()
+    context = _self_coverage_context(renorm_path, policy="extrapolate", scheme="hybrid")
+    context.inputs["target"].array.attrs.update(
+        {
+            "parton": "quark",
+            "target_observable": "pdf",
+            "gfix": "CG",
+            "kernel_operator": "gt",
+        }
+    )
+    if strategy == "external_denominator":
+        context.inputs.pop("zR")
+        context.params.clear()
+        context.params.update(
+            {
+                "type": "apply",
+                "strategy": strategy,
+                "scheme": "hybrid",
+                "zs_fm": 0.1,
+                "normalization": False,
+                "m0_gev": 0.0,
+                "delta_m_gev": 0.1,
+            }
+        )
+    inspect_renormalization(context)
+    renormalize(context)
+    output = EnsembleData.from_netcdf(renorm_path / "output.nc")
+    signed = complete_signed_z(output, {"real": "even", "imag": "odd"})
+    grid = [0.25, 0.5, 0.75]
+    quasi = fourier_transform(signed, grid, momentum_gev=2.0, phase_sign=1, x_shift=0.0, prefactor="pz_over_2pi")
+    quasi = _project_xspace_output(quasi, source_component="re", output_component="re")
+    quasi.to_netcdf(tmp_path / "quasi.nc")
+    match_path = tmp_path / "matching"
+    match_path.mkdir()
+    matching = ToolContext(
+        {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
+        tmp_path / "manifest.json",
+        "perturbative_matching",
+        "match",
+        {"order": "nlo", "mu": 2.0, "lc_x_ls": grid, "kernel_parameters": {}},
+        {"quasi": tmp_path / "quasi.nc"},
+        {},
+        {},
+        match_path,
+        np.random.default_rng(1),
+    )
+    captured = []
+
+    def kernel(
+        x_out: np.ndarray, x_in: np.ndarray, *, momentum_gev: float, scale_gev: float, zs_fm: float
+    ) -> np.ndarray:
+        captured.append(zs_fm)
+        return np.eye(len(x_out), len(x_in))
+
+    monkeypatch.setattr(_inspection, "load_kernel", lambda *args, **kwargs: kernel)
+    _inspection.run(matching)
+    assert matching.params["kernel_id"] == "quark_pdf_cg_gt_hybrid_nlo"
+    assert "scheme" not in matching.params and "zs_fm" not in matching.params
+    _apply.run(matching)
+    assert captured == [0.1]
+    assert matching.output.attrs["renormalization_scheme"] == "hybrid"
+    assert matching.output.attrs["zs_fm"] == 0.1
+    np.testing.assert_allclose(matching.output.values, quasi.values)
+
+
+@pytest.mark.parametrize(
+    ("attrs_update", "parameters", "error"),
+    [
+        ({"renormalization_scheme": None}, {}, "renormalization_scheme"),
+        ({"renormalization_scheme": "unsupported"}, {}, "scheme is not supported"),
+        ({"zs_fm": None}, {}, "positive zs_fm"),
+        ({"zs_fm": float("nan")}, {}, "positive zs_fm"),
+        ({"zs_fm": -0.1}, {}, "positive zs_fm"),
+        ({}, {"zs_fm": 0.2}, "supplied by upstream"),
+        ({}, {"eps": "invalid"}, "annotation float"),
+        ({}, {"eps": True}, "annotation float"),
+        ({}, {"unknown": 1.0}, "not accepted"),
+    ],
+)
+def test_matching_inspection_validates_inherited_attrs_and_kernel_types(
+    tmp_path, attrs_update, parameters, error
+) -> None:
+    from lamet_agent.stages.perturbative_matching._inspection import run
+
+    quasi = EnsembleData(
+        None,
+        "bootstrap",
+        [[1.0, 2.0], [1.1, 2.1]],
+        ["x"],
+        {"x": [0.25, 0.75]},
+        attrs={
+            "renormalization_scheme": "hybrid",
+            "zs_fm": 0.1,
+            "momentum_gev": 2.0,
+            "source_component": "re",
+            "output_component": "re",
+            "parton": "quark",
+            "target_observable": "pdf",
+            "gfix": "CG",
+            "kernel_operator": "gt",
+            **attrs_update,
+        },
+    )
+    context = ToolContext(
+        {"metadata": {"workers": 1}},
+        tmp_path / "manifest.json",
+        "perturbative_matching",
+        "match",
+        {"order": "nlo", "mu": 2.0, "lc_x_ls": [0.25, 0.75], "kernel_parameters": parameters},
+        {"quasi": quasi},
+        {},
+        {},
+        tmp_path,
+        np.random.default_rng(1),
+    )
+    with pytest.raises(ValueError, match=error):
+        run(context)
+    assert "kernel" not in context.state

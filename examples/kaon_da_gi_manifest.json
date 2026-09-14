@@ -17,12 +17,13 @@
     "correlator_analysis": {
       "defaults": {
         "component": "both",
-        "nstate": [
-          1
-        ],
         "fit_scope": [
           "2pt+qda"
         ],
+        "nstate": {
+          "2pt": [1],
+          "qda": [1]
+        },
         "fitting_form": "Breit",
         "model_average": false,
         "svdcut": 1e-06,
@@ -418,10 +419,8 @@
     },
     "perturbative_matching": {
       "defaults": {
-        "scheme": "ratio",
         "order": "nlo",
         "resummation": "",
-        "resummation_part": "",
         "mu": 2.0,
         "lc_x_ls": {
           "start": -1.0,

@@ -54,6 +54,18 @@ def _stored_symmetry(attrs: Mapping[str, object]) -> dict[str, str]:
     return _symmetry_mapping(value)
 
 
+def _zero_odd_origin_imag(values: np.ndarray, z: np.ndarray, symmetry: Mapping[str, str]) -> np.ndarray:
+    """Force Im(z=0)=0 so an odd imaginary part remains odd at the origin."""
+    if symmetry.get("imag") != "odd":
+        return values
+    origin = np.isclose(np.asarray(z, dtype=float), 0.0)
+    if not np.any(origin):
+        return values
+    output = np.array(values, copy=True)
+    output[origin] = np.real(output[origin]) + 0.0j
+    return output
+
+
 def _signed_from_positive(
     positive_values: np.ndarray, extended_z: np.ndarray, symmetry: Mapping[str, str]
 ) -> np.ndarray:
@@ -68,7 +80,11 @@ def _signed_from_positive(
         real = -real
     if symmetry["imag"] == "odd":
         imag = -imag
-    return np.concatenate([real + 1j * imag, positive_values[~negative_mask]])
+    return _zero_odd_origin_imag(
+        np.concatenate([real + 1j * imag, positive_values[~negative_mask]]),
+        extended_z,
+        symmetry,
+    )
 
 
 _NUCLEON_HADRONS = {"nucleon", "proton"}
@@ -245,9 +261,9 @@ def _tail_fit_fcn_base(x: Mapping[str, Any], parameters: Mapping[str, Any]) -> n
     if x["model_id"] == "cg_nla":
         real = real / absolute ** parameters["n"]
         imag = imag / absolute ** parameters["n"]
-    if x["component"] == "re":
+    if x["source_component"] == "re":
         return real
-    if x["component"] == "im":
+    if x["source_component"] == "im":
         return imag
     return np.concatenate([real, imag])
 
@@ -319,7 +335,7 @@ def tail_model_values(
             "z": z,
             "model_id": model_id,
             "order": order,
-            "component": "both",
+            "source_component": "both",
             "lambda0_gev": 0.0,
             "observable": observable,
             "momentum_gev": 0.0 if momentum_gev is None else momentum_gev,
@@ -421,7 +437,7 @@ def fit_tail_parameters(
     prior_means: Mapping[str, float],
     prior_widths: Mapping[str, float],
     order: str = "NLA",
-    component: str = "both",
+    source_component: str = "both",
     lambda0_gev: float = 0.0,
     observable: str = "PDF",
     psi1_flavor_class: str = "heavy",
@@ -443,8 +459,8 @@ def fit_tail_parameters(
     if model_id not in {"gi_nla", "cg_nla"}:
         raise ValueError(f"unsupported tail model '{model_id}'")
     order = order.upper()
-    if order not in {"LA", "NLA"} or component not in {"re", "im", "both"}:
-        raise ValueError("tail order and component must be LA/NLA and re/im/both")
+    if order not in {"LA", "NLA"} or source_component not in {"re", "im", "both"}:
+        raise ValueError("tail order and source_component must be LA/NLA and re/im/both")
     if not math.isfinite(lambda0_gev) or lambda0_gev < 0:
         raise ValueError("lambda0_gev must be finite and nonnegative")
     if (
@@ -478,7 +494,7 @@ def fit_tail_parameters(
         if phase_transfer_gpd not in {"mid_at_0", "barpsi_at_0", "psi_at_0"}:
             raise ValueError("phase_transfer_gpd must be mid_at_0, barpsi_at_0, or psi_at_0")
     names = _tail_parameter_names(model_id, order, observable, psi1_flavor_class, psi2_flavor_class, sector, hadron)
-    channel_count = 2 if component == "both" else 1
+    channel_count = 2 if source_component == "both" else 1
     required_points = max(int(math.ceil(len(names) / channel_count)), 2)
     if int(np.count_nonzero(mask)) < required_points:
         raise ValueError("tail fit range has too few points for the selected model")
@@ -498,9 +514,9 @@ def fit_tail_parameters(
     imag_selected = np.imag(selected)
     observations = (
         real_selected
-        if component == "re"
+        if source_component == "re"
         else imag_selected
-        if component == "im"
+        if source_component == "im"
         else np.concatenate([real_selected, imag_selected], axis=1)
     )
     fit_data = EnsembleData(
@@ -529,9 +545,9 @@ def fit_tail_parameters(
         imag_error = np.maximum(np.asarray(gv.sdev(imag_data.average(sample_error_mode)), dtype=float), error_floor)
         fit_error = (
             real_error
-            if component == "re"
+            if source_component == "re"
             else imag_error
-            if component == "im"
+            if source_component == "im"
             else np.concatenate([real_error, imag_error])
         )
         covariance = np.diag(fit_error**2)
@@ -544,7 +560,7 @@ def fit_tail_parameters(
         "z": z[mask],
         "model_id": model_id,
         "order": order,
-        "component": component,
+        "source_component": source_component,
         "lambda0_gev": float(lambda0_gev),
         "observable": observable,
         "momentum_gev": momentum,
@@ -669,7 +685,7 @@ def complete_signed_z(data: EnsembleData, symmetry: Mapping[str, str]) -> Ensemb
         if convention["imag"] == "odd":
             negative_imag = -negative_imag
         negative = negative_real + 1j * negative_imag
-        values.append(np.concatenate([negative, positive]))
+        values.append(_zero_odd_origin_imag(np.concatenate([negative, positive]), output_z, convention))
     attrs = data.attrs
     attrs["signed_z_completion"] = json.dumps(convention, sort_keys=True)
     attrs["symmetry"] = json.dumps(convention, sort_keys=True)
@@ -953,6 +969,28 @@ def _sample_model_weights(
     return weights
 
 
+def _project_xspace_output(data: EnsembleData, *, source_component: str, output_component: str) -> EnsembleData:
+    """Apply the declared x-space projection without losing source provenance."""
+    if source_component not in {"re", "im", "both"}:
+        raise ValueError("source_component must be re, im, or both")
+    if output_component not in {"re", "both"}:
+        raise ValueError("output_component must be re or both")
+    values = np.real(data.values) if output_component == "re" else np.asarray(data.values)
+    attrs = dict(data.attrs)
+    for legacy_key in ("component", "matching_component", "resummation_part"):
+        attrs.pop(legacy_key, None)
+    attrs.update({"source_component": source_component, "output_component": output_component})
+    return EnsembleData(
+        data.ensemble,
+        data.resample,
+        list(values),
+        data.dims,
+        data.coords,
+        attrs=attrs,
+        name=data.name,
+    )
+
+
 def scan_fourier_transform(
     data: EnsembleData,
     x_grid: list[float],
@@ -980,7 +1018,7 @@ def scan_fourier_transform(
         "prior_widths",
         "model_average",
         "max_schemes",
-        "component",
+        "source_component",
         "output_scale",
         "q_min",
     }
@@ -1004,9 +1042,10 @@ def scan_fourier_transform(
         raise ValueError("prior_widths must be finite and positive")
     if smoothing_method not in {"linear", "none"}:
         raise ValueError("smoothing_method must be linear or none")
-    component = str(scan["component"])
-    if component not in {"re", "im", "both"}:
-        raise ValueError("component must be re, im, or both")
+    source_component = str(scan["source_component"])
+    if source_component not in {"re", "im", "both"}:
+        raise ValueError("source_component must be re, im, or both")
+    output_component = "both" if data.attrs.get("gpd_completion_mode") == "paired_flow" else "re"
     lambda0_gev = float(scan["lambda0_gev"])
     output_scale = float(scan["output_scale"])
     q_min = float(scan["q_min"])
@@ -1069,7 +1108,7 @@ def scan_fourier_transform(
         )
         z = np.asarray(data.coords["z"], dtype=float)
         mask = (z >= z_min_fm - 1e-12) & (z <= z_max_fm + 1e-12) & (z > 0)
-        channel_count = 2 if component == "both" else 1
+        channel_count = 2 if source_component == "both" else 1
         required_points = max(int(math.ceil(len(names) / channel_count)), 2)
         if int(np.count_nonzero(mask)) < required_points:
             continue
@@ -1102,7 +1141,7 @@ def scan_fourier_transform(
                 prior_means=means,
                 prior_widths=widths,
                 order=range_order,
-                component=component,
+                source_component=source_component,
                 lambda0_gev=lambda0_gev,
                 observable=observable,
                 psi1_flavor_class=psi1_flavor_class,
@@ -1135,7 +1174,7 @@ def scan_fourier_transform(
             scan["sector"],
             hadron,
         )
-        channel_count = 2 if component == "both" else 1
+        channel_count = 2 if source_component == "both" else 1
         required_points = max(int(math.ceil(len(names) / channel_count)), 2)
         if int(np.count_nonzero(selected_mask)) >= required_points:
             fit_model_specs.extend((order, prior_width) for prior_width in prior_widths)
@@ -1165,7 +1204,7 @@ def scan_fourier_transform(
                 prior_means=means,
                 prior_widths=widths,
                 order=order,
-                component=component,
+                source_component=source_component,
                 lambda0_gev=lambda0_gev,
                 observable=observable,
                 psi1_flavor_class=psi1_flavor_class,
@@ -1195,9 +1234,9 @@ def scan_fourier_transform(
             )
             projected_values = (
                 np.real(extended.values)
-                if component == "re"
+                if source_component == "re"
                 else 1j * np.imag(extended.values)
-                if component == "im"
+                if source_component == "im"
                 else np.asarray(extended.values)
             )
             projected = EnsembleData(
@@ -1218,6 +1257,11 @@ def scan_fourier_transform(
                 prefactor=str(transform["prefactor"]),
                 workers=workers,
                 _parallel=parallel,
+            )
+            transformed = _project_xspace_output(
+                transformed,
+                source_component=source_component,
+                output_component=output_component,
             )
             label = (
                 f"{selected_model_id}_{selected_z_min:g}_{selected_z_max:g}_{order}_w{prior_width:g}_{smoothing_method}"
@@ -1292,7 +1336,8 @@ def scan_fourier_transform(
     attrs.update(
         {
             "sector": str(scan["sector"]),
-            "component": component,
+            "source_component": source_component,
+            "output_component": output_component,
             "output_scale": output_scale,
             "model_average": str(bool(scan["model_average"])).lower(),
             "selected_range": json.dumps([selected_range["z_min_fm"], selected_range["z_max_fm"]]),

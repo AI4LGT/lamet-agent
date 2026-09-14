@@ -15,12 +15,13 @@
     "correlator_analysis": {
       "defaults": {
         "component": "re",
-        "nstate": [
-          2
-        ],
         "fit_scope": [
           "2pt+3pt_ratio"
         ],
+        "nstate": {
+          "2pt": [2],
+          "3pt_ratio": [2]
+        },
         "fitting_form": "Breit",
         "model_average": false,
         "pt2_windows": [
@@ -137,16 +138,13 @@
     },
     "perturbative_matching": {
       "defaults": {
-        "scheme": "hybrid",
         "order": "nlo",
         "resummation": "lrr",
-        "resummation_part": "",
         "mu": 2.0,
         "lc_x_ls": {
           "start": 0.0,
           "stop": 1.0
-        },
-        "zs_fm": 0.18
+        }
       },
       "jobs": [
         {
