@@ -16,6 +16,13 @@ choose the question grouping that makes the conversation easiest to answer.
 Related fields may be combined, and several independent Issues may also be asked
 in one turn when each question is short.
 
+When adopting contract defaults for a requested change, explicitly tell the user
+which defaults will be used and their values. A default need not be asked again,
+but must not be silently treated as a user-provided value. Obtain parameter
+meanings and default values from the inspected contract rather than assuming
+them. Include adopted defaults in the final plan summary, and prefer any
+explicit user choice.
+
 The user may ask about any current, optional, or proposed manifest parameter at
 any point in the conversation, whether or not validation reports an Issue there.
 Use the manifest reader and contract inspector to answer from current evidence.

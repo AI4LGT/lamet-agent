@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import copy
+from io import StringIO
 import json
 from pathlib import Path
 import re
+from types import SimpleNamespace
 
 import pytest
 from prompt_toolkit import PromptSession
+from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input.defaults import create_pipe_input
 from prompt_toolkit.output import ColorDepth, DummyOutput
+from prompt_toolkit.output.vt100 import Vt100_Output
+from prompt_toolkit.data_structures import Size
 from prompt_toolkit.shortcuts.progress_bar.formatters import IterationsPerSecond, TimeLeft
 
 from lamet_agent.agent import create_session
@@ -19,6 +24,7 @@ from lamet_agent.manifest import Manifest
 
 from lamet_agent.ui import (
     _CONVERSATION_KEY_BINDINGS,
+    _InputSession,
     PlainUi,
     ProgressTask,
     TerminalUi,
@@ -71,7 +77,7 @@ class RecordingUi(PlainUi):
         self.messages.append((question, "question"))
         return self.confirmations.pop(0)
 
-    def ask(self, question: str, _state=None) -> str:
+    def ask(self, question: str, _state=None, *, placeholder="") -> str:
         self.messages.append((question, "question"))
         return self.answers.pop(0)
 
@@ -152,9 +158,98 @@ def test_conversation_enter_submits_and_shift_enter_inserts_newline() -> None:
     assert answer == "first line\nsecond line"
 
 
+@pytest.mark.parametrize("choice, expected", [("y", True), ("Y", True), ("N", None), ("", None)])
+@pytest.mark.parametrize("terminal", [False, True])
+def test_plan_menu_accepts_or_cancels_without_conversation(monkeypatch, choice, expected, terminal) -> None:
+    ui = TerminalUi.__new__(TerminalUi) if terminal else PlainUi()
+    monkeypatch.setattr("builtins.input", lambda *_args: choice)
+    if terminal:
+        ui.session = SimpleNamespace(prompt=lambda *_args, **_kwargs: choice)
+    assert ui.review_plan("Accept?", object()) is expected
+
+
+def test_plan_menu_requires_question_option_before_free_text(monkeypatch, capsys) -> None:
+    answers = iter(["change seed", "?", "", "Set random_seed to 42."])
+    monkeypatch.setattr("builtins.input", lambda *_args: next(answers))
+
+    assert PlainUi().review_plan("Accept?", object()) == "Set random_seed to 42."
+    assert "Please choose y, N, or ?." in capsys.readouterr().out
+
+
+def test_terminal_plan_menu_opens_multiline_conversation() -> None:
+    ui = TerminalUi.__new__(TerminalUi)
+    ui._phase = "plan"
+    ui._running_stage = None
+    ui._running_job = None
+    ui.completer = SimpleNamespace(state=None)
+    state = object()
+    with create_pipe_input() as pipe_input:
+        ui.session = _InputSession(input=pipe_input, output=DummyOutput())
+        pipe_input.send_text("?\rExplain this stage.\x1b[27;2;13~Then change the seed.\r")
+
+        assert ui.review_plan("Accept?", state) == "Explain this stage.\nThen change the seed."
+
+    assert ui.completer.state is state
+
+
+def test_terminal_output_filename_suggestion_can_be_replaced(tmp_path) -> None:
+    with create_pipe_input() as pipe_input, create_app_session(input=pipe_input, output=DummyOutput()):
+        ui = TerminalUi()
+        ui.set_phase("plan")
+        pipe_input.send_text("\x15chosen.json\r")
+        try:
+            assert ui.ask_output_path(tmp_path / "source.json") == "chosen.json"
+        finally:
+            ui.close()
+
+
+def test_terminal_enter_accepts_suggested_output(tmp_path) -> None:
+    with create_pipe_input() as pipe_input, create_app_session(input=pipe_input, output=DummyOutput()):
+        ui = TerminalUi()
+        ui.set_phase("plan")
+        source = tmp_path / "source.json"
+        pipe_input.send_text("\r")
+        try:
+            assert ui.ask_output_path(source) == "source.planned.json"
+            assert not source.exists()
+        finally:
+            ui.close()
+
+
+@pytest.mark.parametrize("columns", [32, 80])
+def test_composer_keeps_submitted_multiline_text_in_terminal_history(columns) -> None:
+    transcript = StringIO()
+    output = Vt100_Output(
+        transcript, lambda: Size(rows=24, columns=columns), term="xterm-256color", enable_cpr=False
+    )
+    with create_pipe_input() as pipe_input, create_app_session(input=pipe_input, output=output):
+        ui = TerminalUi()
+        ui.set_phase("plan")
+        pipe_input.send_text("第一行\x1b[27;2;13~第二行\r")
+        try:
+            assert ui.ask("Describe a change.", object()) == "第一行\n第二行"
+        finally:
+            ui.close()
+
+    assert "第一行" in transcript.getvalue()
+    assert "第二行" in transcript.getvalue()
+
+
+@pytest.mark.parametrize("error", [KeyboardInterrupt, EOFError])
+def test_plan_menu_interrupt_cancels(monkeypatch, error) -> None:
+    def interrupt(*_args):
+        raise error()
+
+    monkeypatch.setattr("builtins.input", interrupt)
+    with pytest.raises(UiCancelled, match="cancelled by user"):
+        PlainUi().review_plan("Accept?", object())
+
+
 def test_progress_colors_use_minecraft_gold_and_stone() -> None:
     assert str(_PROGRESS_STYLE.get_attrs_for_style_str("class:percentage").color) == "ffff5f"
-    assert str(_PROGRESS_STYLE.get_attrs_for_style_str("class:bottom-toolbar").color) == "6c6c6c"
+    footer = _PROGRESS_STYLE.get_attrs_for_style_str("class:bottom-toolbar")
+    assert footer.color == "default"
+    assert footer.reverse
     assert _MINECRAFT_GOLD == 227
     assert ColorDepth.DEPTH_8_BIT.value == "DEPTH_8_BIT"
 
@@ -172,12 +267,78 @@ def test_terminal_status_toolbar_tracks_running_job() -> None:
     ui._progress_bar = None
     ui._running_stage = None
     ui._running_job = None
+    ui._phase = "startup"
 
-    assert ui._status_toolbar() == " Stage: idle Job: idle "
+    assert ui._status_toolbar() == " STARTUP · Starting "
 
+    ui.set_phase("run")
     ui.set_running_job("review", "review")
 
-    assert ui._status_toolbar() == " Stage: review Job: review "
+    assert ui._status_toolbar() == " RUN · review · review · Running "
+
+    ui.set_phase("plan")
+    assert ui._status_toolbar() == " PLAN · Working "
+
+
+def test_ui_start_is_idempotent_across_workflow_phases() -> None:
+    ui = RecordingUi()
+    for phase in ("validate", "plan", "run"):
+        ui.start()
+        ui.set_phase(phase)
+
+    assert [message for message, _level in ui.messages].count(BANNER) == 1
+
+
+def test_terminal_prompt_preserves_progress_and_shared_status(monkeypatch) -> None:
+    with create_pipe_input() as pipe_input, create_app_session(input=pipe_input, output=DummyOutput()):
+        ui = TerminalUi()
+        monkeypatch.setattr(ui, "log", lambda *_args, **_kwargs: None)
+        try:
+            ui.start()
+            ui.set_phase("run")
+            ui.set_running_job("review", "review_1")
+            task = ui.start_progress("checks", total=3, unit="checks")
+            ui.advance_progress(task)
+
+            def prompt(*_args, **kwargs):
+                assert ui._progress_bar is None
+                assert "RUN · review · review_1 · Waiting for confirmation" in kwargs["bottom_toolbar"]()
+                assert "\n" not in kwargs["bottom_toolbar"]()
+                return "yes"
+
+            monkeypatch.setattr(ui.session, "prompt", prompt)
+            assert ui.confirm("Continue?") is True
+            assert ui._interaction is None
+            assert task.native in ui._progress_bar.counters
+            assert task.native.progress_bar is ui._progress_bar
+            ui.advance_progress(task)
+            assert task.native.items_completed == 2
+            ui.finish_progress(task)
+        finally:
+            ui.close()
+        assert ui._progress_bar is None
+        assert ui._stdout_context is None
+
+
+@pytest.mark.parametrize("command", ["plan", "run"])
+def test_cli_initializes_ui_before_backend_and_closes_on_failure(tmp_path, monkeypatch, command) -> None:
+    import lamet_agent.__main__ as cli
+
+    ui = RecordingUi()
+    closed = []
+    monkeypatch.setattr(cli, "create_ui", lambda: ui)
+    monkeypatch.setattr(ui, "close", lambda: closed.append(True))
+
+    def fail_backend(*_args, **_kwargs):
+        assert current_ui() is ui
+        assert ui.messages[0][0] == BANNER
+        raise ValueError("backend unavailable")
+
+    monkeypatch.setattr(cli, "create_backend", fail_backend)
+    manifest = _manifest(tmp_path)
+    assert cli.main([command, str(manifest.path), "--provider", "codex", "--model", "test-model"]) != 0
+    assert closed == [True]
+    assert ("backend unavailable", "error") in ui.messages
 
 
 def test_track_marks_interrupted_progress_unsuccessful() -> None:

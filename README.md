@@ -113,13 +113,17 @@ explicit user confirmation.
 Options:
 
 - `--provider`: registered provider name or an HTTP(S) OpenAI-compatible URL;
-- `--model`: provider model override;
+- `--model`: model ID; prompts for selection when omitted or unavailable;
 - `--api-key-file`: text file containing only the API key;
-- `--output`: output path, defaulting to `<manifest>.planned.json`;
+- `--output`: output path;
 - `--in-place`: overwrite the source after explicit acceptance.
 
 `--output` and `--in-place` are mutually exclusive. A planned output must remain
 beside its source manifest so relative input paths preserve their meaning.
+If neither option is set, Plan first asks for an output filename, resolved relative
+to the source manifest's directory. The input is prefilled with `<manifest>.planned.json`;
+edit it or press Enter to accept. Use `--in-place` to explicitly select the source.
+Saving still requires final acceptance.
 
 Terminal controls include `/show`, `/issues`, `/undo`, `/edit`, `/save`,
 `/help`, and `/quit`. `Enter` submits, `Shift+Enter` inserts a newline, and
@@ -127,6 +131,10 @@ Terminal controls include `/show`, `/issues`, `/undo`, `/edit`, `/save`,
 
 Standalone Plan writes the accepted manifest and exits without running analysis
 stages.
+When Plan calls the LLM, it prints the path to a separate transcript under
+`artifacts/plan/` beside the output manifest. Each session records requests,
+responses, rejected replies, failure reasons, and request durations without
+overwriting earlier sessions.
 
 ### Run
 
@@ -156,7 +164,7 @@ The default progress mode is `auto`:
 
 The `codex` provider uses the optional `openai-codex>=0.147` package and the cached
 Codex login on the current machine. It does not use an API key. `--model` is
-optional and overrides the Codex SDK default.
+optional; available models are discovered from the Codex app server.
 
 #### OpenAI-compatible APIs
 
@@ -172,10 +180,14 @@ environment variable:
 | Grok      | `GROK_API_KEY`       |
 | DeepSeek  | `DEEPSEEK_API_KEY`   |
 
-Registered API providers have a default model; `--model` overrides it. An
-HTTP(S) OpenAI-compatible base URL can also be passed directly as the provider.
-A non-local custom URL requires `--model`; a local URL may omit it when its
-`/models` endpoint returns exactly one model id.
+All providers discover their available models before selection: API providers use
+`/models`, Codex uses app-server `model/list`, and Claude Code uses the SDK server
+initialization catalog (including aliases and resolved model IDs). Omit `--model`
+or supply an unavailable ID to choose a model by number or name in the shared UI.
+No model is selected automatically, even when only one is available. Library
+callers can pass a `select_model` callback to `create_backend`; without one,
+missing or unavailable models raise an error listing the available choices.
+HTTP(S) OpenAI-compatible base URLs can also be passed directly as the provider.
 
 ## Core Idea
 

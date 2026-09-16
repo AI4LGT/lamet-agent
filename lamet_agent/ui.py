@@ -25,8 +25,12 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.completion import Completer, Completion, PathCompleter
 from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.filters import is_done
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.lexers import SimpleLexer
+from prompt_toolkit.layout import HSplit, Window
+from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.output import ColorDepth
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.shortcuts import ProgressBar
@@ -37,6 +41,9 @@ from prompt_toolkit.shortcuts.progress_bar.formatters import (
     create_default_formatters,
 )
 from prompt_toolkit.styles import Style
+from prompt_toolkit.utils import get_cwidth
+
+from .banner import BANNER
 
 _COMMANDS = ("/show", "/issues", "/undo", "/edit", "/save", "/help", "/quit")
 _ANSI_RESET = "\033[0m"
@@ -78,10 +85,28 @@ def _submit_or_insert_newline(event) -> None:
         event.current_buffer.validate_and_handle()
 
 
+_FOOTER_STYLE = {
+    "bottom-toolbar": "fg:default bg:default reverse",
+    "bottom-toolbar.text": "fg:default bg:default reverse",
+}
+
 _PROGRESS_STYLE = Style.from_dict(
     {
         "": "#ffff5f",
-        "bottom-toolbar": "#6c6c6c",
+        **_FOOTER_STYLE,
+    }
+)
+
+_INPUT_STYLE = Style.from_dict(
+    {
+        **_FOOTER_STYLE,
+        "user-label": "bold #5fd7d7",
+        "user-input": "",
+        "prompt-continuation": "#6c6c6c",
+        "frame.border": "#6c6c6c",
+        "accepted user-label": "nobold #808080",
+        "accepted user-input": "#808080",
+        "accepted prompt-continuation": "#808080",
     }
 )
 
@@ -213,6 +238,21 @@ class _ManifestCompleter(Completer):
 class PlainUi:
     """Non-full-screen UI for redirected output, tests, and simple terminals."""
 
+    def show_banner(self) -> None:
+        if not getattr(self, "_banner_shown", False):
+            self.log(BANNER, style="banner")
+            self.log()
+            self._banner_shown = True
+
+    def start(self) -> None:
+        """Initialize the shared presentation once, independently of workflow phases."""
+        self.show_banner()
+
+    def set_phase(self, phase: str) -> None:
+        """Update workflow status without rebuilding the UI."""
+        self._phase = phase
+        self.set_running_job(None, None)
+
     def log(self, message: str = "", *, level: str = "info", style: str | None = None) -> None:
         stream = sys.stderr if level == "error" else sys.stdout
         print(message, file=stream, flush=True)
@@ -232,12 +272,30 @@ class PlainUi:
     def show_patch(self, edits: list[dict[str, Any]], state: Any) -> None:
         self.manifest_updated(edits, state)
 
-    def ask(self, question: str, _state: Any | None = None) -> str:
-        self.log(f"\n{'Planner' if _state is not None else 'Agent'}: {question}")
+    def ask(self, question: str, _state: Any | None = None, *, placeholder: str = "") -> str:
+        self.log(f"\n{'Planner' if _state is not None else 'Agent'}: {question}\n")
         try:
-            return input("You> ").strip()
+            answer = input("You> ").strip()
         except (KeyboardInterrupt, EOFError) as exc:
             raise UiCancelled("interaction cancelled by user") from exc
+        self.log()
+        return answer
+
+    def select_model(self, provider: str, models: list[str], requested: str | None = None) -> str:
+        """Choose explicitly from a provider catalog in either terminal UI."""
+        if requested is not None:
+            self.log(f"Model {requested!r} is unavailable from {provider}.", level="warning")
+        listing = "\n".join(f"  {index}. {model}" for index, model in enumerate(models, 1))
+        while True:
+            answer = self.ask(
+                f"Available models for {provider}:\n{listing}\nChoose a number or model ID:",
+                placeholder="Enter a model number or name…",
+            )
+            if answer in models:
+                return answer
+            if answer.isascii() and answer.isdigit() and 1 <= int(answer) <= len(models):
+                return models[int(answer) - 1]
+            self.log("Choose one of the listed models.", level="warning")
 
     def confirm(self, question: str) -> bool:
         try:
@@ -245,19 +303,50 @@ class PlainUi:
         except (KeyboardInterrupt, EOFError) as exc:
             raise UiCancelled("interaction cancelled by user") from exc
 
-    def review_plan(self, question: str, _state: Any) -> bool | str | None:
-        try:
-            answer = input(f"{question} [y/N, ask a question, or describe a revision] ").strip()
-        except (KeyboardInterrupt, EOFError) as exc:
-            raise UiCancelled("interaction cancelled by user") from exc
-        if answer.lower() in {"y", "yes"}:
-            return True
-        if answer.lower() in {"", "n", "no"}:
-            return None
-        return answer
+    def ask_output_path(self, source: Path) -> str:
+        suggested = f"{source.stem}.planned.json"
+        answer = self.ask(
+            f"Output filename for {source.name}?\nPress Enter to use {suggested}.",
+            placeholder="Enter an output filename…",
+        )
+        return answer.strip() or suggested
 
-    def start_run(self) -> None:
-        pass
+    def review_manifest(self, state: Any, *, run_after: bool = False) -> bool | str | None:
+        source, target = state.manifest_path, state.output_path
+        output = target.name if target.parent == source.parent else str(target)
+        if target == source:
+            output += " (overwrites source)"
+        elif target.exists():
+            output += " (overwrites existing file)"
+        question = f"● Manifest validated\n\n  {source.name}\n  Save as: {output}"
+        return self.review_plan(question, state, accept_label="Save and run" if run_after else "Accept and save")
+
+    def _plan_choice(self, question: str, accept_label: str) -> str:
+        self.log(f"\n{question}\n")
+        self.log(f"[y] {accept_label}  [N] Cancel  [?] Ask or revise\n")
+        return input("Choose [y/N/?]: ")
+
+    def review_plan(self, question: str, state: Any, *, accept_label: str = "Accept and save") -> bool | str | None:
+        while True:
+            try:
+                answer = self._plan_choice(question, accept_label).strip().lower()
+            except (KeyboardInterrupt, EOFError) as exc:
+                raise UiCancelled("interaction cancelled by user") from exc
+            if answer == "y":
+                self.log()
+                return True
+            if answer in {"", "n"}:
+                self.log()
+                return None
+            if answer == "?":
+                while True:
+                    request = self.ask(
+                        "What would you like to know or change?", state,
+                        placeholder="Ask a question or describe a change…",
+                    )
+                    if request.strip():
+                        return request
+            self.log("Please choose y, N, or ?.")
 
     def set_running_job(self, stage: str | None, job: str | None) -> None:
         pass
@@ -276,12 +365,32 @@ class PlainUi:
         pass
 
 
+class _InputSession(PromptSession):
+    """Keep the composer compact while the footer stays at the terminal bottom."""
+
+    def _create_layout(self):
+        layout = super()._create_layout()
+        # PromptSession's first section holds its input and completion menus.
+        # Let a separate spacer absorb free rows, instead of stretching the frame.
+        sections = layout.container.children
+        composer = sections[0]
+
+        def height():
+            size = self.app.output.get_size()
+            rows = composer.preferred_height(size.columns, size.rows).preferred
+            return Dimension.exact(rows)
+
+        sections[0] = HSplit([composer], height=height)
+        sections.insert(1, Window())
+        return layout
+
+
 class TerminalUi(PlainUi):
     """Persistent prompt_toolkit conversation and progress renderer."""
 
     def __init__(self) -> None:
         self.completer = _ManifestCompleter()
-        self.session = PromptSession(
+        self.session = _InputSession(
             history=InMemoryHistory(),
             completer=self.completer,
             complete_while_typing=False,
@@ -291,6 +400,7 @@ class TerminalUi(PlainUi):
         self._stdout_context: Any | None = None
         self._running_stage: str | None = None
         self._running_job: str | None = None
+        self._phase = "startup"
 
     def log(self, message: str = "", *, level: str = "info", style: str | None = None) -> None:
         stream = sys.stderr if level == "error" else sys.stdout
@@ -309,12 +419,75 @@ class TerminalUi(PlainUi):
         print(rendered, file=stream, flush=True)
 
     def _status_toolbar(self) -> str:
-        return f" Stage: {self._running_stage or 'idle'} Job: {self._running_job or 'idle'} "
+        parts = [self._phase.upper()]
+        if self._running_stage:
+            parts.append(self._running_stage)
+        if self._running_job:
+            parts.append(self._running_job)
+        activity = getattr(self, "_interaction", None) or {
+            "startup": "Starting",
+            "validate": "Validating",
+            "plan": "Working",
+            "run": "Running",
+        }.get(self._phase, "Working")
+        parts.append(activity)
+        return " " + " · ".join(parts) + " "
 
-    def start_run(self) -> None:
-        self._running_stage = None
-        self._running_job = None
+    def _footer(self, hints: str = "") -> str:
+        text = self._status_toolbar()
+        if hints:
+            text += " | " + hints.strip()
+        text = " " + " ".join(text.split())
+        width = max(1, self.session.app.output.get_size().columns - 1)
+        if get_cwidth(text) <= width:
+            return text
+        clipped = ""
+        used = 0
+        for character in text:
+            used += get_cwidth(character)
+            if used > width - 1:
+                break
+            clipped += character
+        return clipped + "…"
+
+    def start(self) -> None:
+        super().start()
         self._ensure_progress_bar()
+
+    @contextmanager
+    def _foreground(self) -> Iterator[None]:
+        """Give input ownership to a prompt or editor, preserving live counters."""
+        progress_bar = getattr(self, "_progress_bar", None)
+        counters = list(progress_bar.counters) if progress_bar is not None else []
+        if progress_bar is not None:
+            self.close()
+        try:
+            yield
+        finally:
+            if progress_bar is not None:
+                resumed = self._ensure_progress_bar()
+                for counter in counters:
+                    counter.progress_bar = resumed
+                    resumed.counters.append(counter)
+                resumed.invalidate()
+
+    def _prompt(self, *args: Any, **kwargs: Any) -> str:
+        hints = kwargs.pop("bottom_toolbar", " Enter confirm · Ctrl+C cancel ")
+        self._interaction = kwargs.pop("interaction", "Waiting for input")
+        try:
+            with self._foreground():
+                return self.session.prompt(
+                    *args,
+                    style=_INPUT_STYLE,
+                    lexer=SimpleLexer("class:user-input"),
+                    color_depth=ColorDepth.DEPTH_8_BIT,
+                    show_frame=~is_done,
+                    reserve_space_for_menu=0,
+                    bottom_toolbar=lambda: self._footer(hints),
+                    **kwargs,
+                )
+        finally:
+            self._interaction = None
 
     def set_running_job(self, stage: str | None, job: str | None) -> None:
         self._running_stage = stage
@@ -328,7 +501,7 @@ class TerminalUi(PlainUi):
             self._stdout_context.__enter__()
             self._progress_bar = ProgressBar(
                 formatters=_progress_formatters(),
-                bottom_toolbar=self._status_toolbar,
+                bottom_toolbar=self._footer,
                 style=_PROGRESS_STYLE,
                 color_depth=ColorDepth.DEPTH_8_BIT,
             )
@@ -367,7 +540,8 @@ class TerminalUi(PlainUi):
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
                 handle.write(json.dumps(state.candidate, indent=2, ensure_ascii=False) + "\n")
-            subprocess.run([*shlex.split(editor), str(path)], check=True)
+            with self._foreground():
+                subprocess.run([*shlex.split(editor), str(path)], check=True)
             document = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(document, dict):
                 raise ValueError("edited manifest root must be an object")
@@ -408,22 +582,45 @@ class TerminalUi(PlainUi):
             return False
         return True
 
-    def ask(self, question: str, state: Any | None = None) -> str:
-        self.log(f"\n{'Planner' if state is not None else 'Agent'}: {question}")
+    def ask_output_path(self, source: Path) -> str:
+        suggested = f"{source.stem}.planned.json"
+        self.log(f"\n● Planner\n  Output filename for {source.name}?\n  Edit the suggested name or press Enter.\n")
+        while True:
+            try:
+                answer = self._prompt(
+                    HTML("<user-label> › </user-label> "),
+                    multiline=False,
+                    default=suggested,
+                    placeholder=[("ansibrightblack", "Enter an output filename…")],
+                    completer=PathCompleter(expanduser=True, get_paths=lambda: [str(source.parent)]),
+                    bottom_toolbar=" Enter submit · Tab complete · Ctrl+C cancel ",
+                ).strip()
+            except (KeyboardInterrupt, EOFError) as exc:
+                raise UiCancelled("interaction cancelled by user") from exc
+            if answer:
+                self.log()
+                return answer
+
+    def ask(self, question: str, state: Any | None = None, *, placeholder: str = "") -> str:
+        role = "Planner" if state is not None or self._phase == "plan" else "Agent"
+        self.log(f"\n● {role}\n" + "\n".join(f"  {line}" for line in question.splitlines()) + "\n")
         self.completer.state = state
         while True:
             try:
-                answer = self.session.prompt(
-                    HTML("<b>You</b>&gt; "),
+                answer = self._prompt(
+                    HTML("<user-label> › </user-label> "),
                     multiline=True,
+                    completer=self.completer,
                     key_bindings=_CONVERSATION_KEY_BINDINGS,
-                    prompt_continuation="... ",
+                    prompt_continuation=[("class:prompt-continuation", "   ")],
+                    placeholder=[("ansibrightblack", placeholder)],
                     bottom_toolbar=(
-                        " Enter submit | Shift+Enter newline | Tab complete | Ctrl+C cancel | /help commands "
+                        " Enter submit · Shift+Enter newline · /help "
                     ),
                 ).strip()
             except (KeyboardInterrupt, EOFError) as exc:
                 raise UiCancelled("interaction cancelled by user") from exc
+            self.log()
             if not answer:
                 continue
             if state is not None and answer.startswith("/") and self._command(answer, state):
@@ -433,7 +630,14 @@ class TerminalUi(PlainUi):
     def confirm(self, question: str) -> bool:
         while True:
             try:
-                answer = self.session.prompt(f"{question} [y/N] ").strip().lower()
+                answer = self._prompt(
+                    f"{question}\n\n[y] Yes  [N] No\n\n› ",
+                    interaction="Waiting for confirmation",
+                    multiline=False,
+                    placeholder="",
+                    completer=None,
+                    auto_suggest=None,
+                ).strip().lower()
             except (KeyboardInterrupt, EOFError) as exc:
                 raise UiCancelled("interaction cancelled by user") from exc
             if answer in {"y", "yes"}:
@@ -442,23 +646,16 @@ class TerminalUi(PlainUi):
                 return False
             self.log("Please answer yes or no.")
 
-    def review_plan(self, question: str, state: Any) -> bool | str | None:
-        self.completer.state = state
-        try:
-            answer = self.session.prompt(
-                f"{question} [y/N, ask a question, or describe a revision] ",
-                multiline=True,
-                key_bindings=_CONVERSATION_KEY_BINDINGS,
-                prompt_continuation="... ",
-                bottom_toolbar=" Enter submit | Shift+Enter newline | Ctrl+C cancel ",
-            ).strip()
-        except (KeyboardInterrupt, EOFError) as exc:
-            raise UiCancelled("interaction cancelled by user") from exc
-        if answer.lower() in {"y", "yes"}:
-            return True
-        if answer.lower() in {"", "n", "no"}:
-            return None
-        return answer
+    def _plan_choice(self, question: str, accept_label: str) -> str:
+        return self._prompt(
+            f"{question}\n\n[y] {accept_label}  [N] Cancel  [?] Ask or revise\n\n› ",
+            interaction="Waiting for confirmation",
+            multiline=False,
+            placeholder="",
+            completer=None,
+            auto_suggest=None,
+            bottom_toolbar=" Enter confirm · Ctrl+C cancel ",
+        )
 
     def close(self) -> None:
         if self._progress_bar is not None:

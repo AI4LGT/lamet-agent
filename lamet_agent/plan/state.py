@@ -297,6 +297,12 @@ class PlanState:
         self.packets = [issue_packet(self.candidate, issue) for issue in self.issues]
 
     def manifest_view(self, pointer: str = "") -> dict[str, Any]:
+        if pointer and not pointer.startswith("/"):
+            return {
+                "ok": False,
+                "error": "path must be a JSON Pointer starting with '/' (for example "
+                "'/stages/correlator_analysis'), or an empty string for the complete manifest",
+            }
         value = _pointer_get(self.candidate, pointer)
         if value is _MISSING:
             return {"ok": False, "error": f"manifest path does not exist: {pointer}"}
@@ -393,23 +399,8 @@ class PlanState:
         return self.output_path
 
 
-def _default_output_path(manifest_path: Path) -> Path:
-    suffix = manifest_path.suffix if manifest_path.suffix.lower() == ".json" else ".json"
-    return manifest_path.with_name(f"{manifest_path.stem}.planned{suffix}")
-
-
-def _acceptance_question(source: Path, target: Path) -> str:
-    if target == source:
-        return f"Accept this plan, overwrite {source}, and enter run mode?"
-    if target.exists():
-        return f"Accept this plan, overwrite existing {target}, and enter run mode?"
-    return f"Accept this plan, write {target}, and enter run mode?"
-
-
 __all__ = [
     "PlanState",
-    "_acceptance_question",
-    "_default_output_path",
     "apply_json_patches",
     "contract_packet",
     "issue_packet",

@@ -39,7 +39,7 @@ from lamet_agent.contract import (
     stage_job_rules,
 )
 from lamet_agent.__main__ import _build_parser
-from lamet_agent.llm import Message, _AssistantResponse, _ToolCall, create_backend
+from lamet_agent.llm import InvalidResponseError, Message, _AssistantResponse, _ToolCall, create_backend
 from lamet_agent.manifest import Manifest, _load_stage_contract, load_manifest
 from lamet_agent.structured import annotation_schema, validate_unique_items
 
@@ -416,14 +416,16 @@ def test_core_exports_are_minimal() -> None:
     assert lanczos.__all__ == ["prepare_lanczos_data", "analyze_prepared_lanczos"]
 
 
-def test_cli_uses_provider_and_optional_model() -> None:
-    args = _build_parser().parse_args(["run", "manifest.json", "--provider", "codex"])
+def test_cli_requires_explicit_model() -> None:
+    args = _build_parser().parse_args(["run", "manifest.json", "--provider", "codex", "--model", "gpt-test"])
     assert args.provider == "codex"
-    assert args.model is None
+    assert args.model == "gpt-test"
     assert args.progress == "auto"
     assert not hasattr(args, "backend")
 
-    explicit = _build_parser().parse_args(["run", "manifest.json", "--provider", "codex", "--progress", "stage"])
+    explicit = _build_parser().parse_args(
+        ["run", "manifest.json", "--provider", "codex", "--model", "gpt-test", "--progress", "stage"]
+    )
     assert explicit.progress == "stage"
 
 
@@ -487,13 +489,14 @@ def test_provider_selection_has_one_public_backend_factory(monkeypatch: pytest.M
     monkeypatch.setattr(
         "urllib.request.urlopen", lambda request, **kwargs: _ModelsResponse(["gpt-5.6-luna", "gpt-test"])
     )
-    assert create_backend("openai").identity.endswith(":gpt-5.6-luna")
+    with pytest.raises(ValueError, match="available models:"):
+        create_backend("openai")
     assert create_backend("openai", "gpt-test").identity.endswith(":gpt-test")
-    assert create_backend("codex").identity == "codex:gpt-5.6-luna"
-    assert create_backend("claude").identity == "claude:haiku"
+    assert create_backend("codex", "gpt-5.6-luna").identity == "codex:gpt-5.6-luna"
+    assert create_backend("claude", "haiku").identity == "claude:haiku"
     assert create_backend("codex", "gpt-test").identity == "codex:gpt-test"
     assert create_backend("claude", "sonnet").identity == "claude:sonnet"
-    with pytest.raises(ValueError, match="requires a model"):
+    with pytest.raises(ValueError, match="requires api_key_file"):
         create_backend("https://llm.example.test/v1")
 
 
@@ -528,7 +531,7 @@ def test_codex_provider_passes_response_schema_to_the_python_sdk(monkeypatch: py
         "required": ["value"],
         "additionalProperties": False,
     }
-    response = create_backend("codex").complete(
+    response = create_backend("codex", "gpt-5.6-luna").complete(
         messages=[Message("system", "system prompt"), Message("user", "request")],
         tools=[],
         prompt_digest="digest",
@@ -579,11 +582,15 @@ def test_codex_provider_rejects_extra_closers_on_tool_json(monkeypatch: pytest.M
     monkeypatch.setitem(sys.modules, "openai_codex", sdk)
 
     with pytest.raises(ValueError, match="Codex returned malformed JSON"):
-        create_backend("codex").complete(
+        create_backend("codex", "gpt-5.6-luna").complete(
             messages=[Message("user", "request")],
             tools=[{"type": "function", "function": {"name": "write_review", "parameters": {}}}],
             prompt_digest="digest",
         )
+
+
+class _FakeClaudeSDKError(Exception):
+    pass
 
 
 def test_claude_provider_uses_the_python_sdk_without_native_tools(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -627,6 +634,7 @@ def test_claude_provider_uses_the_python_sdk_without_native_tools(monkeypatch: p
 
     sdk = types.ModuleType("claude_agent_sdk")
     sdk.ClaudeAgentOptions = FakeOptions
+    sdk.ClaudeSDKError = _FakeClaudeSDKError
     sdk.query = fake_query
     monkeypatch.setitem(sys.modules, "claude_agent_sdk", sdk)
 
@@ -670,6 +678,33 @@ def test_claude_provider_uses_the_python_sdk_without_native_tools(monkeypatch: p
     assert "resume" not in options[0].values
     assert options[1].values["resume"] == "claude-session"
     assert options[1].values["tools"] == []
+    assert all(option.values["max_turns"] == 3 for option in options)
+
+
+@pytest.mark.parametrize("yield_result", [False, True])
+def test_claude_sdk_failure_preserves_cause_for_cli_error_handling(monkeypatch, yield_result) -> None:
+    failure = _FakeClaudeSDKError("Reached maximum number of turns (3)")
+
+    async def fake_query(**kwargs):
+        if yield_result:
+            yield SimpleNamespace(
+                result=None, session_id="failed-session", is_error=True,
+                errors=[str(failure)], structured_output=None,
+            )
+        raise failure
+
+    sdk = types.ModuleType("claude_agent_sdk")
+    sdk.ClaudeAgentOptions = lambda **kwargs: SimpleNamespace(**kwargs)
+    sdk.ClaudeSDKError = _FakeClaudeSDKError
+    sdk.query = fake_query
+    monkeypatch.setitem(sys.modules, "claude_agent_sdk", sdk)
+    backend = create_backend("claude", "haiku")
+
+    with pytest.raises(RuntimeError, match="Reached maximum number of turns") as caught:
+        backend.complete(messages=[Message("user", "request")], tools=[], prompt_digest="digest")
+
+    assert caught.value.__cause__ is failure
+    assert backend._sessions == {}
 
 
 @pytest.mark.parametrize("ask", [True, False])
@@ -686,11 +721,12 @@ def test_claude_structured_response_requires_native_result(monkeypatch: pytest.M
 
     sdk = types.ModuleType("claude_agent_sdk")
     sdk.ClaudeAgentOptions = FakeOptions
+    sdk.ClaudeSDKError = _FakeClaudeSDKError
     sdk.query = fake_query
     monkeypatch.setitem(sys.modules, "claude_agent_sdk", sdk)
 
-    with pytest.raises(TypeError, match="Claude Code structured response must be an object"):
-        create_backend("claude").complete(
+    with pytest.raises(InvalidResponseError, match="Claude Code structured response must be an object"):
+        create_backend("claude", "haiku").complete(
             messages=[Message("user", "request")], tools=[], prompt_digest="digest",
             response_schema={
                 "name": "answer",
@@ -756,9 +792,10 @@ def test_cli_tool_envelope_reaches_native_schema(provider, with_tools, monkeypat
     codex_sdk.Codex, codex_sdk.Sandbox = FakeCodex, FakeSandbox
     claude_sdk = types.ModuleType("claude_agent_sdk")
     claude_sdk.ClaudeAgentOptions, claude_sdk.query = FakeOptions, fake_query
+    claude_sdk.ClaudeSDKError = _FakeClaudeSDKError
     monkeypatch.setitem(sys.modules, "openai_codex", codex_sdk)
     monkeypatch.setitem(sys.modules, "claude_agent_sdk", claude_sdk)
-    response = create_backend(provider).complete(
+    response = create_backend(provider, "test-model").complete(
         messages=[Message("user", "request")], tools=tools, prompt_digest="digest",
     )
     assert response.text == "done"
@@ -835,21 +872,22 @@ def test_backend_factory_owns_api_key_file_validation(tmp_path: Path, monkeypatc
     with pytest.raises(ValueError, match="is empty"):
         create_backend("openai", "gpt-a", api_key_file=key_file)
     with pytest.raises(ValueError, match="only valid for API providers"):
-        create_backend("codex", api_key_file=key_file)
+        create_backend("codex", "gpt-test", api_key_file=key_file)
 
 
-def test_local_api_infers_its_only_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_local_api_does_not_select_only_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     key_file = tmp_path / "provider.key"
     key_file.write_text("key\n", encoding="utf-8")
     monkeypatch.setattr("urllib.request.urlopen", lambda request: _ModelsResponse(["local-model"]))
-    assert create_backend("http://localhost:11434/v1", api_key_file=key_file).identity.endswith(":local-model")
+    with pytest.raises(ValueError, match="available models:"):
+        create_backend("http://localhost:11434/v1", api_key_file=key_file)
 
 
 def test_local_api_rejects_ambiguous_model_selection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     key_file = tmp_path / "provider.key"
     key_file.write_text("key\n", encoding="utf-8")
     monkeypatch.setattr("urllib.request.urlopen", lambda request: _ModelsResponse(["local-a", "local-b"]))
-    with pytest.raises(ValueError, match="exposes multiple models"):
+    with pytest.raises(ValueError, match="available models:"):
         create_backend("http://127.0.0.1:8000/v1", api_key_file=key_file)
 
 
@@ -880,7 +918,9 @@ def test_unified_backend_preserves_multiple_ordered_tool_calls(tmp_path: Path, m
     ]
 
 
-def test_api_backend_retries_only_malformed_tool_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_api_session_reports_malformed_tool_json_before_resending(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     malformed = {
         "choices": [
             {
@@ -908,13 +948,30 @@ def test_api_backend_retries_only_malformed_tool_json(tmp_path: Path, monkeypatc
     responses = iter(
         [_ModelsResponse(["model"]), _ChatResponse(malformed), _ChatResponse(malformed), _ChatResponse(valid)]
     )
-    monkeypatch.setattr("urllib.request.urlopen", lambda request, **kwargs: next(responses))
+    requests = []
 
-    response = create_backend("https://example.test/v1", "model", key_file).complete(
-        messages=[Message("user", "run")], tools=[], prompt_digest="digest"
+    def urlopen(request, **kwargs):
+        if request.data:
+            requests.append(json.loads(request.data))
+        return next(responses)
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+
+    session = LlmSession(create_backend("https://example.test/v1", "model", key_file), None)
+    response = session.complete(
+        label="test", messages=[Message("user", "run")], prompt_digest="digest",
+        tools=[{"type": "function", "function": {"name": "fit", "parameters": {
+            "type": "object", "properties": {"window": {"type": "integer"}}, "required": ["window"],
+        }}}],
     )
 
     assert response.calls[0].arguments == {"window": 3}
+    assert session.calls == 3
+    feedback = json.loads(requests[1]["messages"][-1]["content"])
+    assert "JSONDecodeError" in feedback["error"]
+    assert "{bad" in feedback["invalid_response"]
+    assert "Resend the complete response" in feedback["request"]
+    assert requests[1]["messages"][0] == requests[0]["messages"][0]
 
 
 def test_contract_traverses_virtual_list_items() -> None:
@@ -3629,3 +3686,17 @@ def test_matching_contract_rejects_manual_renormalization_settings(key, value) -
     params = {"order": "nlo", "mu": 2.0, "lc_x_ls": [0.25, 0.75], "kernel_parameters": {}, key: value}
     issues = evaluate_rules(params, contract.PARAM_RULES)
     assert [(issue.path, issue.message) for issue in issues] == [(key, f"unknown key '{key}'")]
+
+
+@pytest.mark.parametrize("command", ["plan", "run"])
+def test_cli_accepts_missing_model(command: str) -> None:
+    args = _build_parser().parse_args([command, "manifest.json", "--provider", "codex"])
+    assert args.model is None
+
+
+@pytest.fixture(autouse=True)
+def mock_cli_model_catalog(monkeypatch):
+    # Response tests exercise transport behavior independently of model discovery.
+    monkeypatch.setattr("lamet_agent.llm._cli_models", lambda provider: [
+        "gpt-5.6-luna", "gpt-test", "test-model", "haiku", "sonnet",
+    ])

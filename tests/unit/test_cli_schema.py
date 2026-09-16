@@ -17,8 +17,9 @@ def test_plan_patch_json_and_optional_fields_round_trip(provider):
     saved = copy.deepcopy(original)
     contract = _prepare_cli_schema(original, None, provider=provider)
     value = {"stages": [1, None, {"key": "value"}]}
-    patch_value = {"value": json.dumps(value)} if provider == "codex" else json.dumps(value)
-    null_value = {"value": "null"} if provider == "codex" else "null"
+    encoded = {"json": json.dumps(value)}
+    patch_value = {"value": encoded} if provider == "codex" else encoded
+    null_value = {"value": None} if provider == "codex" else None
     removed = {"op": "remove", "path": "obsolete"}
     if provider == "codex":
         removed["value"] = None
@@ -44,6 +45,38 @@ def test_plan_patch_json_and_optional_fields_round_trip(provider):
         {"op": "remove", "path": "obsolete"},
     ]
     assert original == saved
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+@pytest.mark.parametrize("value", ["lanczos", "null", "200", "true", "[2]", "", 200, 2.5, True, False, None])
+def test_patch_scalars_use_native_json_without_coercion(provider, value):
+    contract = _prepare_cli_schema(planning_tool_schemas(), None, provider=provider)
+    wire = {
+        "text": "",
+        "tool_calls": [{"name": "apply_manifest_patch", "arguments": {"patches": [{
+            "op": "add", "path": "/metadata/test",
+            "value": {"value": value} if provider == "codex" else value,
+        }]}}],
+    }
+    restored = contract.decode(wire)["tool_calls"][0]["arguments"]["patches"][0]["value"]
+    assert restored == value
+    assert type(restored) is type(value)
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+@pytest.mark.parametrize("serialized", ["lanczos", "200", "null", '"lanczos"'])
+def test_patch_container_wrapper_rejects_invalid_json_and_scalars(provider, serialized):
+    contract = _prepare_cli_schema(planning_tool_schemas(), None, provider=provider)
+    encoded = {"json": serialized}
+    wire = {
+        "text": "",
+        "tool_calls": [{"name": "apply_manifest_patch", "arguments": {"patches": [{
+            "op": "add", "path": "/metadata/test",
+            "value": {"value": encoded} if provider == "codex" else encoded,
+        }]}}],
+    }
+    with pytest.raises(ValueError, match=r"tool_calls\[\].arguments.patches\[\].value"):
+        contract.decode(wire)
 
 
 @pytest.mark.parametrize("provider", ["codex", "claude"])

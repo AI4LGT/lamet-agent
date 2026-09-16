@@ -17,7 +17,7 @@ from .agent import create_session
 from .contract import Issue
 from .llm import create_backend
 from .manifest import Manifest, load_manifest
-from .ui import PlainUi
+from .ui import PlainUi, create_ui, use_ui
 
 
 def _render_issues(issues: Sequence[Issue]) -> str:
@@ -38,16 +38,18 @@ def _build_parser() -> argparse.ArgumentParser:
     plan = subparsers.add_parser("plan", help="complete an incomplete manifest through an interactive LLM TUI")
     plan.add_argument("manifest", type=Path)
     plan.add_argument("--provider", required=True, help="registered provider or OpenAI-compatible API URL")
-    plan.add_argument("--model", help="model ID override")
+    plan.add_argument("--model", help="model ID; prompts for selection if omitted or unavailable")
     plan.add_argument("--api-key-file", type=Path, help="API key file for API providers")
-    plan.add_argument("--output", type=Path, help="output path; defaults to <manifest>.planned.json")
+    plan.add_argument(
+        "--output", type=Path, help="output path; prompts for a filename if neither output nor in-place is set"
+    )
     plan.add_argument("--in-place", action="store_true", help="overwrite the input manifest after explicit acceptance")
     run = subparsers.add_parser("run", help="execute one validated manifest")
     run.add_argument("manifest", type=Path)
     run.add_argument(
         "--provider", required=True, help="registered agent CLI/API provider, or an OpenAI-compatible API URL"
     )
-    run.add_argument("--model", help="model ID override; optional when a local API exposes exactly one model")
+    run.add_argument("--model", help="model ID; prompts for selection if omitted or unavailable")
     run.add_argument(
         "--api-key-file", type=Path, help="API key file; required for a custom URL, optional for registered APIs"
     )
@@ -63,8 +65,18 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Dispatch one CLI command and return its process status."""
     args = _build_parser().parse_args(argv)
-    cli_ui = PlainUi()
+    cli_ui = create_ui()
+    with use_ui(cli_ui):
+        try:
+            cli_ui.start()
+            return _dispatch(args, cli_ui)
+        finally:
+            cli_ui.close()
+
+
+def _dispatch(args: argparse.Namespace, cli_ui: PlainUi) -> int:
     if args.command == "validate":
+        cli_ui.set_phase("validate")
         try:
             _, issues = _validate(args.manifest)
         except (OSError, ValueError, json.JSONDecodeError) as exc:
@@ -79,8 +91,8 @@ def main(argv: list[str] | None = None) -> int:
         backend = None
         session = None
         try:
-            backend = create_backend(args.provider, args.model, args.api_key_file)
-            session = create_session(backend)
+            backend = create_backend(args.provider, args.model, args.api_key_file, select_model=cli_ui.select_model)
+            session = create_session(backend, ui=cli_ui)
             planned_path = session.plan_manifest(
                 args.manifest,
                 output_path=args.output,
@@ -108,11 +120,11 @@ def main(argv: list[str] | None = None) -> int:
     session = None
     try:
         manifest = load_manifest(args.manifest)
-        backend = create_backend(args.provider, args.model, args.api_key_file)
-        session = create_session(backend, progress_mode=args.progress)
-        issues = session.validate_manifest(manifest, show_banner=True)
+        backend = create_backend(args.provider, args.model, args.api_key_file, select_model=cli_ui.select_model)
+        session = create_session(backend, ui=cli_ui, progress_mode=args.progress)
+        issues = session.validate_manifest(manifest)
         if issues:
-            planned_path = session.plan_manifest(args.manifest)
+            planned_path = session.plan_manifest(args.manifest, run_after=True)
             if planned_path is None:
                 return 1
             manifest = load_manifest(planned_path)
