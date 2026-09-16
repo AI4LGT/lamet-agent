@@ -59,6 +59,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default="auto",
         help="progress granularity; auto uses stage progress when systematics are declared, otherwise job progress",
     )
+    for command in (plan, run):
+        command.add_argument(
+            "--plan-log-dir", type=Path,
+            help="save Plan LLM transcripts in this directory (disabled by default)",
+        )
     return parser
 
 
@@ -97,6 +102,7 @@ def _dispatch(args: argparse.Namespace, cli_ui: PlainUi) -> int:
                 args.manifest,
                 output_path=args.output,
                 in_place=args.in_place,
+                plan_log_dir=args.plan_log_dir,
             )
             if planned_path is None:
                 return 1
@@ -124,7 +130,7 @@ def _dispatch(args: argparse.Namespace, cli_ui: PlainUi) -> int:
         session = create_session(backend, ui=cli_ui, progress_mode=args.progress)
         issues = session.validate_manifest(manifest)
         if issues:
-            planned_path = session.plan_manifest(args.manifest, run_after=True)
+            planned_path = session.plan_manifest(args.manifest, run_after=True, plan_log_dir=args.plan_log_dir)
             if planned_path is None:
                 return 1
             manifest = load_manifest(planned_path)

@@ -229,7 +229,7 @@ def test_explicit_output_skips_filename_question_and_labels_acceptance(tmp_path,
     target = path if in_place else tmp_path / "existing.json"
     if not in_place:
         target.write_text("{}", encoding="utf-8")
-    tui = _FakeTui(confirmations=[True])
+    tui = _FakeTui(confirmations=[True, True] if in_place else [True])
     output = create_session(_ScriptedBackend([])).plan_manifest(
         path, output_path=None if in_place else target, in_place=in_place, run_after=run_after, tui=tui
     )
@@ -243,19 +243,19 @@ def test_explicit_output_skips_filename_question_and_labels_acceptance(tmp_path,
 
 def test_prompted_output_must_remain_beside_source(tmp_path) -> None:
     path, _document = _review_manifest(tmp_path, include_seed=True)
-    tui = _FakeTui(answers=["../outside.json"])
-    with pytest.raises(ValueError, match="remain beside"):
-        create_session(_ScriptedBackend([])).plan_manifest(path, tui=tui)
+    tui = _FakeTui(answers=["../outside.json", "chosen.json"], confirmations=[True])
+    assert create_session(_ScriptedBackend([])).plan_manifest(path, tui=tui) == path.parent / "chosen.json"
+    assert any("directory is fixed" in message for message in tui.messages)
 
 
-def test_suggested_output_still_requires_final_acceptance(tmp_path) -> None:
+def test_empty_output_requires_overwrite_confirmation(tmp_path) -> None:
     path, _document = _review_manifest(tmp_path, include_seed=True)
     original = path.read_text(encoding="utf-8")
     tui = _FakeTui(answers=[""], confirmations=[False])
 
     assert create_session(_ScriptedBackend([])).plan_manifest(path, tui=tui) is None
     assert path.read_text(encoding="utf-8") == original
-    assert any("Save as: draft.planned.json" in message for message in tui.messages)
+    assert any("overwrite the original manifest" in message for message in tui.messages)
     assert not (tmp_path / "draft.planned.json").exists()
 
 
@@ -284,7 +284,7 @@ def test_plan_returns_invalid_read_path_to_model_and_continues(tmp_path: Path) -
         _AssistantResponse("", _ToolCall("fixed-read", "read_manifest", {"path": "/metadata/random_seed"})),
         _AssistantResponse("", _ToolCall("finish", "finish_plan", {"summary": "Reviewed.", "changes": []})),
     ])
-    tui = _FakeTui(reviews=["Inspect this manifest.", True])
+    tui = _FakeTui(reviews=["Inspect this manifest.", True], confirmations=[True])
 
     assert create_session(backend).plan_manifest(path, in_place=True, tui=tui) == path
     observations = {
@@ -308,10 +308,12 @@ def test_plan_can_continue_beyond_sixty_calls_and_tool_steps(tmp_path: Path) -> 
         ],
         _AssistantResponse("", _ToolCall("finish", "finish_plan", {"summary": "Reviewed.", "changes": []})),
     ])
-    tui = _FakeTui(reviews=["Inspect this manifest.", True])
+    tui = _FakeTui(reviews=["Inspect this manifest.", True], confirmations=[True])
 
     assert create_session(backend).plan_manifest(path, in_place=True, tui=tui) == path
     assert len(backend.calls) == 66
+    assert not list(tmp_path.rglob("llm_transcript.md"))
+    assert not (tmp_path / "artifacts" / "plan").exists()
 
 
 def test_valid_plan_accepts_explicit_revision_before_final_confirmation(tmp_path: Path, monkeypatch) -> None:
@@ -519,9 +521,9 @@ def test_plan_uses_unique_shared_transcripts_for_response_repair(tmp_path):
             return value
 
         backend.complete = complete
-        tui = _FakeTui(reviews=['Inspect this manifest.', True])
-        create_session(backend).plan_manifest(source, in_place=True, tui=tui)
-    paths = list((tmp_path / 'artifacts' / 'plan').glob('*/llm_transcript.md'))
+        tui = _FakeTui(reviews=['Inspect this manifest.', True], confirmations=[True])
+        create_session(backend).plan_manifest(source, in_place=True, tui=tui, plan_log_dir=tmp_path / "logs")
+    paths = list((tmp_path / 'logs').glob('*/llm_transcript.md'))
     assert len(paths) == 2
     for path in paths:
         text = path.read_text()
@@ -530,3 +532,30 @@ def test_plan_uses_unique_shared_transcripts_for_response_repair(tmp_path):
         assert 'InvalidResponseError' in text
         assert 'elapsed_seconds' in text
         assert 'received from LLM' in text
+
+
+@pytest.mark.parametrize("answer", ["", "draft.json"])
+def test_in_place_input_accepts_only_after_confirmation(tmp_path, answer):
+    path, _ = _review_manifest(tmp_path, include_seed=True)
+    # Use the real source name for explicit paths as well as empty input.
+    entered = answer.replace("draft.json", path.name)
+    tui = _FakeTui(answers=[entered], confirmations=[True, True])
+    assert create_session(_ScriptedBackend([])).plan_manifest(path, tui=tui) == path
+    assert any("overwrite the original manifest" in message for message in tui.messages)
+
+
+@pytest.mark.parametrize("kind", ["path", "symlink", "hardlink", "flag"])
+def test_original_file_collision_can_be_declined(tmp_path, kind):
+    path, _ = _review_manifest(tmp_path, include_seed=True)
+    original = path.read_bytes()
+    target = path
+    if kind in {"symlink", "hardlink"}:
+        target = tmp_path / "alias.json"
+        if kind == "symlink":
+            target.symlink_to(path)
+        else:
+            target.hardlink_to(path)
+    options = {"in_place": True} if kind == "flag" else {"output_path": target}
+    tui = _FakeTui(confirmations=[False])
+    assert create_session(_ScriptedBackend([])).plan_manifest(path, tui=tui, **options) is None
+    assert path.read_bytes() == original

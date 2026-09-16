@@ -121,8 +121,12 @@ Options:
 `--output` and `--in-place` are mutually exclusive. A planned output must remain
 beside its source manifest so relative input paths preserve their meaning.
 If neither option is set, Plan first asks for an output filename, resolved relative
-to the source manifest's directory. The input is prefilled with `<manifest>.planned.json`;
-edit it or press Enter to accept. Use `--in-place` to explicitly select the source.
+to the source manifest's directory. The terminal displays that directory as a fixed
+prefix relative to the current working directory. Only the filename is editable,
+prefilled with `<manifest>.planned.json`;
+edit it or press Enter to accept. Clear the input to save in place; in plain-text
+mode, empty input also selects in-place. Any output pointing to the source file
+requires a separate overwrite confirmation (default No), including `--in-place`.
 Saving still requires final acceptance.
 
 Terminal controls include `/show`, `/issues`, `/undo`, `/edit`, `/save`,
@@ -131,10 +135,11 @@ Terminal controls include `/show`, `/issues`, `/undo`, `/edit`, `/save`,
 
 Standalone Plan writes the accepted manifest and exits without running analysis
 stages.
-When Plan calls the LLM, it prints the path to a separate transcript under
-`artifacts/plan/` beside the output manifest. Each session records requests,
-responses, rejected replies, failure reasons, and request durations without
-overwriting earlier sessions.
+Plan does not save LLM transcripts by default. Pass `--plan-log-dir DIRECTORY`
+to `plan` or `run` to enable them. The directory is resolved relative to the CLI
+working directory; each Plan session gets a manifest-name and timestamp subdirectory.
+The UI prints a relative path to the transcript. It records requests, responses,
+rejected replies, failure reasons, and durations without overwriting earlier sessions.
 
 ### Run
 

@@ -304,12 +304,18 @@ class PlainUi:
             raise UiCancelled("interaction cancelled by user") from exc
 
     def ask_output_path(self, source: Path) -> str:
-        suggested = f"{source.stem}.planned.json"
-        answer = self.ask(
-            f"Output filename for {source.name}?\nPress Enter to use {suggested}.",
-            placeholder="Enter an output filename…",
-        )
-        return answer.strip() or suggested
+        directory = os.path.relpath(source.parent) + os.sep
+        while True:
+            answer = self.ask(
+                "Output filename for the revised manifest?\n"
+                f"Directory (fixed): {directory}\n"
+                "Leave blank to save in place (requires overwrite confirmation).",
+                placeholder="Enter an output filename…",
+            ).strip()
+            if answer and (Path(answer).name != answer or answer in {".", ".."}):
+                self.log("Enter only a filename; the directory is fixed.", level="warning")
+                continue
+            return answer
 
     def review_manifest(self, state: Any, *, run_after: bool = False) -> bool | str | None:
         source, target = state.manifest_path, state.output_path
@@ -584,22 +590,31 @@ class TerminalUi(PlainUi):
 
     def ask_output_path(self, source: Path) -> str:
         suggested = f"{source.stem}.planned.json"
-        self.log(f"\n● Planner\n  Output filename for {source.name}?\n  Edit the suggested name or press Enter.\n")
+        directory = os.path.relpath(source.parent) + os.sep
+        self.log(
+            "\n● Planner\n  Output filename for the revised manifest?\n"
+            "  Clear the filename to save in place (requires overwrite confirmation).\n"
+        )
         while True:
             try:
                 answer = self._prompt(
-                    HTML("<user-label> › </user-label> "),
+                    [("class:user-label", " >  "), ("ansibrightblack", directory)],
                     multiline=False,
                     default=suggested,
                     placeholder=[("ansibrightblack", "Enter an output filename…")],
-                    completer=PathCompleter(expanduser=True, get_paths=lambda: [str(source.parent)]),
+                    completer=PathCompleter(
+                        get_paths=lambda: [str(source.parent)],
+                        file_filter=lambda path: not Path(path).is_dir(),
+                    ),
                     bottom_toolbar=" Enter submit · Tab complete · Ctrl+C cancel ",
                 ).strip()
             except (KeyboardInterrupt, EOFError) as exc:
                 raise UiCancelled("interaction cancelled by user") from exc
-            if answer:
-                self.log()
-                return answer
+            if answer and (Path(answer).name != answer or answer in {".", ".."}):
+                self.log("Enter only a filename; the directory is fixed.", level="warning")
+                continue
+            self.log()
+            return answer
 
     def ask(self, question: str, state: Any | None = None, *, placeholder: str = "") -> str:
         role = "Planner" if state is not None or self._phase == "plan" else "Agent"
@@ -608,7 +623,7 @@ class TerminalUi(PlainUi):
         while True:
             try:
                 answer = self._prompt(
-                    HTML("<user-label> › </user-label> "),
+                    HTML("<user-label> &gt; </user-label> "),
                     multiline=True,
                     completer=self.completer,
                     key_bindings=_CONVERSATION_KEY_BINDINGS,
@@ -631,7 +646,7 @@ class TerminalUi(PlainUi):
         while True:
             try:
                 answer = self._prompt(
-                    f"{question}\n\n[y] Yes  [N] No\n\n› ",
+                    f"{question}\n\n[y] Yes  [N] No\n\n> ",
                     interaction="Waiting for confirmation",
                     multiline=False,
                     placeholder="",
@@ -648,7 +663,7 @@ class TerminalUi(PlainUi):
 
     def _plan_choice(self, question: str, accept_label: str) -> str:
         return self._prompt(
-            f"{question}\n\n[y] {accept_label}  [N] Cancel  [?] Ask or revise\n\n› ",
+            f"{question}\n\n[y] {accept_label}  [N] Cancel  [?] Ask or revise\n\n> ",
             interaction="Waiting for confirmation",
             multiline=False,
             placeholder="",

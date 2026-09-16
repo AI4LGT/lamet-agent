@@ -10,7 +10,8 @@ import inspect
 import json
 import re
 import shutil
-import tempfile
+import os
+from datetime import datetime
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1108,6 +1109,7 @@ class _AgentSession:
         output_path: str | Path | None = None,
         in_place: bool = False,
         run_after: bool = False,
+        plan_log_dir: str | Path | None = None,
         tui: Any | None = None,
     ) -> Path | None:
         """Run the Plan extension within the same active UI and conversation framework."""
@@ -1122,6 +1124,7 @@ class _AgentSession:
                 output_path=output_path,
                 in_place=in_place,
                 run_after=run_after,
+                plan_log_dir=plan_log_dir,
                 tui=selected_ui,
             )
 
@@ -1132,6 +1135,7 @@ class _AgentSession:
         output_path: str | Path | None = None,
         in_place: bool = False,
         run_after: bool = False,
+        plan_log_dir: str | Path | None = None,
         tui: Any | None = None,
     ) -> Path | None:
         """Repair and confirm one authored manifest through the shared agent loop."""
@@ -1147,7 +1151,8 @@ class _AgentSession:
         elif output_path is not None:
             target = Path(output_path).expanduser().resolve()
         else:
-            entered = Path(tui.ask_output_path(source)).expanduser()
+            answer = tui.ask_output_path(source).strip()
+            entered = Path(answer).expanduser() if answer else source
             target = (entered if entered.is_absolute() else source.parent / entered).resolve()
         if target.parent != source.parent:
             raise ValueError(
@@ -1155,6 +1160,9 @@ class _AgentSession:
             )
         if target.is_dir():
             raise ValueError("planned output must name a file, not a directory")
+        overwrites_source = target == source or (target.exists() and target.samefile(source))
+        if overwrites_source and not tui.confirm(f"Save in place and overwrite the original manifest {source}?"):
+            return None
         state = PlanState(source, target, copy.deepcopy(manifest.document), copy.deepcopy(manifest.document))
         state.refresh()
         initial_revision: str | None = None
@@ -1194,12 +1202,22 @@ class _AgentSession:
                 separators=(",", ":"),
             ).encode("utf-8")
         ).hexdigest()
-        transcript_root = target.parent / "artifacts" / "plan"
-        transcript_root.mkdir(parents=True, exist_ok=True)
-        transcript_directory = Path(tempfile.mkdtemp(prefix=f"{source.stem}-", dir=transcript_root))
-        transcript_path = transcript_directory / _LLM_TRANSCRIPT_FILENAME
-        _write_transcript_header(transcript_path)
-        tui.log(f"Plan transcript: {transcript_path}")
+        transcript_path = None
+        if plan_log_dir is not None:
+            transcript_root = Path(plan_log_dir).expanduser().resolve()
+            transcript_root.mkdir(parents=True, exist_ok=True)
+            name = f"{source.stem}-{datetime.now():%Y%m%d-%H%M%S-%f}"
+            index = 0
+            while True:
+                transcript_directory = transcript_root / (name if index == 0 else f"{name}-{index}")
+                try:
+                    transcript_directory.mkdir()
+                    break
+                except FileExistsError:
+                    index += 1
+            transcript_path = transcript_directory / _LLM_TRANSCRIPT_FILENAME
+            _write_transcript_header(transcript_path)
+            tui.log(f"Plan transcript: {os.path.relpath(transcript_path)}")
         llm_session = LlmSession(self.backend, transcript_path)
         terminal: dict[str, Any] = {}
 
