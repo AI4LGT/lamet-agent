@@ -100,13 +100,15 @@ _PROGRESS_STYLE = Style.from_dict(
 _INPUT_STYLE = Style.from_dict(
     {
         **_FOOTER_STYLE,
-        "user-label": "bold #5fd7d7",
+        "user-label": "ansicyan",
         "user-input": "",
+        "user-directory": "ansibrightblack",
         "prompt-continuation": "#6c6c6c",
         "frame.border": "#6c6c6c",
-        "accepted user-label": "nobold #808080",
-        "accepted user-input": "#808080",
-        "accepted prompt-continuation": "#808080",
+        "accepted user-label": "ansicyan",
+        "accepted user-input": "ansicyan",
+        "accepted user-directory": "ansicyan",
+        "accepted prompt-continuation": "ansicyan",
     }
 )
 
@@ -324,7 +326,7 @@ class PlainUi:
             output += " (overwrites source)"
         elif target.exists():
             output += " (overwrites existing file)"
-        question = f"● Manifest validated\n\n  {source.name}\n  Save as: {output}"
+        question = f"✔ Manifest validated\n\n  {source.name}\n  Save as: {output}"
         return self.review_plan(question, state, accept_label="Save and run" if run_after else "Accept and save")
 
     def _plan_choice(self, question: str, accept_label: str) -> str:
@@ -422,6 +424,10 @@ class TerminalUi(PlainUi):
             )
             if prefix is not None:
                 rendered = f"{color}{prefix}{_ANSI_RESET}{message[len(prefix):]}"
+        rendered = "\n".join(
+            f"\033[94m{line}{_ANSI_RESET}" if line.startswith("● ") else line
+            for line in rendered.split("\n")
+        )
         print(rendered, file=stream, flush=True)
 
     def _status_toolbar(self) -> str:
@@ -598,7 +604,7 @@ class TerminalUi(PlainUi):
         while True:
             try:
                 answer = self._prompt(
-                    [("class:user-label", " >  "), ("ansibrightblack", directory)],
+                    [("class:user-label", " >  "), ("class:user-directory", directory)],
                     multiline=False,
                     default=suggested,
                     placeholder=[("ansibrightblack", "Enter an output filename…")],
@@ -646,7 +652,12 @@ class TerminalUi(PlainUi):
         while True:
             try:
                 answer = self._prompt(
-                    f"{question}\n\n[y] Yes  [N] No\n\n> ",
+                    [
+                        ("", f"{question}\n\n"),
+                        ("ansiyellow", "[y] Yes  [N] No"),
+                        ("", "\n\n"),
+                        ("class:user-label", " >  "),
+                    ],
                     interaction="Waiting for confirmation",
                     multiline=False,
                     placeholder="",
@@ -663,7 +674,15 @@ class TerminalUi(PlainUi):
 
     def _plan_choice(self, question: str, accept_label: str) -> str:
         return self._prompt(
-            f"{question}\n\n[y] {accept_label}  [N] Cancel  [?] Ask or revise\n\n> ",
+            [
+                ("ansigreen" if line.startswith("✔ ") else "", line)
+                for line in question.splitlines(keepends=True)
+            ] + [
+                ("", "\n\n"),
+                ("ansiyellow", f"[y] {accept_label}  [N] Cancel  [?] Ask or revise"),
+                ("", "\n\n"),
+                ("class:user-label", " >  "),
+            ],
             interaction="Waiting for confirmation",
             multiline=False,
             placeholder="",

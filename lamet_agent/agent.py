@@ -1260,7 +1260,7 @@ class _AgentSession:
                 tui.write("Planning cancelled; run mode was not started.")
                 return None
             if terminal.get("ready"):
-                tui.write("\nProposed plan")
+                tui.write("\n● Proposed plan")
                 tui.write(terminal["summary"])
                 for change in terminal["changes"]:
                     tui.write(f"- {change}")

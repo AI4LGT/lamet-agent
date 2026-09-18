@@ -217,7 +217,7 @@ def test_valid_manifest_requires_output_name_before_confirmation_without_llm(tmp
     assert "Accept and save" in tui.messages
     assert sum("Output filename" in message for message in tui.messages) == 1
     assert not (tmp_path / "draft.planned.json").exists()
-    panel = next(message for message in tui.messages if message.startswith("● Manifest validated"))
+    panel = next(message for message in tui.messages if message.startswith("✔ Manifest validated"))
     assert "Save as: chosen.json" in panel
     assert str(tmp_path) not in panel
 
