@@ -942,8 +942,12 @@ def _sample_model_weights(
     q_min: float,
     model_average: bool,
 ) -> np.ndarray:
-    """Apply the original per-sample model choice or evidence average."""
+    """Apply one frozen center-selected model, or a per-sample evidence average."""
     weights = np.zeros((len(candidates), n_sample), dtype=float)
+    if not model_average:
+        selected = _select_fourier_model(candidates, q_min=q_min)
+        weights[candidates.index(selected), :] = 1.0
+        return weights
     for sample_index in range(n_sample):
         diagnostics = [candidate["sample_diagnostics"][sample_index] for candidate in candidates]
         valid = np.asarray(
@@ -955,7 +959,7 @@ def _sample_model_weights(
         )
         q_values = np.asarray([float(item["Q"]) for item in diagnostics], dtype=float)
         log_gbf = np.asarray([float(item["logGBF"]) for item in diagnostics], dtype=float)
-        if model_average and np.any(valid):
+        if np.any(valid):
             shifted = np.exp(log_gbf[valid] - np.max(log_gbf[valid]))
             weights[valid, sample_index] = shifted / np.sum(shifted)
             continue

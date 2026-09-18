@@ -2891,8 +2891,10 @@ def test_native_fourier_scan_fits_and_transforms_with_one_parallel_entry(monkeyp
     assert result["data"].attrs["tail_family"] == "nucleon_pdf"
     assert result["data"].attrs["power_coordinate_unit"] == "fm"
     assert result["data"].attrs["cg_power_applied"] == "false"
-    assert 1 <= len(result["selected_labels"]) <= 2
+    assert len(result["selected_labels"]) == 1
     assert np.sum(result["weights"]) == pytest.approx(1.0)
+    sample_weights = np.asarray(result["sample_model_weights"])
+    np.testing.assert_array_equal(sample_weights, np.broadcast_to(sample_weights[:, :1], sample_weights.shape))
     assert len(result["range_candidates"]) == 3
     assert len(result["model_candidates"]) == 2
     assert all("fit_parameters" in candidate for candidate in result["range_candidates"] if candidate["fit_success"])
@@ -3153,11 +3155,15 @@ def test_gpd_fourier_preparation_records_signed_longitudinal_momenta(tmp_path: P
     assert prepared.attrs["phase_transfer_gpd"] == "mid_at_0"
 
 
-def test_fourier_model_choice_is_made_per_sample() -> None:
+def test_fourier_model_choice_is_frozen_across_resamples() -> None:
     from lamet_agent.stages.fourier_transform.physics import _sample_model_weights
 
     candidates = [
         {
+            "label": "la",
+            "Q": 0.2,
+            "logGBF": 4.0,
+            "error": None,
             "sample_failures": [None, None],
             "sample_diagnostics": [
                 {"Q": 0.8, "logGBF": 4.0},
@@ -3165,6 +3171,10 @@ def test_fourier_model_choice_is_made_per_sample() -> None:
             ],
         },
         {
+            "label": "nla",
+            "Q": 0.8,
+            "logGBF": 1.0,
+            "error": None,
             "sample_failures": [None, None],
             "sample_diagnostics": [
                 {"Q": 0.8, "logGBF": 1.0},
@@ -3173,7 +3183,7 @@ def test_fourier_model_choice_is_made_per_sample() -> None:
         },
     ]
     weights = _sample_model_weights(candidates, n_sample=2, q_min=0.05, model_average=False)
-    np.testing.assert_array_equal(weights, np.eye(2))
+    np.testing.assert_array_equal(weights, np.array([[1.0, 1.0], [0.0, 0.0]]))
 
 
 def test_fourier_range_selection_matches_original_q_and_loggbf_rule() -> None:

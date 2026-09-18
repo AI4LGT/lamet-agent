@@ -267,8 +267,8 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
                 "largest-logGBF fit with Q >= `q_min`, falling back to the largest Q. If no center model reaches "
                 "`q_min`, range recommendations continue until the job budget is exhausted; a numerically valid "
                 "maximum-Q result is then published with an explicit fallback warning. With that interval fixed, "
-                "every feasible authored LA/NLA and prior-width model is refitted. `model_average=false` chooses "
-                "per-resample models with the same Q/logGBF rule and maximum-Q fallback; `model_average=true` uses "
+                "every feasible authored LA/NLA and prior-width model is refitted. `model_average=false` publishes "
+                "the single center-selected model and applies it to every resample; `model_average=true` uses "
                 "normalized exp(logGBF) weights over all finite-logGBF candidates and adds no separate between-model "
                 "variance. The candidate diagnostics below preserve both the selected result and the alternatives."
             ),
