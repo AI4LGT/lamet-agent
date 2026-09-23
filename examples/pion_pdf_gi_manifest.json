@@ -26,15 +26,7 @@
         "model_average": false,
         "pt2_windows": [
           {
-            "tmin": 4,
-            "tmax": 12
-          },
-          {
             "tmin": 5,
-            "tmax": 12
-          },
-          {
-            "tmin": 6,
             "tmax": 12
           }
         ],
@@ -63,6 +55,12 @@
         },
         {
           "id": "ca_p4",
+          "pt2_windows": [
+            {
+              "tmin": 6,
+              "tmax": 12
+            }
+          ],
           "inputs": {
             "correlators": [
               {"json": "examples/pion_pdf_gi_correlators.json", "id": "p4_2pt"},
@@ -99,15 +97,9 @@
           "num": 200
         },
         "zmin_fm": [
-          0.66,
-          0.72,
-          0.78,
-          0.84
+          0.66
         ],
         "zmax_fm": [
-          1.08,
-          1.14,
-          1.2,
           1.26
         ],
         "smooth": "linear",
