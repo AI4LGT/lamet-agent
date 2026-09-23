@@ -63,13 +63,13 @@ lamet-agent run examples/pion_pdf_cg_manifest.json \
 
 ### Example manifests
 
-| Manifest                                     | Workflow                                                       | Data reference |
-| -------------------------------------------- | -------------------------------------------------------------- | -------------- |
-| `examples/pion_pdf_cg_manifest.json`         | Coulomb-gauge pion PDF, least-squares correlator analysis.     | [^1]           |
-| `examples/pion_pdf_cg_lanczos_manifest.json` | Coulomb-gauge pion PDF with nested-bootstrap Lanczos analysis. | [^1]           |
-| `examples/pion_pdf_gi_manifest.json`         | Gauge-invariant pion PDF.                                      | [^1]           |
-| `examples/pion_da_gi_manifest.json`          | Gauge-invariant pion DA with systematic variants.              | [^2]           |
-| `examples/kaon_da_gi_manifest.json`          | Gauge-invariant kaon DA with systematic variants.              | [^2]           |
+| Manifest                                     | Workflow                                                       | Data reference                                                                        |
+| -------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `examples/pion_pdf_cg_manifest.json`         | Coulomb-gauge pion PDF, least-squares correlator analysis.     | [data_pion_pdf_cg.zip](https://149.28.115.134:43999/data_pion_pdf_cg.zip)[^1]         |
+| `examples/pion_pdf_cg_lanczos_manifest.json` | Coulomb-gauge pion PDF with nested-bootstrap Lanczos analysis. | [data_pion_pdf_cg.zip](https://149.28.115.134:43999/data_pion_pdf_cg_lanczos.zip)[^1] |
+| `examples/pion_pdf_gi_manifest.json`         | Gauge-invariant pion PDF.                                      | [data_pion_pdf_gi.zip](https://149.28.115.134:43999/data_pion_pdf_gi.zip)[^1]         |
+| `examples/pion_da_gi_manifest.json`          | Gauge-invariant pion DA with systematic variants.              | [data_pion_da_gi.zip](https://149.28.115.134:43999/data_pion_da_gi.zip)[^2]           |
+| `examples/kaon_da_gi_manifest.json`          | Gauge-invariant kaon DA with systematic variants.              | [data_kaon_da_gi.zip](https://149.28.115.134:43999/data_kaon_da_gi.zip)[^2]           |
 
 Other example archives are on the same host; pick the zip that matches the
 `data_*` directory used by that manifest (`data_pion_pdf_cg`,
@@ -241,13 +241,13 @@ input.
 
 Typical per-job files are:
 
-| File                  | Purpose                                               |
-| --------------------- | ----------------------------------------------------- |
-| `output.nc`           | Primary sample-bearing numerical result.              |
-| `summary.json`        | Decisions, diagnostics, and declared artifacts.       |
-| `llm_transcript.md`   | Recorded LLM requests and responses, when applicable. |
-| `diagnostics/*`       | Candidate tables and numerical diagnostics.           |
-| `plots/*`             | PDF/SVG result and fit-quality figures.               |
+| File                | Purpose                                               |
+| ------------------- | ----------------------------------------------------- |
+| `output.nc`         | Primary sample-bearing numerical result.              |
+| `summary.json`      | Decisions, diagnostics, and declared artifacts.       |
+| `llm_transcript.md` | Recorded LLM requests and responses, when applicable. |
+| `diagnostics/*`     | Candidate tables and numerical diagnostics.           |
+| `plots/*`           | PDF/SVG result and fit-quality figures.               |
 
 Stage directories also receive an aggregate `report.md`; job directories do not
 write report files. Review writes its final `review.md`, `review_bundle.json`,
@@ -459,6 +459,26 @@ python -m pip install -e ".[dev]"
 
 Architecture, file ownership, testing, and contributor workflows are documented
 in [`DEVELOPMENT.md`](DEVELOPMENT.md).
+
+## Citation
+
+If you find this work useful in your research, please cite:
+```bib
+@article{He:2026xxx,
+    author = "He, Jinchen and Jiang, Xiangyu and Yao, Fei and Zhao, Dian-Jun",
+    title = "{LaMET-Agent: An Agent Framework for Large-Momentum Effective Theory Analysis}",
+    eprint = "2609.xxxxx",
+    archivePrefix = "arXiv",
+    primaryClass = "hep-lat",
+    reportNumber = "FERMILAB-PUB-26-0691-T",
+    doi = "xxx",
+    journal = "xxx",
+    volume = "xx",
+    pages = "xxx",
+    year = "xxxx"
+}
+
+```
 
 ## Related Links
 
