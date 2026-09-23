@@ -65,11 +65,11 @@ lamet-agent run examples/pion_pdf_cg_manifest.json \
 
 | Manifest                                     | Workflow                                                       | Data reference                                                                        |
 | -------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `examples/pion_pdf_cg_manifest.json`         | Coulomb-gauge pion PDF, least-squares correlator analysis.     | [data_pion_pdf_cg.zip](https://149.28.115.134:43999/data_pion_pdf_cg.zip)[^1]         |
-| `examples/pion_pdf_cg_lanczos_manifest.json` | Coulomb-gauge pion PDF with nested-bootstrap Lanczos analysis. | [data_pion_pdf_cg.zip](https://149.28.115.134:43999/data_pion_pdf_cg_lanczos.zip)[^1] |
-| `examples/pion_pdf_gi_manifest.json`         | Gauge-invariant pion PDF.                                      | [data_pion_pdf_gi.zip](https://149.28.115.134:43999/data_pion_pdf_gi.zip)[^1]         |
-| `examples/pion_da_gi_manifest.json`          | Gauge-invariant pion DA with systematic variants.              | [data_pion_da_gi.zip](https://149.28.115.134:43999/data_pion_da_gi.zip)[^2]           |
-| `examples/kaon_da_gi_manifest.json`          | Gauge-invariant kaon DA with systematic variants.              | [data_kaon_da_gi.zip](https://149.28.115.134:43999/data_kaon_da_gi.zip)[^2]           |
+| `examples/pion_pdf_cg_manifest.json`         | Coulomb-gauge pion PDF, least-squares correlator analysis.     | [data_pion_pdf_cg.zip](https://download:protonpdf@149.28.115.134:43999/data_pion_pdf_cg.zip)[^1]         |
+| `examples/pion_pdf_cg_lanczos_manifest.json` | Coulomb-gauge pion PDF with nested-bootstrap Lanczos analysis. | [data_pion_pdf_cg.zip](https://download:protonpdf@149.28.115.134:43999/data_pion_pdf_cg_lanczos.zip)[^1] |
+| `examples/pion_pdf_gi_manifest.json`         | Gauge-invariant pion PDF.                                      | [data_pion_pdf_gi.zip](https://download:protonpdf@149.28.115.134:43999/data_pion_pdf_gi.zip)[^1]         |
+| `examples/pion_da_gi_manifest.json`          | Gauge-invariant pion DA with systematic variants.              | [data_pion_da_gi.zip](https://download:protonpdf@149.28.115.134:43999/data_pion_da_gi.zip)[^2]           |
+| `examples/kaon_da_gi_manifest.json`          | Gauge-invariant kaon DA with systematic variants.              | [data_kaon_da_gi.zip](https://download:protonpdf@149.28.115.134:43999/data_kaon_da_gi.zip)[^2]           |
 
 Other example archives are on the same host; pick the zip that matches the
 `data_*` directory used by that manifest (`data_pion_pdf_cg`,
