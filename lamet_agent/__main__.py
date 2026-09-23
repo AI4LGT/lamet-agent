@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Sequence
 
@@ -59,6 +60,13 @@ def _build_parser() -> argparse.ArgumentParser:
         default="auto",
         help="progress granularity; auto uses stage progress when systematics are declared, otherwise job progress",
     )
+    subparsers.add_parser("mcp", help="serve this tool over the Model Context Protocol on stdio")
+    from .mcp_install import add_arguments as _add_install_arguments
+
+    install = subparsers.add_parser(
+        "install-mcp", help="register this tool's MCP server with local agent harnesses"
+    )
+    _add_install_arguments(install)
     for command in (plan, run):
         command.add_argument(
             "--plan-log-dir", type=Path,
@@ -69,7 +77,24 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     """Dispatch one CLI command and return its process status."""
-    args = _build_parser().parse_args(argv)
+    arguments = list(sys.argv[1:] if argv is None else argv)
+
+    # Commands that own their own argument surface are dispatched before the
+    # top-level parser sees their options. The parser still declares them so
+    # they appear in `--help`, but letting it parse them would make its own
+    # `-h` shadow the subcommand's richer help screen.
+    if arguments and arguments[0] in ("mcp", "install-mcp"):
+        if arguments[0] == "mcp":
+            # The MCP server owns stdout as its protocol channel, so it must not
+            # run inside the UI context below (whose banner would corrupt it).
+            from .mcp_server import main as mcp_main
+
+            return mcp_main()
+        from .mcp_install import main as install_main
+
+        return install_main(arguments[1:])
+
+    args = _build_parser().parse_args(arguments)
     cli_ui = create_ui()
     with use_ui(cli_ui):
         try:

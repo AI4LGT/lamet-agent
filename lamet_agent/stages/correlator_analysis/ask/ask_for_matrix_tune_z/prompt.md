@@ -1,23 +1,24 @@
 The supplied ordinary matrix-element evidence contains two-point correlators
 `C2(t)` that constrain energies and overlaps, together with three-point data
-`C3(tsep,tau,z)` used by the authored ratio or Feynman-Hellmann fit scope. Values
-are given as component-wise central values with uncertainties on their declared
-time, source-sink-separation, insertion-time, and spatial-separation coordinates.
-Small source-sink separations and insertion times near either endpoint are more
-susceptible to excited-state contamination, while larger separations are usually
-noisier.
+`C3(tsep,tau,z)` used by the authored ratio, self-ratio, or Feynman-Hellmann fit
+scope. Values are given as component-wise central values with uncertainties on
+their declared time, source-sink-separation, insertion-time, and
+spatial-separation coordinates. Small source-sink separations and insertion
+times near either endpoint are more susceptible to excited-state contamination,
+while larger separations are usually noisier.
 
 Return exactly the fields named by `requested_fields`. Choose 3–5 representative
 available z coordinates as `tune_z_values`: include the smallest or most trusted
 z, one mid-range z, and the largest z when the grid is wide. Do not enumerate the
-full z grid. When requested, choose stable half-open `pt2_windows` and compatible
-`pt3_windows`. Every three-point window contains `tsep_ls` and a nonnegative
-`tau_cut`; retain enough insertion-time support after the endpoint cut and obey
-`2*tau_cut <= tsep`. `nstate` is keyed by individual correlator atoms such as
-`2pt` and `3pt_ratio`, never by a joint `'+'` stage string; atoms in one joint
-likelihood may use different state counts. Parameters listed under
-`fixed_parameters` are user-authored for the initial attempt and must not be
-changed.
+full z grid. A `self_ratio` scope divides `C3(z)` by its own `z=0` slice, so
+never choose `z=0` as a tuning coordinate there. When requested, choose stable
+half-open `pt2_windows` and compatible `pt3_windows`. Every three-point window
+contains `tsep_ls` and a nonnegative `tau_cut`; retain enough insertion-time
+support after the endpoint cut and obey `2*tau_cut <= tsep`. `nstate` is keyed by
+individual correlator atoms such as `2pt`, `3pt_ratio`, and `self_ratio`, never
+by a joint `'+'` stage string; atoms in one joint likelihood may use different
+state counts. Parameters listed under `fixed_parameters` are user-authored for
+the initial attempt and must not be changed.
 
 On a retry, `previous_attempts` describes every authored strategy, scope, state,
 prior-width, and window combination. It may include feasibility at every tuning

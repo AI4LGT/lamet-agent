@@ -87,7 +87,8 @@ def _signed_from_positive(
     )
 
 
-_NUCLEON_HADRONS = {"nucleon", "proton"}
+# Octet baryons (proton, Lambda, Xi0) share the nucleon PDF tail family.
+_NUCLEON_HADRONS = {"nucleon", "proton", "lambda", "xi0"}
 
 
 def _tail_family(

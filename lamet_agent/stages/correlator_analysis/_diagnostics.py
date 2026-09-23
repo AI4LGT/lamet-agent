@@ -17,6 +17,8 @@ TSEP_LABEL = r"${t_{\mathrm{sep}}~/~a}$"
 TAU_CENTER_LABEL = r"$(\tau - t_{\mathrm{sep}}/2)~/~a$"
 RATIO_REAL_LABEL = r"$\Re\left[\mathcal{R}(t_{\mathrm{sep}},\tau)\right]$"
 RATIO_IMAG_LABEL = r"$\Im\left[\mathcal{R}(t_{\mathrm{sep}},\tau)\right]$"
+SELF_RATIO_REAL_LABEL = r"$\Re\left[C_3(z)/C_3(0)\right]$"
+SELF_RATIO_IMAG_LABEL = r"$\Im\left[C_3(z)/C_3(0)\right]$"
 FH_REAL_LABEL = r"$\Re\left[\mathrm{FH}(t_{\mathrm{sep}})\right]$"
 FH_IMAG_LABEL = r"$\Im\left[\mathrm{FH}(t_{\mathrm{sep}})\right]$"
 QDA_TIME_LABEL = r"$t/a$"
@@ -66,6 +68,8 @@ def _sample0_plot_labels(kind: str, component: str) -> tuple[str, str]:
     labels = {
         ("pt3_ratio", "re"): (TAU_CENTER_LABEL, RATIO_REAL_LABEL),
         ("pt3_ratio", "im"): (TAU_CENTER_LABEL, RATIO_IMAG_LABEL),
+        ("self_ratio", "re"): (TAU_CENTER_LABEL, SELF_RATIO_REAL_LABEL),
+        ("self_ratio", "im"): (TAU_CENTER_LABEL, SELF_RATIO_IMAG_LABEL),
         ("fh", "re"): (TSEP_LABEL, FH_REAL_LABEL),
         ("fh", "im"): (TSEP_LABEL, FH_IMAG_LABEL),
         ("qda_ratio", "re"): (QDA_TIME_LABEL, QDA_RATIO_REAL_LABEL),
@@ -292,7 +296,9 @@ def write_fit_artifacts(
 
     dispersion_energy: dict[str, Any] = {}
     scope_atoms = {atom for value in scope_values for atom in str(value).split("+")}
-    if not scope_atoms & {"qda", "qda_ratio"}:
+    # The dispersion plot compares fitted ground-state energies across momenta, so
+    # it is only meaningful when two-point information enters the likelihood.
+    if scope_atoms & {"2pt", "3pt_ratio", "FH"} and not scope_atoms & {"qda", "qda_ratio"}:
         energy_fits = [
             fit
             for fit in fits

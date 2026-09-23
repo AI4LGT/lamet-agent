@@ -21,6 +21,9 @@ dependencies = [
   "netCDF4>=1.7,<2",
   "prompt_toolkit>=3.0.52,<4",
   "jsonschema>=4.18,<5",
+  # `lamet-agent install-mcp` reads a DeepSeek Harness profile patch to register
+  # its MCP server, and PyYAML is what makes that edit safe to re-run.
+  "PyYAML>=6,<7",
 ]
 
 [project.optional-dependencies]

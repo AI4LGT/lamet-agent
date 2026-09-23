@@ -96,7 +96,8 @@ def _prior_from_payload(payload: Mapping[str, tuple[np.ndarray, np.ndarray]]) ->
 
 
 def _sample_sdevs(fit: Any) -> dict[str, np.ndarray]:
-    return {key: np.asarray(gv.sdev(fit.p[key]), dtype=float) for key in fit.pmean}
+    """Return the fitter posterior widths (``fit.p`` can fail to attach data correlations)."""
+    return {key: np.asarray(gv.sdev(fit.palt[key]), dtype=float) for key in fit.pmean}
 
 
 def _sample_fit(
@@ -152,7 +153,7 @@ def _posterior_prior(fit: Any, template: Mapping[str, Any], scale: float) -> gv.
         raise ValueError("sample_prior_scale must be finite and positive")
     prior = gv.BufferDict()
     for key in template:
-        value = fit.p[key]
+        value = fit.palt[key]
         width = np.asarray(gv.sdev(value)) * scale
         if np.any(~np.isfinite(width)) or np.any(width <= 0):
             raise ValueError(f"center fit produced an invalid posterior width for '{key}'")

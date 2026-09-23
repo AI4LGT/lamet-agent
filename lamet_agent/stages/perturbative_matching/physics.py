@@ -65,7 +65,7 @@ def inspect_callable(kernel, *, parameter_values: dict[str, Any]) -> tuple[list[
 def is_even_about_zero(data: EnsembleData) -> bool:
     """Return True when the real mean is even on a grid that straddles x=0."""
     x = np.asarray(data.coords["x"], dtype=float)
-    values = np.real(np.asarray(data.mean))
+    values = np.asarray(data.real.mean)
     if x.size < 3 or np.min(x) >= 0 or np.max(x) <= 0:
         return False
     order = np.argsort(x)

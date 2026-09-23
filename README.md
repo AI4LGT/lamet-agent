@@ -194,6 +194,70 @@ callers can pass a `select_model` callback to `create_backend`; without one,
 missing or unavailable models raise an error listing the available choices.
 HTTP(S) OpenAI-compatible base URLs can also be passed directly as the provider.
 
+### Model Context Protocol
+
+`lamet-agent` ships an MCP server, so a coding agent can validate, plan, and run
+manifests as ordinary tool calls instead of shelling out. It speaks stdio
+JSON-RPC and needs no extra dependency:
+
+```bash
+lamet-agent mcp                      # serve on stdio; the client launches this
+lamet-agent install-mcp --dry-run    # report what registration would change
+lamet-agent install-mcp              # register with every detected harness
+```
+
+`install-mcp` writes one server entry for each harness it finds and is safe to
+re-run: an entry it wrote is refreshed in place, and an entry it did not write
+is reported rather than overwritten. Use `--target codex|claude|dsh` to limit
+it and `--server-name` to register under a different name.
+
+| Harness | Where the entry goes |
+| --- | --- |
+| Codex | `[mcp_servers.<name>]` in `~/.codex/config.toml`, plus the MCP feature flag |
+| Claude Code | registered under the `user` scope through the `claude` CLI |
+| DeepSeek Harness | a loader row in `~/.dsh/profiles/*/cordis.patch.yml` |
+
+**Codex defers MCP tools behind tool search.** Registering the server and
+enabling the feature flag are both necessary but still not sufficient to see the
+tools: Codex keeps MCP tools out of the model's function list, so a question
+like "which MCP tools do you have?" truthfully answers that there are none. The
+tools load on demand instead:
+
+```text
+tool_search("validate_manifest")  ->  mcp__lamet__validate_manifest
+```
+
+Because of this, ask Codex to *search* for the tool, or name the tool you want
+and let it search:
+
+> Use tool_search for "validate_manifest", then call the lamet tool it returns
+> on examples/pion_pdf_cg_manifest.json and report the raw output.
+
+Diagnose the three layers separately when something looks missing:
+
+```bash
+codex mcp list | grep lamet                    # 1. server registered?
+codex features list | grep mcp_2026_07_28      # 2. MCP exposure enabled?
+# 3. tools load on demand -- use tool_search rather than listing
+```
+
+A tool that is merely deferred is not a broken tool. Note also that a call is
+still subject to the harness's approval and sandbox policy, which is independent
+of registration.
+
+The command is registered with an absolute launch path, because these harnesses
+spawn the server with a scrubbed environment where a `PATH` lookup is not
+reliable. Codex and the DeepSeek Harness read their server list at startup, so
+restart or reload them afterwards; Claude Code picks it up per session. The
+DeepSeek Harness entry raises its per-call timeout, since a real analysis runs
+far longer than the 60-second default.
+
+The exposed tools are `validate_manifest`, `plan_manifest`, `run_manifest`,
+`read_run`, and `list_correlators`. They report the CLI's own verdicts; none of
+them re-implements validation. `plan_manifest` reports an error rather than
+hanging, because Plan ends with an interactive acceptance review that a tool
+call cannot answer — use `run_manifest`, which repairs and executes in one step.
+
 ## Core Idea
 
 The manifest contains run metadata and an ordered mapping of stage job lists.
