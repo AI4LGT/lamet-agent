@@ -464,20 +464,16 @@ in [`DEVELOPMENT.md`](DEVELOPMENT.md).
 
 If you find this work useful in your research, please cite:
 ```bib
-@article{He:2026xxx,
+@article{He:2026kft,
     author = "He, Jinchen and Jiang, Xiangyu and Yao, Fei and Zhao, Dian-Jun",
     title = "{LaMET-Agent: An Agent Framework for Large-Momentum Effective Theory Analysis}",
-    eprint = "2609.xxxxx",
+    eprint = "2609.32225",
     archivePrefix = "arXiv",
     primaryClass = "hep-lat",
     reportNumber = "FERMILAB-PUB-26-0691-T",
-    doi = "xxx",
-    journal = "xxx",
-    volume = "xx",
-    pages = "xxx",
-    year = "xxxx"
+    month = "9",
+    year = "2026"
 }
-
 ```
 
 ## Related Links

@@ -54,15 +54,15 @@ lamet-agent run examples/pion_pdf_cg_manifest.json \
 
 ### Manifest 示例
 
-| Manifest                                     | 工作流                                                         | 数据参考 |
-| -------------------------------------------- | -------------------------------------------------------------- | -------- |
-| `examples/pion_pdf_cg_manifest.json`         | Coulomb-gauge pion PDF，使用最小二乘关联函数分析。              | [^1]     |
-| `examples/pion_pdf_cg_lanczos_manifest.json` | Coulomb-gauge pion PDF，使用 nested-bootstrap Lanczos 分析。    | [^1]     |
-| `examples/pion_pdf_gi_manifest.json`         | Gauge-invariant pion PDF。                                     | [^1]     |
-| `examples/pion_da_gi_manifest.json`          | Gauge-invariant pion DA，包含系统学变体。                       | [^2]     |
-| `examples/kaon_da_gi_manifest.json`          | Gauge-invariant kaon DA，包含系统学变体。                       | [^2]     |
+| Manifest                                     | 工作流                                                         | 数据参考                                                                                     |
+| -------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `examples/pion_pdf_cg_manifest.json`         | Coulomb-gauge pion PDF，使用最小二乘关联函数分析。              | [data_pion_pdf_cg.zip](https://pan.baidu.com/s/1I31_YJMbrkmShYgDRsXGtw?pwd=AI4L)[^1]         |
+| `examples/pion_pdf_cg_lanczos_manifest.json` | Coulomb-gauge pion PDF，使用 nested-bootstrap Lanczos 分析。    | [data_pion_pdf_cg.zip](https://pan.baidu.com/s/1I31_YJMbrkmShYgDRsXGtw?pwd=AI4L)[^1]         |
+| `examples/pion_pdf_gi_manifest.json`         | Gauge-invariant pion PDF。                                     | [data_pion_pdf_gi.zip](https://pan.baidu.com/s/1I31_YJMbrkmShYgDRsXGtw?pwd=AI4L)[^1]         |
+| `examples/pion_da_gi_manifest.json`          | Gauge-invariant pion DA，包含系统学变体。                       | [data_pion_da_gi.zip](https://pan.baidu.com/s/1I31_YJMbrkmShYgDRsXGtw?pwd=AI4L)[^2]          |
+| `examples/kaon_da_gi_manifest.json`          | Gauge-invariant kaon DA，包含系统学变体。                       | [data_kaon_da_gi.zip](https://pan.baidu.com/s/1I31_YJMbrkmShYgDRsXGtw?pwd=AI4L)[^2]          |
 
-同一主机还提供其他示例压缩包；请选择与该 manifest 所使用的 `data_*` 目录相匹配的 zip 文件（`data_pion_pdf_cg`、`data_pion_pdf_gi`、`data_pion_da_gi`、`data_kaon_da_gi`）。
+这些 zip 都在[百度网盘](https://pan.baidu.com/s/1I31_YJMbrkmShYgDRsXGtw?pwd=AI4L)的 `data_lamet_agent.zip` 里。请选择与该 manifest 所使用的 `data_*` 目录相匹配的 zip 文件（`data_pion_pdf_cg`、`data_pion_pdf_gi`、`data_pion_da_gi`、`data_kaon_da_gi`）。
 
 [^1]: Xiang Gao, Wei-Yang Liu, and Yong Zhao, [*Parton Distributions from Boosted Fields in the Coulomb Gauge*](https://arxiv.org/pdf/2306.14960), arXiv:2306.14960.
 [^2]: Jun Hua et al., [*Pion and Kaon Distribution Amplitudes from Lattice QCD*](https://arxiv.org/pdf/2201.09173), arXiv:2201.09173.
@@ -98,16 +98,21 @@ Plan 通过与 LLM 进行交互式对话来补全不完整的 manifest。它会�
 选项：
 
 - `--provider`：已注册的提供商名称，或兼容 OpenAI 的 HTTP(S) URL；
-- `--model`：覆盖提供商的默认模型；
+- `--model`：模型 ID；省略或不可用时会提示选择；
 - `--api-key-file`：只包含 API key 的文本文件；
-- `--output`：输出路径，默认为 `<manifest>.planned.json`；
+- `--output`：输出路径；
 - `--in-place`：在用户明确接受后覆盖源文件。
 
 `--output` 与 `--in-place` 互斥。规划后的输出必须与源 manifest 位于同一目录，以保持相对输入路径的含义不变。
+如果两者都未设置，Plan 会先询问输出文件名，并相对于源 manifest 所在目录解析。终端将该目录显示为相对于当前工作目录的固定前缀。只有文件名可以编辑，并预填为 `<manifest>.planned.json`；
+可以修改，或按 Enter 接受。清空输入即原地保存；在纯文本模式下，空输入同样选择原地保存。任何指向源文件的输出都需要单独确认是否覆盖（默认为否），包括 `--in-place`。
+保存仍需要最终确认。
 
 终端控制命令包括 `/show`、`/issues`、`/undo`、`/edit`、`/save`、`/help` 和 `/quit`。`Enter` 提交，`Shift+Enter` 插入换行，`Ctrl+C` 取消。
 
 独立运行 Plan 时，会写入已接受的 manifest，然后退出，不会执行分析 stages。
+Plan 默认不保存 LLM transcripts。向 `plan` 或 `run` 传入 `--plan-log-dir DIRECTORY` 即可启用。该目录相对于 CLI 工作目录解析；每次 Plan 会话都会得到一个以 manifest 名称和时间戳命名的子目录。
+界面会打印 transcript 的相对路径。它记录 requests、responses、被拒绝的回复、失败原因和耗时，并且不会覆盖先前的会话。
 
 ### 运行
 
@@ -132,7 +137,7 @@ Run 在执行数值 stages 前先进行验证。如果验证失败，它会使�
 
 #### Codex CLI
 
-`codex` 提供商使用可选的 `openai-codex>=0.147` 包以及当前机器上缓存的 Codex 登录状态。它不使用 API key。`--model` 是可选项，用于覆盖 Codex SDK 的默认模型。
+`codex` 提供商使用可选的 `openai-codex>=0.147` 包以及当前机器上缓存的 Codex 登录状态。它不使用 API key。`--model` 是可选项；可用模型从 Codex app server 发现。
 
 #### 兼容 OpenAI 的 API
 
@@ -146,7 +151,7 @@ Run 在执行数值 stages 前先进行验证。如果验证失败，它会使�
 | Grok      | `GROK_API_KEY`      |
 | DeepSeek  | `DEEPSEEK_API_KEY`  |
 
-已注册的 API 提供商都有默认模型；`--model` 可以覆盖该默认值。也可以直接把兼容 OpenAI 的 HTTP(S) base URL 作为提供商传入。非本地自定义 URL 必须指定 `--model`；如果本地 URL 的 `/models` endpoint 恰好返回一个 model id，则可以省略该参数。
+所有提供商都会在选择前发现可用模型：API 提供商使用 `/models`，Codex 使用 app-server 的 `model/list`，Claude Code 使用 SDK server 的初始化清单（包括别名和已解析的 model ID）。省略 `--model`，或提供一个不可用的 ID，即可在共用界面中按编号或名称选择模型。即使只有一个可用模型，也不会自动选定。库的调用方可以向 `create_backend` 传入 `select_model` 回调；如果没有该回调，缺失或不可用的模型会报错并列出可用选项。也可以直接把兼容 OpenAI 的 HTTP(S) base URL 作为提供商传入。
 
 ## 核心思想
 
@@ -378,6 +383,22 @@ python -m pip install -e ".[dev]"
 ```
 
 架构、文件所有权、测试和贡献者工作流记录在 [`DEVELOPMENT.md`](DEVELOPMENT.md) 中。
+
+## 引用
+
+如果本工作对你的研究有帮助，请引用：
+```bib
+@article{He:2026kft,
+    author = "He, Jinchen and Jiang, Xiangyu and Yao, Fei and Zhao, Dian-Jun",
+    title = "{LaMET-Agent: An Agent Framework for Large-Momentum Effective Theory Analysis}",
+    eprint = "2609.32225",
+    archivePrefix = "arXiv",
+    primaryClass = "hep-lat",
+    reportNumber = "FERMILAB-PUB-26-0691-T",
+    month = "9",
+    year = "2026"
+}
+```
 
 ## 相关链接
 
