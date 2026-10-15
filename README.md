@@ -462,7 +462,7 @@ in [`DEVELOPMENT.md`](DEVELOPMENT.md).
 
 ## Citation
 
-If you find this work useful in your research, please cite:
+If you find this work useful in your research, you can refer to the following text "We acknowledge the use of LaMET-Agent to assist with preliminary data analysis and result validation in this work." and cite:
 ```bib
 @article{He:2026kft,
     author = "He, Jinchen and Jiang, Xiangyu and Yao, Fei and Zhao, Dian-Jun",
