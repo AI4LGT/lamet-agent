@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 from lamet_agent.agent import LlmSession, ToolContext
+from lamet_agent.stages.correlator_analysis._scope import parse_fit_scope
 from lamet_agent.structured import annotation_schema, json_compatible, validate_unique_items, validate_value
 
 
@@ -44,6 +45,8 @@ def recommend(
     schema, _nullable = annotation_schema(MatrixFitSuggestion)
     requested = requested_fields or {"tune_z_values"}
     schema["properties"]["tune_z_values"]["minItems"] = 1
+    if "self_ratio" in parse_fit_scope(context.params["fit_scope"]).atom_set:
+        schema["properties"]["tune_z_values"]["items"]["exclusiveMinimum"] = 0
     schema["properties"]["pt2_windows"]["minItems"] = 1
     schema["properties"]["pt3_windows"]["minItems"] = 1
     schema["properties"]["pt2_windows"]["items"]["properties"]["tmin"]["minimum"] = 0

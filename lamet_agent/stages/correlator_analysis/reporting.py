@@ -32,9 +32,21 @@ $$
 
 An explicit `3pt_ratio` scope instead uses $R=C_3/C_2$ as its likelihood;
 raw `3pt` scopes use $C_3$ itself. Both paths retain ratio diagnostics.
-The published Breit matrix element is $O_{00}(z)/(2E_0)$.
+The published Breit matrix element is $O_{00}(z)/(2E_0)$ for raw `3pt`,
+`3pt_ratio`, and Feynman--Hellmann scopes.
 Candidate quality is evaluated at the tool-selected tuning z values; the
 chosen window and model are held fixed for the full-z sample fits.
+""".strip()
+
+
+_SELF_RATIO_METHOD = r"""
+A `self_ratio` scope divides every three-point slice by the real $z=0$ slice, so
+its likelihood is $R_{\rm self}(t,\tau,z)=C_3(t,\tau,z)/C_3(t,\tau,0)$ and no
+two-point denominator enters. The local $z=0$ three-point function is real, so
+the same real block $D_{mn}$, whose ground state is normalized to one, divides
+both numerator components and the fitted $O_{00}(z)$ is the published
+$h_B(z)/h_B(0)$. The $z=0$ coordinate is excluded from the fitted grid and
+published as exactly one.
 """.strip()
 
 
@@ -46,9 +58,14 @@ $$
 R_{\rm NB}(t,\tau,z)=\frac{C_3^{f\leftarrow i}(t,\tau,z)}{C_2^f(t)}
 \left[\frac{C_2^i(t-\tau)C_2^f(\tau)C_2^f(t)}
 {C_2^f(t-\tau)C_2^i(\tau)C_2^i(t)}\right]^{1/2},
-\qquad
+$$
+
+and for raw `3pt` and `3pt_ratio` scopes
+
+$$
 h_{\rm NB}(z)=\operatorname{sign}(z_{0,i}z_{0,f})
 \frac{O_{00}(z)}{E_{0,i}+E_{0,f}}.
+$$
 """.strip()
 
 
@@ -91,6 +108,7 @@ def _atom_name(scope: object) -> str:
         "3pt": "raw 3pt correlator",
         "qda": "raw qDA correlator",
         "3pt_ratio": "3pt ratio",
+        "self_ratio": "3pt self ratio",
         "FH": "Feynman--Hellmann",
         "qda_ratio": "qDA nonlocal/local ratio",
         "2pt_spectrum": "2pt spectrum",
@@ -196,6 +214,8 @@ def _method_lines(records: tuple[StageReportRecord, ...]) -> list[str]:
         lines.extend([_QDA_METHOD, ""])
     if "FH" in scopes:
         lines.extend([_FH_METHOD, ""])
+    if "self_ratio" in scopes:
+        lines.extend([_SELF_RATIO_METHOD, ""])
     if lsq_records:
         lines.append(
             "Within each fit scope, `+` denotes one correlated joint likelihood and successive list entries "
@@ -380,6 +400,43 @@ def _selection_policy_lines(records: tuple[StageReportRecord, ...]) -> list[str]
             "applied once across every retained numerical candidate; numerical failures remain counted in "
             "diagnostics."
         )
+        variants: list[tuple[str, int, int, bool]] = []
+        for record in records:
+            if record.params.get("analysis_method") != "lsqfit":
+                continue
+            diagnostics = record.summary.get("diagnostics", {})
+            candidates = diagnostics.get("candidates", []) if isinstance(diagnostics, Mapping) else []
+            models = diagnostics.get("selected_models", []) if isinstance(diagnostics, Mapping) else []
+            variants.append(
+                (
+                    record.job_id,
+                    len(candidates) if isinstance(candidates, (list, tuple)) else 0,
+                    len(models) if isinstance(models, (list, tuple)) else 0,
+                    bool(record.params.get("model_average")),
+                )
+            )
+        if variants:
+            lines.append("")
+            lines.append(
+                "Authored variants: "
+                + "; ".join(
+                    f"`{job}` {candidates} candidate(s) and {models} model(s) in the average"
+                    for job, candidates, models, _average in variants
+                )
+                + "."
+            )
+        if any(candidates <= 1 for _job, candidates, _models, _average in variants):
+            lines.append("")
+            lines.append(
+                "A job with one authored candidate tests no fit range, state count, or prior width: its window, "
+                "`nstate`, and `prior_width` are the manifest values, not selection outcomes."
+            )
+        if any(average and models <= 1 for _job, _candidates, models, average in variants):
+            lines.append("")
+            lines.append(
+                "Where `model_average=true` but one model shares the selected dataset, the average is a no-op: the "
+                "published result is that model with weight 1 and the between-model spread is undefined."
+            )
     if has_lanczos:
         if has_lsqfit:
             lines.append("")
@@ -601,11 +658,11 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
     lines.extend(_method_lines(records))
     has_lsqfit = any(record.params.get("analysis_method") == "lsqfit" for record in records)
     summary_header = (
-        "| job | fit method | selected fit/configuration | center Q | center chi2/dof | samples |"
+        "| job | fit method | selected fit/configuration | prior width | center Q | center chi2/dof | samples |"
         if has_lsqfit
         else "| job | fit method | configuration | samples |"
     )
-    summary_separator = "|---|---|---|---:|---:|---:|" if has_lsqfit else "|---|---|---|---:|"
+    summary_separator = "|---|---|---|---:|---:|---:|---:|" if has_lsqfit else "|---|---|---|---:|"
     lines.extend(
         [
             "## Job Summary",
@@ -629,7 +686,9 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
         if has_lsqfit:
             lines.append(
                 f"| `{record.job_id}` | {_method_name(method, scope)} | "
-                f"{_selected_fit_text(record)} | {format_value(diagnostics.get('Q'))} | "
+                f"{_selected_fit_text(record)} | "
+                f"{format_value(candidate.get('prior_width') if isinstance(candidate, Mapping) else None)} | "
+                f"{format_value(diagnostics.get('Q'))} | "
                 f"{format_value(diagnostics.get('chi2_dof'))} | {format_value(getattr(output, 'n_sample', None))} |"
             )
         else:
@@ -654,15 +713,25 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
             "## Sample Fit Quality",
             "",
             *_sample_quality_lines(records, artifact_directory),
-            "",
-            "## Dispersion Relation",
-            "",
-            "The stage compares fitted ground-state energies against momentum when at least two compatible jobs "
-            "provide the required posterior provenance.",
-            "",
-            *_dispersion_lines(records, artifact_directory),
         ]
     )
+    energies = [
+        record.summary.get("diagnostics", {}).get("dispersion_energy")
+        for record in records
+        if isinstance(record.summary.get("diagnostics", {}), Mapping)
+    ]
+    if any(energies):
+        lines.extend(
+            [
+                "",
+                "## Dispersion Relation",
+                "",
+                "The stage compares fitted ground-state energies against momentum when at least two compatible jobs "
+                "provide the required posterior provenance.",
+                "",
+                *_dispersion_lines(records, artifact_directory),
+            ]
+        )
     lines.extend(
         [
             "",
@@ -732,6 +801,23 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
                     f"{format_value(candidate.get('chi2_dof', candidate.get('worst_chi2_dof')))} | "
                     f"{format_value(candidate.get('quality_passed'))} | "
                     f"{format_value(candidate.get('numerical_failure'))} |"
+                )
+            mapped_candidates = [candidate for candidate in candidates if isinstance(candidate, Mapping)]
+            if len(mapped_candidates) == 1:
+                lines.extend(
+                    [
+                        "",
+                        "Only one candidate was authored, so this table records the fixed configuration rather than a "
+                        "comparison across windows, state counts, or prior widths.",
+                    ]
+                )
+            if params.get("model_average") and len(summary.get("diagnostics", {}).get("selected_models", [])) <= 1:
+                lines.extend(
+                    [
+                        "",
+                        "`model_average=true`, but one model shares the selected dataset, so the model average is a "
+                        "no-op and the published result is that single model with weight 1.",
+                    ]
                 )
             tune_rows = []
             for candidate in candidates:

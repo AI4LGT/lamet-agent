@@ -57,28 +57,45 @@ def _three_point_model(
     n_states: int,
     form: str,
     component: str,
+    prefix: str = "O",
+    unit_ground: bool = False,
 ) -> np.ndarray:
-    """Evaluate a raw three-point spectral decomposition."""
+    """Evaluate a raw three-point spectral decomposition.
+
+    ``unit_ground`` fixes the (0,0) matrix element to one, which normalises the
+    z=0 self-ratio denominator (h_B(0)=1) and removes the exact O/D scale
+    degeneracy.
+    """
     if form == "Breit":
         energies = _state_energies(parameters, n_states)
+        source_decay = [np.exp(-energy * (times - insertions)) for energy in energies]
+        sink_decay = [np.exp(-energy * insertions) for energy in energies]
         value = 0.0
         for source, source_energy in enumerate(energies):
             for sink, sink_energy in enumerate(energies):
-                matrix = parameters[f"O{min(source, sink)}{max(source, sink)}_{component}"]
-                value = value + matrix * parameters[f"z{source}"] * parameters[f"z{sink}"] * np.exp(
-                    -source_energy * (times - insertions)
-                ) * np.exp(-sink_energy * insertions) / (2 * source_energy) / (2 * sink_energy)
+                matrix = (
+                    1.0
+                    if unit_ground and source == 0 and sink == 0
+                    else parameters[f"{prefix}{min(source, sink)}{max(source, sink)}_{component}"]
+                )
+                value = value + matrix * parameters[f"z{source}"] * parameters[f"z{sink}"] * source_decay[
+                    source
+                ] * sink_decay[sink] / (2 * source_energy) / (2 * sink_energy)
         return value
     energies_i = _state_energies(parameters, n_states, "_i")
     energies_f = _state_energies(parameters, n_states, "_f")
+    source_decay = [np.exp(-energy * insertions) for energy in energies_i]
+    sink_decay = [np.exp(-energy * (times - insertions)) for energy in energies_f]
     value = 0.0
     for sink, sink_energy in enumerate(energies_f):
         for source, source_energy in enumerate(energies_i):
-            value = value + parameters[f"O{sink}{source}_{component}"] * parameters[f"z{sink}_f"] * parameters[
-                f"z{source}_i"
-            ] * np.exp(-sink_energy * (times - insertions)) * np.exp(-source_energy * insertions) / (
-                2 * sink_energy
-            ) / (2 * source_energy)
+            index = f"{sink}{source}"
+            matrix = (
+                1.0 if unit_ground and sink == 0 and source == 0 else parameters[f"{prefix}{index}_{component}"]
+            )
+            value = value + matrix * parameters[f"z{sink}_f"] * parameters[f"z{source}_i"] * sink_decay[
+                sink
+            ] * source_decay[source] / (2 * sink_energy) / (2 * source_energy)
     return value
 
 
@@ -102,7 +119,16 @@ def _ratio_model(
     n_states: int,
     form: str,
     component: str,
+    denominator_prefix: str = "",
 ) -> np.ndarray:
+    if denominator_prefix:
+        # The z=0 local three-point function is real, so the same real excited-
+        # state block divides both numerator components: its ground state is the
+        # normalisation (h_B(0)=1) and the fitted numerator ground state is
+        # h_B(z)/h_B(0).
+        return _three_point_model(
+            times, insertions, parameters, n_states, form, component
+        ) / _three_point_model(times, insertions, parameters, n_states, form, "re", denominator_prefix, True)
     numerator = _three_point_model(times, insertions, parameters, n_states, form, component)
     if form == "Breit":
         return numerator / _two_point_model(times, parameters, extent, n_states)
@@ -143,6 +169,8 @@ def _plotted_three_point_n_states(n_states: Mapping[str, int] | int) -> int:
     if isinstance(n_states, Mapping):
         if "3pt_ratio" in n_states:
             return atom_state_count(n_states, "3pt_ratio")
+        if "self_ratio" in n_states:
+            return atom_state_count(n_states, "self_ratio")
         if "3pt" in n_states:
             return atom_state_count(n_states, "3pt")
         raise ValueError("n_states is missing a three-point atom")
@@ -172,10 +200,20 @@ def matrix_element_fcn(x: Mapping[str, Any], parameters: Mapping[str, Any]) -> n
                 values.append(
                     _three_point_model(x["ratio_t"], x["ratio_tau"], parameters, atom_n_states, form, component)
                 )
-        elif atom == "3pt_ratio":
+        elif atom in {"3pt_ratio", "self_ratio"}:
+            denominator_prefix = "D" if atom == "self_ratio" else ""
             for component in components:
                 values.append(
-                    _ratio_model(x["ratio_t"], x["ratio_tau"], parameters, extent, atom_n_states, form, component)
+                    _ratio_model(
+                        x["ratio_t"],
+                        x["ratio_tau"],
+                        parameters,
+                        extent,
+                        atom_n_states,
+                        form,
+                        component,
+                        denominator_prefix,
+                    )
                 )
         elif atom == "qda":
             for component in components:
@@ -225,22 +263,27 @@ def matrix_element_prior(
     atoms = set(scope.split("+")) if isinstance(scope, str) else set(scope)
     if form not in {"Breit", "NonBreit"} or not atoms:
         raise ValueError("unsupported fitting form or scope")
-    if form == "NonBreit" and atoms - {"2pt", "3pt", "3pt_ratio"}:
-        raise ValueError("NonBreit fitting supports only 2pt, 3pt, and 3pt_ratio")
+    if form == "NonBreit" and atoms - {"2pt", "3pt", "3pt_ratio", "self_ratio"}:
+        raise ValueError("NonBreit fitting supports only 2pt, 3pt, 3pt_ratio, and self_ratio")
     counts = {atom: _lookup_atom_n_states(n_states, atom) for atom in atoms}
     prior = gv.BufferDict()
     suffixes = ("",) if form == "Breit" else ("_i", "_f")
     for atom in atoms:
         _add_spectrum_prior(prior, counts[atom], width_scale, suffixes)
-    if atoms & {"3pt", "3pt_ratio"}:
-        matrix_n_states = max(counts[atom] for atom in atoms if atom in {"3pt", "3pt_ratio"})
+    if atoms & {"3pt", "3pt_ratio", "self_ratio"}:
+        matrix_n_states = max(counts[atom] for atom in atoms if atom in {"3pt", "3pt_ratio", "self_ratio"})
         if form == "Breit":
             matrix_indices = [(row, column) for row in range(matrix_n_states) for column in range(row, matrix_n_states)]
         else:
             matrix_indices = [(sink, source) for sink in range(matrix_n_states) for source in range(matrix_n_states)]
-        for row, column in matrix_indices:
-            for component in ("re", "im"):
-                prior.setdefault(f"O{row}{column}_{component}", gv.gvar(1.0, 10.0 * width_scale))
+        prefixes = ("O", "D") if "self_ratio" in atoms else ("O",)
+        for prefix in prefixes:
+            for row, column in matrix_indices:
+                if prefix == "D" and row == 0 and column == 0:
+                    continue
+                components_to_prior = ("re", "im") if prefix == "O" else ("re",)
+                for component in components_to_prior:
+                    prior.setdefault(f"{prefix}{row}{column}_{component}", gv.gvar(1.0, 10.0 * width_scale))
     if "FH" in atoms:
         fh_n_states = counts["FH"]
         for component in ("re", "im"):
@@ -328,6 +371,7 @@ def _gvar_payload(values: Any) -> tuple[list[float], list[float]]:
 def _matrix_sample0_plot_payload(
     *,
     ratios: Mapping[int, np.ndarray],
+    self_ratios: Mapping[int, np.ndarray],
     z_value: int | float,
     z_index: int,
     posterior: Mapping[str, Any] | None,
@@ -347,12 +391,14 @@ def _matrix_sample0_plot_payload(
     if posterior is None:
         return None
     plots: list[dict[str, Any]] = []
-    if fit_scope in {"3pt_ratio", "3pt_ratio+FH"}:
+    self_ratio = "self_ratio" in fit_scope
+    if fit_scope in {"3pt_ratio", "3pt_ratio+FH", "self_ratio", "self_ratio+FH"}:
+        source_ratios = self_ratios if self_ratio else ratios
         for component in selected_components:
             series = []
             for tsep in tsep_values:
                 mask = (available_tau >= tau_min) & (available_tau <= tsep - tau_min)
-                values = ratios[tsep][:, mask, z_index]
+                values = source_ratios[tsep][:, mask, z_index]
                 selected = np.real(values) if component == "re" else np.imag(values)
                 average = EnsembleData(
                     ensemble,
@@ -361,12 +407,15 @@ def _matrix_sample0_plot_payload(
                     ["tau"],
                     {"tau": available_tau[mask].tolist()},
                 ).average(sample_error_mode)
-                # The fitted ratio uses the periodic two-point denominator.
+                # The 3pt_ratio fit uses the periodic two-point denominator.
                 # For the diagnostic figure, restore the legacy forward-
                 # denominator convention so its asymptotic band is directly
-                # comparable with O00/(2 E0).
+                # comparable with O00/(2 E0). The self-ratio already carries its
+                # own z=0 periodic denominator, so it needs no correction.
                 correction_energy = posterior["E0_f"] if fitting_form == "NonBreit" else posterior["E0"]
-                denominator_correction = 1.0 + gv.exp(-correction_energy * (float(extent) - 2.0 * float(tsep)))
+                denominator_correction = (
+                    1.0 if self_ratio else 1.0 + gv.exp(-correction_energy * (float(extent) - 2.0 * float(tsep)))
+                )
                 plotted_data = (
                     gv.gvar(
                         np.asarray(selected[0], dtype=float),
@@ -384,6 +433,7 @@ def _matrix_sample0_plot_payload(
                         _plotted_three_point_n_states(n_states),
                         fitting_form,
                         component,
+                        "D" if self_ratio else "",
                     )
                     * denominator_correction
                 )
@@ -400,21 +450,23 @@ def _matrix_sample0_plot_payload(
                         "fit_sdev": fit_sdev,
                     }
                 )
-            if fitting_form == "NonBreit":
+            if self_ratio:
+                plateau = posterior[f"O00_{component}"]
+            elif fitting_form == "NonBreit":
                 sign = -1.0 if float(gv.mean(posterior["z0_i"] * posterior["z0_f"])) < 0.0 else 1.0
                 plateau = sign * posterior[f"O00_{component}"] / (posterior["E0_i"] + posterior["E0_f"])
             else:
                 plateau = posterior[f"O00_{component}"] / (2.0 * posterior["E0"])
             plots.append(
                 {
-                    "kind": "pt3_ratio",
+                    "kind": "self_ratio" if self_ratio else "pt3_ratio",
                     "component": component,
                     "series": series,
                     "plateau_mean": float(gv.mean(plateau)),
                     "plateau_sdev": float(gv.sdev(plateau)),
                 }
             )
-    if fit_scope in {"FH", "3pt_ratio+FH"}:
+    if fit_scope in {"FH", "3pt_ratio+FH", "self_ratio+FH"}:
         summed = []
         for tsep in tsep_values:
             mask = (available_tau >= tau_min) & (available_tau <= tsep - tau_min)
@@ -511,8 +563,8 @@ def fit_matrix_element_samples(
         raise ValueError("ordinary matrix-element fitting requires a three-point or FH fit_scope")
     if fitting_form not in {"Breit", "NonBreit"}:
         raise ValueError("fitting_form must be Breit or NonBreit")
-    if fitting_form == "NonBreit" and pipeline.atom_set - {"2pt", "3pt", "3pt_ratio"}:
-        raise ValueError("NonBreit fitting supports only 2pt, 3pt, and 3pt_ratio")
+    if fitting_form == "NonBreit" and pipeline.atom_set - {"2pt", "3pt", "3pt_ratio", "self_ratio"}:
+        raise ValueError("NonBreit fitting supports only 2pt, 3pt, 3pt_ratio, and self_ratio")
     if "FH" in pipeline.atom_set and atom_state_count(atom_counts, "FH") > 2:
         raise ValueError("FH fitting supports at most two states")
     selected_components = {"real": ("re",), "imag": ("im",), "both": ("re", "im")}.get(components)
@@ -570,13 +622,29 @@ def fit_matrix_element_samples(
     initial_values = np.asarray(initial.values)
     final_values = np.asarray(final.values)
     three_values = np.asarray(three_point.values)
+    z_values = list(three_point.coords["z"])
+    origin_index = None
+    if "self_ratio" in pipeline.atom_set:
+        origin = np.flatnonzero(np.isclose(np.asarray(z_values, dtype=float), 0.0, rtol=0.0, atol=1e-12))
+        if origin.size != 1:
+            raise ValueError("self_ratio fitting requires exactly one z=0 coordinate")
+        origin_index = int(origin[0])
     ratios: dict[int, np.ndarray] = {}
+    self_ratios: dict[int, np.ndarray] = {}
     for tsep in tsep_values:
         time_index = np.flatnonzero(times == tsep)
         tsep_index = np.flatnonzero(available_tseps == tsep)
         if time_index.size != 1 or tsep_index.size != 1:
             raise ValueError(f"missing exact two-/three-point coordinate for tsep={tsep}")
         three_slice = three_values[:, tsep_index[0], :, :]
+        if origin_index is not None:
+            # The z=0 local three-point function is real, and its unphysical
+            # tau > tsep entries are exactly zero; they lie outside every fit
+            # window, so keep them finite instead of NaN.
+            denominator = np.real(three_slice[:, :, origin_index, None])
+            self_ratios[tsep] = np.divide(
+                three_slice, denominator, out=np.zeros_like(three_slice), where=denominator != 0
+            )
         if fitting_form == "Breit":
             ratios[tsep] = three_slice / initial_values[:, time_index[0], None, None]
         else:
@@ -604,17 +672,18 @@ def fit_matrix_element_samples(
             )
             ratios[tsep] = ratio
 
-    z_values = list(three_point.coords["z"])
     if tune_z is None:
-        z_indices = list(range(len(z_values)))
+        z_indices = [index for index in range(len(z_values)) if index != origin_index]
     else:
         tune_matches = np.flatnonzero(
             np.isclose(np.asarray(z_values, dtype=float), float(tune_z), rtol=0.0, atol=1e-12)
         )
-        if tune_matches.size != 1:
+        if tune_matches.size != 1 or int(tune_matches[0]) == origin_index:
             raise ValueError("lsqfit.tune_z must name exactly one available z coordinate")
         z_indices = [int(tune_matches[0])]
     fitted_samples = np.zeros((three_point.n_sample, len(z_values)), dtype=complex)
+    if origin_index is not None:
+        fitted_samples[:, origin_index] = 1.0 + 0.0j
     center_metrics = []
     sample_failures = []
     parallel = _parallel or _ParallelPool(min(workers, three_point.n_sample))
@@ -630,12 +699,15 @@ def fit_matrix_element_samples(
             ratio_t: list[int] = []
             ratio_tau: list[int] = []
             selected_ratio: list[np.ndarray] = []
+            selected_self: list[np.ndarray] = []
             selected_raw: list[np.ndarray] = []
             for tsep in tsep_values:
                 tau_mask = (available_tau >= tau_min) & (available_tau <= tsep - tau_min)
                 ratio_t.extend([tsep] * int(np.count_nonzero(tau_mask)))
                 ratio_tau.extend(available_tau[tau_mask].tolist())
                 selected_ratio.append(ratios[tsep][:, tau_mask, z_index])
+                if origin_index is not None:
+                    selected_self.append(self_ratios[tsep][:, tau_mask, z_index])
                 tsep_index = int(np.flatnonzero(available_tseps == tsep)[0])
                 selected_raw.append(three_values[:, tsep_index, tau_mask, z_index])
             summed = [np.sum(values, axis=1) for values in selected_ratio]
@@ -670,8 +742,10 @@ def fit_matrix_element_samples(
                         pieces.append(np.real(initial_values[:, pt2_mask]) * correlator_rescale)
                         if fitting_form == "NonBreit":
                             pieces.append(np.real(final_values[:, pt2_mask]) * correlator_rescale)
-                    elif atom in {"3pt", "3pt_ratio"}:
-                        source_values = selected_raw if atom == "3pt" else selected_ratio
+                    elif atom in {"3pt", "3pt_ratio", "self_ratio"}:
+                        source_values = (
+                            selected_raw if atom == "3pt" else selected_self if atom == "self_ratio" else selected_ratio
+                        )
                         for component in selected_components:
                             component_parts = [
                                 np.real(values) if component == "re" else np.imag(values) for values in source_values
@@ -772,16 +846,18 @@ def fit_matrix_element_samples(
                 )
                 energy_summary[f"{energy_key}_samples"] = energy_samples
             sample_diagnostics = _sample_diagnostic_records(result) if fit_samples else []
+            ratio_scope = "self_ratio" if origin_index is not None else "3pt_ratio"
             plot_scope = (
-                "3pt_ratio+FH"
-                if "FH" in pipeline.final_stage and pipeline.atom_set & {"3pt", "3pt_ratio"}
+                f"{ratio_scope}+FH"
+                if "FH" in pipeline.final_stage and pipeline.atom_set & {"3pt", "3pt_ratio", "self_ratio"}
                 else "FH"
                 if "FH" in pipeline.final_stage
-                else "3pt_ratio"
+                else ratio_scope
             )
             sample0_plot = (
                 _matrix_sample0_plot_payload(
                     ratios=ratios,
+                    self_ratios=self_ratios,
                     z_value=z_value,
                     z_index=z_index,
                     posterior=result.sample_posteriors[0] if result.sample_posteriors else None,
@@ -827,22 +903,26 @@ def fit_matrix_element_samples(
                     )
                     continue
                 try:
-                    real = (
-                        float(parameters["O00_re"] / (parameters["E0_f"] + parameters["E0_i"]))
-                        if fitting_form == "NonBreit" and "re" in selected_components
-                        else float(parameters["O00_re"] / (2 * parameters["E0"]))
-                        if "re" in selected_components
-                        else 0.0
-                    )
-                    imag = (
-                        float(parameters["O00_im"] / (parameters["E0_f"] + parameters["E0_i"]))
-                        if fitting_form == "NonBreit" and "im" in selected_components
-                        else float(parameters["O00_im"] / (2 * parameters["E0"]))
-                        if "im" in selected_components
-                        else 0.0
-                    )
-                    if fitting_form == "NonBreit" and float(parameters["z0_f"] * parameters["z0_i"]) < 0:
-                        real, imag = -real, -imag
+                    if origin_index is not None:
+                        real = float(parameters["O00_re"]) if "re" in selected_components else 0.0
+                        imag = float(parameters["O00_im"]) if "im" in selected_components else 0.0
+                    else:
+                        real = (
+                            float(parameters["O00_re"] / (parameters["E0_f"] + parameters["E0_i"]))
+                            if fitting_form == "NonBreit" and "re" in selected_components
+                            else float(parameters["O00_re"] / (2 * parameters["E0"]))
+                            if "re" in selected_components
+                            else 0.0
+                        )
+                        imag = (
+                            float(parameters["O00_im"] / (parameters["E0_f"] + parameters["E0_i"]))
+                            if fitting_form == "NonBreit" and "im" in selected_components
+                            else float(parameters["O00_im"] / (2 * parameters["E0"]))
+                            if "im" in selected_components
+                            else 0.0
+                        )
+                        if fitting_form == "NonBreit" and float(parameters["z0_f"] * parameters["z0_i"]) < 0:
+                            real, imag = -real, -imag
                     if not np.isfinite(real) or not np.isfinite(imag):
                         raise FloatingPointError("non-finite fitted matrix element")
                 except (FloatingPointError, OverflowError, ZeroDivisionError, ValueError) as exc:

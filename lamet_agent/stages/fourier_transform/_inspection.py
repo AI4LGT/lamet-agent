@@ -11,7 +11,11 @@ import numpy as np
 
 from lamet_agent.agent import ToolContext
 from lamet_agent.kernels.implementation import HBAR_C_GEV_FM
-from lamet_agent.stages.fourier_transform.physics import complete_signed_z, load_data
+from lamet_agent.stages.fourier_transform.physics import (
+    _NUCLEON_HADRONS,
+    complete_signed_z,
+    load_data,
+)
 
 
 def effective_zmin_fm(context: ToolContext, data: Any) -> list[float]:
@@ -157,9 +161,10 @@ def prepare(context: ToolContext) -> tuple[Any, float]:
     target = str(context.manifest["metadata"]["target_observable"]).lower()
     if target in {"pdf", "gpd"}:
         hadron = str(data.attrs.get("hadron", "")).strip().lower()
-        if hadron not in {"pion", "proton", "nucleon"}:
+        if hadron != "pion" and hadron not in _NUCLEON_HADRONS:
+            allowed = ", ".join(sorted({"pion", *_NUCLEON_HADRONS}))
             raise ValueError(
-                f"Fourier input hadron must be one of nucleon, pion, proton for {target.upper()} tails; "
+                f"Fourier input hadron must be one of {allowed} for {target.upper()} tails; "
                 f"got {hadron or '<missing>'}"
             )
     if data.attrs.get("coord_unit") != "fm":
