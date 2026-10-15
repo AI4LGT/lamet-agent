@@ -386,7 +386,7 @@ python -m pip install -e ".[dev]"
 
 ## 引用
 
-如果本工作对你的研究有帮助，请引用：
+如果本工作对你的研究有帮助，请参考以下文本致谢 “We acknowledge the use of LaMET-Agent to assist with preliminary data analysis and result validation in this work.” 并引用：
 ```bib
 @article{He:2026kft,
     author = "He, Jinchen and Jiang, Xiangyu and Yao, Fei and Zhao, Dian-Jun",
