@@ -85,7 +85,7 @@ def _gpd_signed_pair(
     phase_transfer_gpd: str,
     delta_momentum_gev: float,
 ) -> Any:
-    """Complete a GPD matrix element with its exchanged-flow Hermitian partner."""
+    """Prepare the labeled positive branch and complete its conjugate reflection."""
     if primary.dims != ["z"] or partner.dims != ["z"]:
         raise ValueError("GPD Fourier inputs must have exactly one z dimension")
     if primary.ensemble != partner.ensemble or primary.resample != partner.resample:
@@ -116,9 +116,9 @@ def _gpd_signed_pair(
     output_z = np.concatenate([negative_z, positive_z])
     values = []
     for sample_target, sample_exchanged in zip(target, exchanged):
-        negative = np.conjugate(sample_exchanged[positive_z > 0][::-1])
+        negative = np.conjugate(sample_target[positive_z > 0][::-1])
         if np.isclose(positive_z[0], 0.0):
-            center = 0.5 * (sample_target[0] + np.conjugate(sample_exchanged[0]))
+            center = np.real(0.5 * (sample_target[0] + np.conjugate(sample_exchanged[0])))
             values.append(np.concatenate([negative, [center], sample_target[1:]]))
         else:
             values.append(np.concatenate([negative, sample_target]))
@@ -126,7 +126,7 @@ def _gpd_signed_pair(
     attrs.update(
         {
             "symmetry": json.dumps({"real": "explicit", "imag": "explicit"}, sort_keys=True),
-            "signed_z_completion": "gpd_hermitian_partner",
+            "signed_z_completion": "gpd_same_flow_conjugation",
             "phase_transfer_gpd": phase_transfer_gpd,
             "hermitian_partner_id": str(partner.attrs.get("correlator_id", partner.name or "")),
             "delta_momentum_gev": float(delta_momentum_gev),
