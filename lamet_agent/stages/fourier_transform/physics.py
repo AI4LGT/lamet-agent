@@ -169,6 +169,34 @@ def _tail_parameter_names(
     return names
 
 
+def _gpd_endpoint_components(
+    real: np.ndarray,
+    imag: np.ndarray,
+    z_fm: np.ndarray,
+    *,
+    delta_momentum_gev: float,
+    phase_transfer_gpd: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Convert barpsi(z) psi(0) to the labeled endpoint convention.
+
+    psi_at_0: barpsi(z) psi(0); mid_at_0: barpsi(z/2) psi(-z/2);
+    barpsi_at_0: barpsi(0) psi(z). For a real momentum distribution the
+    last convention is exp(-i Delta_z z) times the conjugated input.
+    """
+    phase = float(delta_momentum_gev) * np.asarray(z_fm, dtype=float) / HBAR_C_GEV_FM
+    if phase_transfer_gpd == "psi_at_0":
+        return real, imag
+    if phase_transfer_gpd == "mid_at_0":
+        phase = 0.5 * phase
+    elif phase_transfer_gpd == "barpsi_at_0":
+        phase = -phase
+        imag = -imag
+    else:
+        raise ValueError("phase_transfer_gpd must be mid_at_0, barpsi_at_0, or psi_at_0")
+    cosine, sine = np.cos(phase), np.sin(phase)
+    return real * cosine - imag * sine, real * sine + imag * cosine
+
+
 def _tail_fit_fcn_base(x: Mapping[str, Any], parameters: Mapping[str, Any]) -> np.ndarray:
     """Evaluate one channel-specific GI/CG tail for the fitter."""
     z = np.asarray(x["z"], dtype=float)
@@ -237,8 +265,6 @@ def _tail_fit_fcn_base(x: Mapping[str, Any], parameters: Mapping[str, Any]) -> n
         initial = float(x["initial_momentum_gev"])
         final = float(x["final_momentum_gev"])
         delta = float(x["delta_momentum_gev"])
-        phase_transfer = str(x["phase_transfer_gpd"])
-        shift = {"barpsi_at_0": 0.0, "mid_at_0": 0.5 * delta, "psi_at_0": delta}[phase_transfer]
         base_terms = {
             "1": -final,
             "3": initial,
@@ -249,14 +275,19 @@ def _tail_fit_fcn_base(x: Mapping[str, Any], parameters: Mapping[str, Any]) -> n
         real = np.zeros_like(absolute, dtype=object)
         imag = np.zeros_like(absolute, dtype=object)
         for term in terms:
-            phase = sign * parameters[f"phi{term}"] + (base_terms[term] + shift) * z_gev_inv
+            phase = sign * parameters[f"phi{term}"] + base_terms[term] * z_gev_inv
             real = real + parameters[f"A{term}"] * gv.cos(phase)
             imag = imag + parameters[f"A{term}"] * gv.sin(phase)
         if x["order"] == "NLA":
             for term in terms:
-                phase = sign * parameters[f"phi{term}p"] + (base_terms[term] + shift) * z_gev_inv
+                phase = sign * parameters[f"phi{term}p"] + base_terms[term] * z_gev_inv
                 real = real + parameters[f"A{term}p"] * gv.cos(phase) / absolute
                 imag = imag + parameters[f"A{term}p"] * gv.sin(phase) / absolute
+        real, imag = _gpd_endpoint_components(
+            real, imag, z,
+            delta_momentum_gev=delta,
+            phase_transfer_gpd=str(x["phase_transfer_gpd"]),
+        )
     real = real * decay
     imag = imag * decay
     if x["model_id"] == "cg_nla":
@@ -648,8 +679,9 @@ def complete_signed_z(data: EnsembleData, symmetry: Mapping[str, str]) -> Ensemb
     """Complete a positive ``z`` grid using explicit real/imaginary parity.
 
     ``even`` and ``odd`` are applied independently to the real and imaginary
-    components. Existing signed grids are sorted and retained; ``explicit``
-    therefore requires both positive and negative input coordinates.
+    components. For even-real/odd-imaginary completion, the nonnegative
+    branch is authoritative even on an already signed grid. Other signed
+    conventions retain existing data; ``explicit`` requires both signs.
     """
     if "z" not in data.dims:
         raise ValueError("Fourier input must have a z dimension")
@@ -657,7 +689,7 @@ def complete_signed_z(data: EnsembleData, symmetry: Mapping[str, str]) -> Ensemb
     if not np.all(np.isfinite(z)) or np.any(np.diff(z) <= 0):
         raise ValueError("z coordinates must be finite and strictly increasing")
     convention = _symmetry_mapping(symmetry)
-    if np.any(z < 0) and np.any(z > 0):
+    if np.any(z < 0) and np.any(z > 0) and convention != {"real": "even", "imag": "odd"}:
         attrs = data.attrs
         attrs["symmetry"] = json.dumps(convention, sort_keys=True)
         return EnsembleData(
@@ -673,6 +705,8 @@ def complete_signed_z(data: EnsembleData, symmetry: Mapping[str, str]) -> Ensemb
         raise ValueError("explicit symmetry requires both positive and negative input coordinates")
     positive_indices = np.where(z >= 0)[0]
     positive_z = z[positive_indices]
+    if positive_z.size == 0:
+        raise ValueError("signed-z completion requires nonnegative input coordinates")
     negative_z = -positive_z[positive_z > 0][::-1]
     output_z = np.concatenate([negative_z, positive_z])
     values = []
@@ -1050,7 +1084,7 @@ def scan_fourier_transform(
     source_component = str(scan["source_component"])
     if source_component not in {"re", "im", "both"}:
         raise ValueError("source_component must be re, im, or both")
-    output_component = "both" if data.attrs.get("gpd_completion_mode") == "paired_flow" else "re"
+    output_component = "re"
     lambda0_gev = float(scan["lambda0_gev"])
     output_scale = float(scan["output_scale"])
     q_min = float(scan["q_min"])
@@ -1080,6 +1114,7 @@ def scan_fourier_transform(
             raise ValueError("gpd_projection_grid must be a nonempty finite one-dimensional grid")
         if str(scan["sector"]).lower() != "full":
             x_grid = np.sort(np.unique(np.concatenate([requested_gpd_grid, -requested_gpd_grid]))).tolist()
+    data = complete_signed_z(data, {"real": "even", "imag": "odd"})
     if observable == "DA" and phase_transfer_da:
         z = np.asarray(data.coords["z"], dtype=float)
         phase = np.exp(0.5j * z * float(momentum) / HBAR_C_GEV_FM)[None, :]
@@ -1357,7 +1392,7 @@ def scan_fourier_transform(
             "gpd_projection_mode": (
                 "post_ft_signed_y"
                 if observable == "GPD" and requested_gpd_grid is not None and str(scan["sector"]).lower() != "full"
-                else "full_complex"
+                else "full_real"
             ),
         }
     )
