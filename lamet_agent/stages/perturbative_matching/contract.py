@@ -182,9 +182,9 @@ def _kernel_parameter_issues(kernel: Any, values: dict[str, Any]) -> list[Issue]
 # fmt: off
 PARAM_RULES = (
     Depends("", "order", physics="The perturbative order remains explicit in the manifest and is encoded in the runtime-derived kernel filename."),
-    Value("order", Literal["nlo"], physics="Only next-to-leading order matching kernels are currently available."),
-    Recommends("", "resummation", physics="Matching uses fixed-order NLO unless an explicit resummation is selected.", default=""),
-    Value("resummation", Literal["", "rgr", "lrr"], physics="Empty selects fixed-order NLO; rgr resums the running coupling and lrr resums the leading renormalon."),
+    Value("order", Literal["nlo", "nnlo"], physics="NLO kernels and the fixed-order NNLO GI gamma-t hybrid nonsinglet quark PDF kernel are available."),
+    Recommends("", "resummation", physics="Matching uses the selected fixed order unless an explicit resummation is selected.", default=""),
+    Value("resummation", Literal["", "rgr", "lrr"], physics="Empty selects fixed-order matching at the requested order; rgr resums the running coupling and lrr resums the leading renormalon. NNLO supports only empty resummation."),
     Depends("", "mu", physics="The matching scale is the MS-bar scale of the published light-cone distribution in GeV, conventionally 2 GeV, and enters every coefficient function through the logarithm ln(4 y^2 Pz^2 / mu^2)."),
     Depends("", "lc_x_ls", physics="A list is the exact light-cone output grid; a start/stop mapping instead keeps the quasi-grid points inside the closed window, and never interpolates."),
     Recommends("", "kernel_parameters", physics="Kernel-specific controls are explicit and are validated against the selected kernel signature; every kernel accepts eps, the regulator keeping plus-prescription denominators finite, and nlo_rgr_* kernels add kappa and mu_min_gev, which build row x at mu0=2*kappa*x*Pz and zero every row with mu0 below mu_min_gev, so together they impose the cutoff x_min=mu_min_gev/(2*kappa*Pz) and keep mu0 above the Landau pole.", default={}),
