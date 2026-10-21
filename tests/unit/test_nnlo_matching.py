@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import ast
+import io
+from pathlib import Path
+import tokenize
+
 import mpmath as mp
 import numpy as np
 import pytest
@@ -17,6 +22,17 @@ from lamet_agent.kernels.quark_pdf_gi_gt_hybrid_nnlo import (
     msbar_two_loop,
     smooth_conversion,
 )
+
+
+def test_nnlo_kernel_follows_repository_style():
+    source = Path(nnlo.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("lamet_agent."):
+            assert node.module == "lamet_agent.kernels.implementation"
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            assert ast.get_docstring(node, clean=False) is None
+    assert not any(token.type == tokenize.COMMENT for token in tokenize.generate_tokens(io.StringIO(source).readline))
 
 
 @pytest.mark.parametrize("xi,b,ls", [(0.3, 1.5, 0.7), (1.0, 1.5, 0.7), (-2.0, 0.3, -0.4)])
