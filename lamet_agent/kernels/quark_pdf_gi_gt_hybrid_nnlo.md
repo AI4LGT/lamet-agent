@@ -15,6 +15,11 @@ provide a further implementation reference. Their two-loop color functions
 agree with the pion reference used for transcription. Their inverse term is
 `C2i = -C2 + C1.C1`. Their fixed-order conversion omits the smooth term retained here.
 
+The original transcription used `Code_Example_RGR.nb`, input cell 26
+(zero-based). Separate high-precision color constants preserve that coefficient
+evaluation; they are distinct from the shared floating-point constants used
+by the hybrid conversion and matrix builders.
+
 The analytic MSbar functions, hybrid-conversion functions, and public `kernel()`
 are all defined together in `quark_pdf_gi_gt_hybrid_nnlo.py`.
 
@@ -62,6 +67,11 @@ and $1-u$ give two Gauss-Laguerre integrals. A sine-product form avoids
 subtracting almost equal cosines near $u=1$. Successive quadrature orders
 must agree to absolute tolerance 1e-10 plus relative tolerance 1e-8;
 nonconvergence through order 256 raises an error.
+
+Specifically, the substitutions are $\nu=b\exp(-s)$ and $1-u=\exp(-r)$,
+so both integrations use the $\exp(-t)$ Laguerre weight. The MSbar evaluator
+uses $\ell=\ln(\mu^2/(yP_z)^2)=\ln 4-\texttt{log\_scale}$; analytic
+$1/|1-\xi|$ logarithms are combined before numerical evaluation.
 
 ## Interface and limitations
 

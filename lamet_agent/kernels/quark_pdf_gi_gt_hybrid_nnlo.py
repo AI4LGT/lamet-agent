@@ -1,15 +1,3 @@
-"""Fixed-order NNLO GI gamma-t hybrid nonsinglet PDF matching.
-
-This file contains the analytic MSbar coefficient, the full hybrid conversion,
-and the quasi-to-lightcone matching matrix. The regular two-loop coefficient
-multiplies (alpha_s/(2*pi))**2 and includes all color factors.
-
-MSbar expressions: arXiv:2006.14825v4, supplemental material; transcribed
-from Code_Example_RGR.nb, cell 26 (zero-based), and compared with the user's
-To_Minhuan and To_Jinxin proton sample notebooks.
-Hybrid conversion: arXiv:2209.01236v2, Eqs. (30), (31), (40), and (41).
-"""
-
 from __future__ import annotations
 
 from functools import lru_cache
@@ -34,8 +22,6 @@ from lamet_agent.kernels.implementation import (
 )
 
 
-# Analytic two-loop MSbar coefficient.
-# Separate high-precision constants preserve the original coefficient evaluation.
 with mp.workdps(50):
     _MS_CF = mp.mpf(4) / 3
     _MS_CA = mp.mpf(3)
@@ -1270,7 +1256,6 @@ def Pqqbar(y):
 
 
 def msbar_two_loop(xi: float, log_mu_over_pz_sq: float) -> float:
-    """Return the regular MSbar coefficient away from xi = -1, 0, 1."""
     with mp.workdps(40):
         y = mp.mpf(xi)
         ell = mp.mpf(log_mu_over_pz_sq)
@@ -1287,19 +1272,12 @@ def msbar_two_loop(xi: float, log_mu_over_pz_sq: float) -> float:
         return float(mp.re(finite + Gamma1(y) * ell + Gamma2(y) * ell**2))
 
 
-# Full two-loop hybrid conversion, including the smooth Fourier term.
 @lru_cache(maxsize=8)
 def _quadrature(order: int) -> tuple[np.ndarray, np.ndarray]:
     return roots_laguerre(order)
 
 
 def smooth_conversion(xi: float, b: float, ls: float, order: int = 64) -> float:
-    """Evaluate the last double Fourier transform in Eq. (41).
-
-    Set nu=b*exp(-s), 1-u=exp(-r). The plus subtraction is performed
-    before integration; a sine product avoids subtracting nearby cosines.
-    Both integrals then have the exp(-t) Laguerre weight.
-    """
     nodes, weights = _quadrature(order)
     s = nodes[:, None]
     r = nodes[None, :]
@@ -1315,7 +1293,6 @@ def smooth_conversion(xi: float, b: float, ls: float, order: int = 64) -> float:
 
 @lru_cache(maxsize=16384)
 def _msbar(xi: float, ell: float) -> float:
-    # xi=-1 is a removable boundary between two analytic representations.
     if xi == -1.0:
         h = 1e-9
         return (msbar_two_loop(xi - h, ell) + msbar_two_loop(xi + h, ell)) / 2.0
@@ -1323,19 +1300,17 @@ def _msbar(xi: float, ell: float) -> float:
 
 
 def hybrid_two_loop(xi: float, log_scale: float, y: float, zspz: float, *, eps: float, order: int) -> float:
-    """Regular full hybrid coefficient, including the smooth conversion."""
     if abs(xi) < eps:
         xi = eps if xi >= 0 else -eps
     d = 1.0 - xi
     b = abs(y * zspz)
-    ell = np.log(4.0) - log_scale  # ln(mu**2/(y*Pz)**2)
+    ell = np.log(4.0) - log_scale
     ls = np.log(b**2) + ell + 2 * np.euler_gamma - np.log(4.0)
     a = 11 * CA * CF / 8 - CF * NF * TF / 2 + 9 * CF**2 / 8
     c = (53 / 8 - np.pi**2 / 6) * CA * CF + (25 / 8 + 2 * np.pi**2 / 3) * CF**2 - 5 * CF * NF * TF / 2
     sine = 2.0 * sici(d * b)[0] / (np.pi * d)
     with mp.workdps(30):
         hyper = float(mp.re(mp.hyper([1, 1, 1], [2, 2, 2], 1j * d * b)))
-    # Combine the analytic 1/|1-xi| logarithms before evaluating them.
     analytic = a * (2 * ls * sine - 8 * b / np.pi * hyper) + c * sine
     analytic -= CF**2 * (1.5 * ls + 2.5) * C_hybrid_gi(xi, log_scale, y, zspz, eps)
     smooth = smooth_conversion(xi, b, ls, order)
@@ -1350,7 +1325,6 @@ def hybrid_two_loop(xi: float, log_scale: float, y: float, zspz: float, *, eps: 
     return _msbar(float(xi), float(ell)) + analytic + checked
 
 
-# Public quasi-to-lightcone matching matrix.
 def kernel(
     x_out: np.ndarray,
     x_in: np.ndarray,
@@ -1361,7 +1335,6 @@ def kernel(
     eps: float = 1e-12,
     quadrature_order: int = 64,
 ) -> np.ndarray:
-    """Quasi-to-lightcone matching through O(alpha_s**2), with full hybrid conversion."""
     for name, value in (("momentum_gev", momentum_gev), ("scale_gev", scale_gev), ("zs_fm", zs_fm), ("eps", eps)):
         if not np.isfinite(value) or value <= 0:
             raise ValueError(f"`{name}` must be finite and positive.")
@@ -1386,7 +1359,7 @@ def kernel(
             ),
         )
 
-    inverse_nlo = nlo_matrix(x)  # Also validates the uniform nonzero input grid.
+    inverse_nlo = nlo_matrix(x)
     identity = _lo_interp_matrix(x, y)
     forward_one = identity - inverse_nlo
     forward_one_square = np.eye(y.size) - nlo_matrix(y)
