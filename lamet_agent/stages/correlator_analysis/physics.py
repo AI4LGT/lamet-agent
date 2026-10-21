@@ -454,7 +454,7 @@ def _matrix_sample0_plot_payload(
                 plateau = posterior[f"O00_{component}"]
             elif fitting_form == "NonBreit":
                 sign = -1.0 if float(gv.mean(posterior["z0_i"] * posterior["z0_f"])) < 0.0 else 1.0
-                plateau = sign * posterior[f"O00_{component}"] / (posterior["E0_i"] + posterior["E0_f"])
+                plateau = sign * posterior[f"O00_{component}"] / (2 * gv.sqrt(posterior["E0_i"] * posterior["E0_f"]))
             else:
                 plateau = posterior[f"O00_{component}"] / (2.0 * posterior["E0"])
             plots.append(
@@ -908,14 +908,14 @@ def fit_matrix_element_samples(
                         imag = float(parameters["O00_im"]) if "im" in selected_components else 0.0
                     else:
                         real = (
-                            float(parameters["O00_re"] / (parameters["E0_f"] + parameters["E0_i"]))
+                            float(parameters["O00_re"] / (2 * np.sqrt(parameters["E0_f"] * parameters["E0_i"])))
                             if fitting_form == "NonBreit" and "re" in selected_components
                             else float(parameters["O00_re"] / (2 * parameters["E0"]))
                             if "re" in selected_components
                             else 0.0
                         )
                         imag = (
-                            float(parameters["O00_im"] / (parameters["E0_f"] + parameters["E0_i"]))
+                            float(parameters["O00_im"] / (2 * np.sqrt(parameters["E0_f"] * parameters["E0_i"])))
                             if fitting_form == "NonBreit" and "im" in selected_components
                             else float(parameters["O00_im"] / (2 * parameters["E0"]))
                             if "im" in selected_components

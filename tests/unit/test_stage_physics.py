@@ -1896,7 +1896,9 @@ def test_native_matrix_element_fit_supports_composable_scopes(fit_scope: list[st
         assert tuning["n_failed_samples"] == 0
 
 
-def test_native_nonbreit_fit_uses_distinct_source_and_sink_spectra() -> None:
+@pytest.mark.parametrize("fit_scope", [["2pt+3pt"], ["2pt", "3pt_ratio"]])
+@pytest.mark.parametrize("overlap_sign", [1.0, -1.0])
+def test_native_nonbreit_fit_uses_distinct_source_and_sink_spectra(fit_scope, overlap_sign) -> None:
     ensemble = EnsembleInfo("toy", "toy", 0.1, 0.1, 32, 32, 0.2)
     times = np.arange(16)
     tseps = np.asarray([8, 10])
@@ -1905,12 +1907,15 @@ def test_native_nonbreit_fit_uses_distinct_source_and_sink_spectra() -> None:
     initial_samples = []
     final_samples = []
     three_point_samples = []
+    targets = []
     for _ in range(32):
         energy_i = 0.25 + rng.normal(0.0, 0.002)
-        energy_f = 0.35 + rng.normal(0.0, 0.002)
+        energy_f = 0.55 + rng.normal(0.0, 0.002)
         overlap_i = 1.3 + rng.normal(0.0, 0.01)
-        overlap_f = 1.5 + rng.normal(0.0, 0.01)
-        target = 1.2 + rng.normal(0.0, 0.005)
+        overlap_f = overlap_sign * (1.5 + rng.normal(0.0, 0.01))
+        target = 1.2 + rng.normal(0.0, 0.005) + 1j * (0.3 + rng.normal(0.0, 0.005))
+        targets.append(overlap_sign * target)
+        matrix = target * 2 * np.sqrt(energy_i * energy_f)
         initial = (
             overlap_i**2 / (2 * energy_i) * (np.exp(-energy_i * times) + np.exp(-energy_i * (ensemble.L_t - times)))
         )
@@ -1918,13 +1923,13 @@ def test_native_nonbreit_fit_uses_distinct_source_and_sink_spectra() -> None:
         three_point = np.zeros((tseps.size, tau.size, 1), dtype=complex)
         for tsep_index, tsep in enumerate(tseps):
             valid = tau <= tsep
-            correction = (
-                initial[tsep - tau[valid]]
-                * final[tau[valid]]
-                * final[tsep]
-                / (final[tsep - tau[valid]] * initial[tau[valid]] * initial[tsep])
+            three_point[tsep_index, valid, 0] = (
+                matrix
+                * overlap_i
+                * overlap_f
+                / (4 * energy_i * energy_f)
+                * np.exp(-energy_f * (tsep - tau[valid]) - energy_i * tau[valid])
             )
-            three_point[tsep_index, valid, 0] = target * final[tsep] / np.sqrt(correction)
         initial_samples.append(initial.astype(complex))
         final_samples.append(final.astype(complex))
         three_point_samples.append(three_point)
@@ -1961,8 +1966,8 @@ def test_native_nonbreit_fit_uses_distinct_source_and_sink_spectra() -> None:
     result, diagnostics = fit_matrix_element_samples(
         {"initial": initial_data, "final": final_data, "three_point": three_point_data},
         fitting_form="NonBreit",
-        fit_scope=["2pt+3pt_ratio"],
-        components="real",
+        fit_scope=fit_scope,
+        components="both",
         tmin=3,
         tmax=8,
         tsep_values=tseps.tolist(),
@@ -1974,8 +1979,16 @@ def test_native_nonbreit_fit_uses_distinct_source_and_sink_spectra() -> None:
         posterior_prior_error_scale=3.0,
         workers=1,
     )
-    assert np.isclose(np.mean(np.real(result.values[:, 0])), 1.2, atol=0.05)
+    # Correlated Bayesian fits can shrink individual samples; the old energy-sum
+    # normalization instead shifts this unequal-energy signal by about 7 percent.
+    np.testing.assert_allclose(result.values[:, 0], targets, atol=0.02, rtol=0)
+    assert np.mean(result.values[:, 0]) == pytest.approx(np.mean(targets), abs=0.005)
     assert diagnostics["fitting_form"] == "NonBreit"
+    if fit_scope[-1] == "3pt_ratio":
+        plots = diagnostics["fits"][0]["sample0_plot"]["plots"]
+        for plot in plots:
+            expected = targets[0].real if plot["component"] == "re" else targets[0].imag
+            assert plot["plateau_mean"] == pytest.approx(expected, abs=0.005)
 
 
 def test_chained_matrix_fit_transfers_posteriors_sample_by_sample(monkeypatch) -> None:

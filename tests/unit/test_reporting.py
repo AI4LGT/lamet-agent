@@ -263,6 +263,8 @@ def test_correlator_report_renders_only_the_authored_kinematic_formula(tmp_path:
         records=(make_record(nonbreit_stage, "NonBreit"),), artifact_directory=nonbreit_stage
     ).read_text(encoding="utf-8")
     assert "R_{\\rm NB}" in nonbreit
+    assert r"\frac{O_{00}(z)}{2\sqrt{E_{0,i}E_{0,f}}}" in nonbreit
+    assert "E_{0,i}+E_{0,f}" not in nonbreit
     assert "The published Breit matrix element" not in nonbreit
 
 

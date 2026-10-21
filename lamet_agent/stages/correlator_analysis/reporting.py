@@ -64,7 +64,7 @@ and for raw `3pt` and `3pt_ratio` scopes
 
 $$
 h_{\rm NB}(z)=\operatorname{sign}(z_{0,i}z_{0,f})
-\frac{O_{00}(z)}{E_{0,i}+E_{0,f}}.
+\frac{O_{00}(z)}{2\sqrt{E_{0,i}E_{0,f}}}.
 $$
 """.strip()
 
