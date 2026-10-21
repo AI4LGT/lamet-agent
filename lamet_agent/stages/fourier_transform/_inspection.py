@@ -10,9 +10,9 @@ from typing import Any
 import numpy as np
 
 from lamet_agent.agent import ToolContext
-from lamet_agent.kernels.implementation import HBAR_C_GEV_FM
 from lamet_agent.stages.fourier_transform.physics import (
     _NUCLEON_HADRONS,
+    _gpd_endpoint_components,
     complete_signed_z,
     load_data,
 )
@@ -78,72 +78,51 @@ def _momentum_vector(data: Any, key: str) -> tuple[int, int, int]:
     return tuple(int(component) for component in value)
 
 
-def _gpd_signed_pair(
+def _gpd_signed_input(
     primary: Any,
-    partner: Any,
     *,
     phase_transfer_gpd: str,
     delta_momentum_gev: float,
 ) -> Any:
-    """Complete a GPD matrix element with its exchanged-flow Hermitian partner."""
-    if primary.dims != ["z"] or partner.dims != ["z"]:
-        raise ValueError("GPD Fourier inputs must have exactly one z dimension")
-    if primary.ensemble != partner.ensemble or primary.resample != partner.resample:
-        raise ValueError("GPD input and hermitian_partner must share ensemble and resampling")
+    """Transform the paper's barpsi(z) psi(0) input, then conjugate-complete it."""
+    if primary.dims != ["z"]:
+        raise ValueError("GPD Fourier input must have exactly one z dimension")
     z = np.asarray(primary.coords["z"], dtype=float)
-    partner_z = np.asarray(partner.coords["z"], dtype=float)
-    if z.shape != partner_z.shape or not np.allclose(z, partner_z, rtol=0.0, atol=1e-12):
-        raise ValueError("GPD input and hermitian_partner must share the z grid")
-    if phase_transfer_gpd not in {"mid_at_0", "barpsi_at_0", "psi_at_0"}:
-        raise ValueError("phase_transfer_gpd must be mid_at_0, barpsi_at_0, or psi_at_0")
+    if not np.all(np.isfinite(z)) or np.any(np.diff(z) <= 0):
+        raise ValueError("z coordinates must be finite and strictly increasing")
     positive_indices = np.where(z >= 0)[0]
     positive_z = z[positive_indices]
     if positive_z.size < 2 or np.any(np.diff(positive_z) <= 0):
-        raise ValueError("GPD paired completion requires at least two nonnegative z points")
+        raise ValueError("GPD completion requires at least two nonnegative z points")
     primary_values = np.asarray(primary.values)[:, positive_indices].astype(complex)
-    partner_values = np.asarray(partner.values)[:, positive_indices].astype(complex)
-    phase = np.exp(0.5j * float(delta_momentum_gev) * positive_z / HBAR_C_GEV_FM)[None, :]
-    if phase_transfer_gpd == "mid_at_0":
-        target = primary_values * phase
-        exchanged = partner_values * np.conjugate(phase)
-    elif phase_transfer_gpd == "barpsi_at_0":
-        target = primary_values
-        exchanged = partner_values
-    else:
-        target = np.conjugate(partner_values)
-        exchanged = np.conjugate(primary_values)
-    negative_z = -positive_z[positive_z > 0][::-1]
-    output_z = np.concatenate([negative_z, positive_z])
-    values = []
-    for sample_target, sample_exchanged in zip(target, exchanged):
-        negative = np.conjugate(sample_exchanged[positive_z > 0][::-1])
-        if np.isclose(positive_z[0], 0.0):
-            center = 0.5 * (sample_target[0] + np.conjugate(sample_exchanged[0]))
-            values.append(np.concatenate([negative, [center], sample_target[1:]]))
-        else:
-            values.append(np.concatenate([negative, sample_target]))
+    real, imag = _gpd_endpoint_components(
+        np.real(primary_values), np.imag(primary_values), positive_z,
+        delta_momentum_gev=delta_momentum_gev,
+        phase_transfer_gpd=phase_transfer_gpd,
+    )
     attrs = dict(primary.attrs)
     attrs.update(
         {
-            "symmetry": json.dumps({"real": "explicit", "imag": "explicit"}, sort_keys=True),
-            "signed_z_completion": "gpd_hermitian_partner",
             "phase_transfer_gpd": phase_transfer_gpd,
-            "hermitian_partner_id": str(partner.attrs.get("correlator_id", partner.name or "")),
+            "gpd_input_endpoints": "barpsi(z) psi(0)",
+            "hermitian_partner_id": "",
+            "hermitian_partner_used_for_completion": "false",
             "delta_momentum_gev": float(delta_momentum_gev),
-            "gpd_completion_mode": "paired_flow",
+            "gpd_completion_mode": "single_flow",
         }
     )
     from lamet_agent.data import EnsembleData
 
-    return EnsembleData(
+    transformed = EnsembleData(
         primary.ensemble,
         primary.resample,
-        values,
+        list(real + 1j * imag),
         ["z"],
-        {"z": output_z.tolist()},
+        {"z": positive_z.tolist()},
         attrs=attrs,
         name=primary.name,
     )
+    return complete_signed_z(transformed, {"real": "even", "imag": "odd"})
 
 
 def prepare(context: ToolContext) -> tuple[Any, float]:
@@ -230,41 +209,23 @@ def prepare(context: ToolContext) -> tuple[Any, float]:
             attrs=attrs,
             name=data.name,
         )
-        if partner_value is None:
-            if source_momentum != sink_momentum:
-                raise ValueError("non-forward GPD input requires hermitian_partner")
-            data = complete_signed_z(data, conventions["symmetry"])
-            attrs = dict(data.attrs)
-            attrs.update(
-                {
-                    "gpd_completion_mode": "single_flow",
-                    "hermitian_partner_id": "",
-                    "phase_transfer_gpd": str(context.params["phase_transfer_gpd"]),
-                }
-            )
-            data = EnsembleData(
-                data.ensemble,
-                data.resample,
-                [sample for sample in data.values],
-                data.dims,
-                data.coords,
-                attrs=attrs,
-                name=data.name,
-            )
-        else:
+        data = _gpd_signed_input(
+            data,
+            phase_transfer_gpd=str(context.params["phase_transfer_gpd"]),
+            delta_momentum_gev=delta_momentum,
+        )
+        if partner_value is not None:
             partner = load_data(partner_value)
             if partner.attrs.get("coord_unit") != "fm":
                 raise ValueError("GPD hermitian_partner coordinates must be in fm")
+            if partner.dims != ["z"] or partner.ensemble != data.ensemble or partner.resample != data.resample:
+                raise ValueError("GPD hermitian_partner must share dimensions, ensemble, and resampling")
+            if partner.n_sample != data.n_sample:
+                raise ValueError("GPD hermitian_partner must share the sample count")
             partner_source = _momentum_vector(partner, "source_momentum")
             partner_sink = _momentum_vector(partner, "sink_momentum")
             if partner_source != sink_momentum or partner_sink != source_momentum:
                 raise ValueError("GPD hermitian_partner must exchange source and sink momenta")
-            data = _gpd_signed_pair(
-                data,
-                partner,
-                phase_transfer_gpd=str(context.params["phase_transfer_gpd"]),
-                delta_momentum_gev=delta_momentum,
-            )
             attrs = dict(data.attrs)
             attrs["hermitian_partner_id"] = (
                 str(partner_value) if isinstance(partner_value, str) else attrs.get("hermitian_partner_id", "")
