@@ -119,5 +119,4 @@ these conventions and full-line tail validation remain open.
 
 Adaptive matrix construction costs more than the previous point-sampling sum.
 Build once per set of kinematics and reuse the matrix across resampled data.
-ading quark_gpd_gi_gt_hybrid_nlo.md…]()
 
