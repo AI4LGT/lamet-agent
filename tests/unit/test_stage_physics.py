@@ -2600,7 +2600,7 @@ def test_pion_gpd_uses_initial_final_and_transfer_frequencies() -> None:
         initial_momentum_gev=initial,
         final_momentum_gev=final,
         delta_momentum_gev=delta,
-        phase_transfer_gpd="barpsi_at_0",
+        phase_transfer_gpd="psi_at_0",
     )
     sign = np.sign(z)
     expected = (
@@ -2714,8 +2714,8 @@ def test_every_nla_family_uses_the_same_inverse_fm_coordinate(
     np.testing.assert_allclose(nla_values, leading_values / z)
 
 
-@pytest.mark.parametrize("phase_transfer,shift_factor", [("barpsi_at_0", 0.0), ("mid_at_0", 0.5), ("psi_at_0", 1.0)])
-def test_proton_gpd_uses_signed_delta_momentum_and_global_phase_transfer(phase_transfer, shift_factor) -> None:
+@pytest.mark.parametrize("phase_transfer", ["barpsi_at_0", "mid_at_0", "psi_at_0"])
+def test_proton_gpd_uses_literal_endpoint_positions(phase_transfer) -> None:
     z = np.asarray([-0.6, -0.3, 0.3, 0.6])
     initial, final = 1.0, 1.4
     delta = final - initial
@@ -2732,11 +2732,14 @@ def test_proton_gpd_uses_signed_delta_momentum_and_global_phase_transfer(phase_t
         delta_momentum_gev=delta,
         phase_transfer_gpd=phase_transfer,
     )
-    shift = shift_factor * delta
     expected = (
-        parameters["A2"] * np.exp(1j * (np.sign(z) * parameters["phi2"] + shift * z / HBAR_C_GEV_FM))
-        + parameters["At2"] * np.exp(1j * (np.sign(z) * parameters["phit2"] + (-delta + shift) * z / HBAR_C_GEV_FM))
+        parameters["A2"] * np.exp(1j * np.sign(z) * parameters["phi2"])
+        + parameters["At2"] * np.exp(1j * (np.sign(z) * parameters["phit2"] - delta * z / HBAR_C_GEV_FM))
     ) * np.exp(-parameters["Lambda"] * np.abs(z) / HBAR_C_GEV_FM)
+    if phase_transfer == "mid_at_0":
+        expected *= np.exp(0.5j * delta * z / HBAR_C_GEV_FM)
+    elif phase_transfer == "barpsi_at_0":
+        expected = np.exp(-1j * delta * z / HBAR_C_GEV_FM) * np.conjugate(expected)
     np.testing.assert_allclose(values, expected)
 
 
@@ -2830,7 +2833,7 @@ def test_fourier_xspace_projection_is_real_independently_of_source_component(sou
     assert projected.attrs == {"source_component": source_component, "output_component": "re"}
 
 
-def test_fourier_xspace_projection_preserves_paired_flow_gpd_complex_values() -> None:
+def test_low_level_xspace_projection_can_preserve_complex_values() -> None:
     from lamet_agent.stages.fourier_transform.physics import _project_xspace_output
 
     values = [np.array([1.0 + 4.0j, 2.0 + 5.0j]), np.array([1.5 + 4.5j, 2.5 + 5.5j])]
