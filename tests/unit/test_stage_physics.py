@@ -3405,7 +3405,7 @@ def test_matching_kernel_id_uses_upstream_provenance_and_new_suffix_order() -> N
     assert matching_kernel_id(attrs, order="nlo") == "quark_pdf_cg_gt_hybrid_nlo"
     assert matching_kernel_id(attrs, order="nlo", resummation="rgr") == "quark_pdf_cg_gt_hybrid_nlo_rgr_re"
     assert matching_kernel_id(attrs, order="nlo", resummation="lrr") == "quark_pdf_cg_gt_hybrid_nlo_lrr"
-    with pytest.raises(ValueError, match="only 'nlo'"):
+    with pytest.raises(ValueError, match="NNLO is available only"):
         matching_kernel_id(attrs, order="nnlo")
     for source_component in ("", "both"):
         invalid = {**attrs, "source_component": source_component}
