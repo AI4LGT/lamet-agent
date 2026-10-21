@@ -95,7 +95,7 @@ e^{-\Lambda |z|/(\hbar c)},
 $$
 
 with the CG power applied afterward.  GPD tails use the endpoint structures
-selected by the hadron and the paired-flow convention.  Thus the parameter
+selected by the hadron and the endpoint convention.  Thus the parameter
 names are model- and observable-dependent; short-distance data are never
 replaced by the asymptotic ansatz.
 
@@ -114,9 +114,39 @@ kaon retains independent endpoint amplitudes and phases. If
 $e^{+izP_z/(2\hbar c)}$, projected onto the real midpoint-symmetric channel,
 and rotated back; if false, the complex input is retained.
 
-GPD phases use the initial momentum, final momentum, and their signed
-difference for the endpoint factors in the paper; the selected endpoint
-phase-transfer convention is then applied to the whole base family. The CG
+GPD input and the paper's base tail use
+$F(z)=\langle P_f|\bar\psi(z)U(z,0)\Gamma\psi(0)|P_i\rangle$,
+with $\Delta_z=P_f^z-P_i^z$. The retained labels specify literal endpoints:
+
+$$
+\begin{aligned}
+h_{\texttt{psi\_at\_0}}(z)&=F(z),\\
+h_{\texttt{mid\_at\_0}}(z)&=e^{+i\Delta_z z/(2\hbar c)}F(z),\\
+h_{\texttt{barpsi\_at\_0}}(z)&=e^{-i\Delta_z z/(\hbar c)}F(z)^*.
+\end{aligned}
+$$
+
+The corresponding endpoints are $(z,0)$, $(z/2,-z/2)$, and $(0,z)$
+in the order $(x_{\bar\psi},x_\psi)$. The last expression uses
+$F(-z)=F(z)^*$, so it includes separation reversal, not only translation.
+Writing $s=\operatorname{sgn}z$ and
+$C_j=A_je^{is\phi_j}+A'_je^{is\phi'_j}/(|z|/1\,\mathrm{fm})$,
+with the primed term omitted at LA, the pion base tail is
+
+$$
+F(z)=e^{-\Lambda|z|/(\hbar c)}\left[
+C_1e^{-iP_f^zz/(\hbar c)}+C_3e^{+iP_i^zz/(\hbar c)}
++C_2+C_{\tilde2}e^{-i\Delta_z z/(\hbar c)}\right].
+$$
+
+Pion sea and nucleon GPD tails retain only $C_2$ and $C_{\tilde2}$.
+These endpoint conversions apply identically to the data and to the LA/NLA
+tail, including independent primed phases. All PDF, DA, and GPD jobs use
+their own nonnegative branch to impose $h(-z)=h(z)^*$ and
+$\operatorname{Im}h(0)=0$, replacing any supplied negative branch.
+An optional exchanged GPD input is retained only for provenance; it does
+not supply the negative branch. Published momentum-space output is real.
+The CG
 power is a phenomenological algebraic-decay factor, not a claim that a CG
 matrix element is physically identical to a GI matrix element. Here $z$ in
 the formula's algebraic factors, input, and range tables is in fm.
@@ -407,8 +437,8 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
                     f"{format_value(attrs.get('output_scale'))}. Sector is authored in "
                     "`scheme_scan`; source component and scale are derived from the target, polarization, "
                     "and sector. For a non-full GPD, the signed-y transform is projected afterward "
-                    "using the polarization relation; a full GPD leaves the complex Fourier result "
-                    "unprojected."
+                    "using the polarization relation; a full GPD keeps its signed-y dependence. "
+                    "All published distributions retain the real Fourier component."
                 ),
                 "",
                 "| field | meaning |",
@@ -432,7 +462,7 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
                 ),
                 (
                     "| `phase_transfer_gpd`, `gpd_completion_mode` | GPD endpoint convention and "
-                    "whether an exchanged-flow Hermitian partner completed signed z. |"
+                    "same-flow even-real/odd-imaginary signed-z completion. |"
                 ),
                 (
                     "| `zmax_ext_fm` | Maximum physical separation of the finite transform, "
