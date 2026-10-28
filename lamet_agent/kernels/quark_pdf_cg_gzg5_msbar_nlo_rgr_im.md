@@ -1,13 +1,53 @@
-<!-- lamet-agent formula cache; kernel=quark_pdf_cg_gzg5_msbar_nlo_rgr_im; arxiv=2209.01236; equations=App. 'A Method Solving RG Equation' (Eq. matchingRGI); digest=a6672a8b72fdde30; paper_used=true -->
-$$C_{\rm RGR}\left(\xi,\frac{\mu}{|x|P_z}\right) = \sum_{x_i} \delta_{x_i,x} \, \mathcal{U}(\mu_0(x_i)\to\mu) \, C\left(\xi,\frac{\mu_0(x_i)}{|x_i|P_z}\right), \qquad \mu_0(x)=2\kappa xP_z,$$
-where the sum runs over the discrete $x$-grid, $\mathcal{U}$ is the path-ordered DGLAP evolution operator (see below), and $C$ is the fixed-order MSbar kernel of Eq. (2.15) of arXiv:2602.11283, evaluated at the row’s own scale $\mu_0(x)$. Rows with $\mu_0(x)<\mu_{\min}$ are set to zero (the paper’s $x_{\min}$ cutoff). The evolution operator is
-$$\mathcal{U}(\mu_0\to\mu) = \mathcal{P}\exp\!\left[\int_{\ln\mu_0^2}^{\ln\mu^2} \frac{d\ln t^2}{2}\,\frac{\alpha_s(\sqrt{t^2})}{4\pi}\,P_{\rm NS}^{(1)}\!\left(\frac{x}{y}\right)\right],$$
-with $P_{\rm NS}^{(1)}$ the two-loop non-singlet splitting function for the valence channel (the code uses the unpolarized valence variant, shared with helicity). The fixed-order kernel $C$ is the MSbar $\gamma^z$ coefficient of Eq. (2.15), whose regular part is
-$$C_{\rm MSbar}^{\gamma^z}(\xi,L) = C_{\rm ratio}(\xi,L) + \frac{1}{2|\xi-1|} + 2(1-\xi)\,\theta(0<\xi<1),$$
-with $C_{\rm ratio}$ from Eq. (2.16):
-$$C_{\rm ratio}(\xi,L) = \frac{1+\xi^2}{1-\xi}\,L + \xi - 1 + \frac{1+\xi^2}{1-\xi}\left[\operatorname{sgn}(\xi)\ln|\xi| + \operatorname{sgn}(1-\xi)\ln|1-\xi|\right] + \operatorname{sgn}(\xi) + \frac{3\xi-1}{\xi-1}\,\frac{\arctan\!\left(\frac{\sqrt{|1-2\xi|}}{|\xi|}\right)}{\sqrt{|1-2\xi|}} - \frac{3}{2|\xi-1|},$$
-where the arctan/arctanh branch is chosen by $\xi\lessgtr 1/2$. The plus prescription is implemented by subtracting each column’s integral, matching the paper’s $[\,g(\xi)\,]^{[0,1]}_{+(1)}$ and $[\,g(\xi)\,]^{(-\infty,\infty)}_{+(1)}$ split; the $\delta(1-\xi)$ term is carried by the diagonal. The scheme-specific correction is the $Z_\psi$ ratio $Z_\psi^{\overline{\rm MS}}(\mu_0)/Z_\psi^{\overline{\rm MS}}(2\,{\rm GeV})$, with $Z_\psi$ the Coulomb-gauge quark-field renormalization of Eq. (2.11) of arXiv:2602.11283.
+# quark_pdf_cg_gzg5_msbar_nlo_rgr_im
 
-#### Consistency check
+## Fixed-order input
 
-The code reproduces App. ‘A Method Solving RG Equation’ (Eq. matchingRGI) of arXiv:2209.01236 in structure: each row is matched at its own scale $\mu_0=2\kappa xP_z$ and evolved to $\mu$ via the DGLAP kernel, exactly as the paper’s Eq. (matchingRGI) prescribes. The regular coefficient matches Eq. (2.16) term by term (the splitting-function log, the signed logs, the arctan/arctanh branch, and the $-3/(2|\xi-1|)$ piece). The plus prescription is implemented as the paper’s $[\,g(\xi)\,]^{D}_{+(1)}$ with the correct domain split. The $\delta(1-\xi)$ term is present. The scheme-specific correction (the $Z_\psi$ ratio) is not in the paper’s Eq. (matchingRGI) but is required by the MSbar channel’s fixed 2 GeV renormalization; the code includes it, and the paper’s notation does not forbid it. One discrepancy: the paper’s Eq. (matchingRGI) writes the evolution kernel as $P[w,\alpha_s(\mu)]$ (a function of $w$), while the code uses the two-loop non-singlet splitting function $P_{\rm NS}^{(1)}$; the paper’s text states this is the DGLAP kernel, so the code’s choice is consistent. No other discrepancies found.
+The local `_fixed_order` function builds the NLO inverse matching matrix
+using the existing coefficient and plus-prescription implementation.
+See [quark_pdf_cg_gzg5_msbar_nlo](quark_pdf_cg_gzg5_msbar_nlo.md) for the corresponding fixed-order channel.
+The RGR update does not change those coefficients or their finite-grid subtraction.
+The two-loop evolution coefficient is `_p_nlo_valence`; the shared LO coefficient
+is `_p_qq_lo`.
+
+## Independent-scale RGR
+
+For each output point, set $\mu_i=2\kappa x_i P_z$. Build the full
+fixed-order matrix $B(\mu_i)$ independently at that scale, evolve it to
+$\mu$, then select row $i$:
+
+$$M_{ij}(\mu)=Z_i[U(\mu,\mu_i)B(\mu_i)]_{ij}.$$
+
+Here $Z_i$ is `_zpsi_msbar_ratio(mu0)`. Each row is matched independently; higher-$x$
+rows from previous matching steps are not carried into subsequent steps.
+This is the package's chosen prescription, not the recursive construction
+in [arXiv:2209.01236, Appendix D](https://arxiv.org/html/2209.01236v2#A4).
+That paper motivates the intrinsic scale and ordered evolution, but is not
+an exact validation of this Coulomb-gauge channel or its coefficients.
+
+For column-vector PDFs, with $t=\ln\mu^2$ and $a=\alpha_s/(4\pi)$,
+
+$$\frac{dU}{dt}=[a(t)D_0+a(t)^2D_1]U,\qquad U(t_i,t_i)=I.$$
+
+The implementation uses 20 midpoint exponential steps. Each new step
+multiplies on the left, so the result has the correct scale ordering for
+both upward and downward evolution. This is a finite-step approximation.
+The existing uniform-grid column-sum subtraction in $D_0,D_1$ is retained;
+this update does not establish continuum or grid/range convergence.
+
+## Domain and controls
+
+`momentum_gev`, `scale_gev`, `kappa`, and `mu_min_gev` must be finite
+and positive. The output grid must be a nonempty finite 1D array,
+increasing and uniformly spaced when it contains more than one point.
+The input grid retains the fixed-order builder's requirements.
+
+Rows with $\mu_i<\mu_{\min}$ are zero. With positive momentum and
+$\kappa$, this also zeros nonpositive-$x$ rows; it is not a prescription
+for independently reconstructed negative-$x$ PDFs. The defaults are
+`kappa=1` and `mu_min_gev=0.6`. The cutoff does not itself certify
+perturbative reliability at every retained scale.
+
+The regression checks compare the evolution and independent matching
+against a high-accuracy ODE solution for the same discrete generators.
+They do not establish agreement with a physical data set or the reference
+notebook's different coupling, subtraction, and matching choices.
