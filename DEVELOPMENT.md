@@ -593,6 +593,141 @@ The Python signature defines accepted `kernel_parameters`; shared private
 helpers stay in `implementation.py`. Coordinate-space renormalization kernels
 such as `z_msbar_*` are loaded separately and need no paired document.
 
+### NNLO nonsinglet DGLAP building block
+
+`kernels/implementation.py` provides `_p_nnlo_ns_minus(x, nf=4)` for the
+unpolarized flavour-difference channel P_ns^(2)-. It implements the compact
+parametrization in Moch, Vermaseren and Vogt, hep-ph/0403192, Eq. (4.23),
+also used in `Code_Example_RGR.nb`. This is a parametrization, not the exact
+harmonic-polylogarithm expression. It is not the flavour-summed valence kernel
+P_ns^v = P_ns^- + P_ns^s, nor a helicity, transversity or singlet kernel.
+
+Normalization is d f / d ln(mu^2) = (a D0 + a^2 D1 + a^3 D2) f,
+where a = alpha_s/(4*pi). The function returns the off-diagonal density
+on 0 < x < 1, including the ordinary 1/(1-x) singular term; it returns
+zero outside that open interval. Endpoint values are implementation sentinels,
+not physical limits. The existing finite-grid column subtraction supplies
+the diagonal. Do not separately add the paper's delta coefficient to that
+matrix: the returned density is not the full continuum distribution.
+
+To build and evolve the matrices directly:
+
+```python
+from lamet_agent.kernels.implementation import (
+    _dglap_evolution_matrices, _evolution_operator,
+    _p_nlo_valence, _p_nnlo_ns_minus,
+)
+
+d0, d1, d2 = _dglap_evolution_matrices(
+    x_grid, _p_nlo_valence, p_nnlo=_p_nnlo_ns_minus,
+)
+u = _evolution_operator(mu_initial, mu_final, d0, d1, 160, evo_nnlo=d2)
+```
+
+Supplying `evo_nnlo` selects the existing three-loop running-coupling routine;
+omitting it retains two-loop running and the original two-matrix interface.
+The shared independent-scale `_rgr_from_fixed_order` also accepts an optional
+`p_nnlo` callable. The general nonsinglet workflow below uses the separate
+coupled block path instead of this legacy helper.
+
+The default nf=4 agrees with the existing lower-order splitting functions.
+The notebook's nf=3 coefficients can be evaluated explicitly, but combining
+them with unchanged nf=4 lower orders is not a consistent flavour choice.
+The existing running coupling crosses heavy-flavour thresholds while the
+splitting coefficients use a fixed nf; this policy has not been redesigned.
+The three-loop branch also does not upgrade fixed-order matching or the MSbar
+normalization factor. Public NNLO RGR uses NNLO GI hybrid matching with
+three-loop coupling; legacy suffixed NLO kernels retain their prior behavior.
+
+Reference: https://arxiv.org/html/hep-ph/0403192 (Eqs. 2.5, 2.6 and 4.23).
+
+### Proton isovector DGLAP from To_Jinxin
+
+The archive's `Proton_PDF.nb`, input cell 30 (zero-based), supplies both
+NNLO nonsinglet channels. `_p_nnlo_ns_plus(x, nf=4)` adds its Eq. (4.22)
+parametrization; `_p_nnlo_ns_minus` remains Eq. (4.23). The existing NLO
+unpolarized plus/minus helpers now accept an explicit nf without changing their
+default of 4. The new archive-specific matrix path defaults to nf=3 at all orders.
+
+`_dglap_nnlo_isovector_matrices(x_grid, nf=3, y_max=100)` returns the notebook's
+five matrices, in order: D0, D1qq, D1qqbar, D2qq, D2qqbar. At each higher order,
+Pqq=(Pplus+Pminus)/2 and Pqqbar=(Pplus-Pminus)/2. This is flavour-difference
+evolution for q=u-d and qbar=ubar-dbar, not full singlet evolution.
+
+This separate builder follows the notebook's diagonal prescription literally:
+off-diagonal entries are dx*P(x_i/x_j)/x_j for j>i; diagonal entries subtract
+dx*x_i*P(x_i/y)/y^2 over the higher grid nodes and the tail y=1+dx,...,y_max.
+The positive grid must be uniform and end at 1. Neither the existing column-plus
+builder nor its public NLO kernels are changed. Matching the notebook matrices
+does not establish the continuum accuracy of their subtraction or finite tail.
+
+`_dglap_nnlo_isovector_blocks` embeds those matrices in the coupled basis
+`[q(x_grid), qbar(x_grid)]` and returns three 2N-by-2N matrices:
+
+```python
+from lamet_agent.kernels.implementation import (
+    _dglap_nnlo_isovector_blocks, _evolution_operator,
+)
+
+d0, d1, d2 = _dglap_nnlo_isovector_blocks(x_grid)  # nf=3, y_max=100
+u = _evolution_operator(mu_initial, mu_final, d0, d1, 160, evo_nnlo=d2)
+state_final = u @ state_initial
+```
+
+The NNLO blocks include both quark-antiquark off-diagonal sectors, so q+qbar
+and q-qbar evolve with the plus and minus combinations respectively. Under the
+notebook's signed-PDF convention, qbar(x)=-f(-x), hence the signed output is
+`[-qbar[::-1], q]` on `[-x_grid[::-1], x_grid]`. Supply physical quark and
+antiquark arrays to the block solver, not the signed negative-x values directly.
+
+The archive's evolution loop uses sequential Euler updates: its antiquark
+update reads the already-updated quark array. The Python block solver instead
+uses simultaneous ordered evolution with three-loop coupling. The kernels and
+matrices reproduce the archive; the finite-step trajectory and interpolation
+are not claimed identical. Independent-scale matching remains the chosen policy.
+
+### General unpolarized flavor-difference RGR
+
+`_rgr_nonsinglet` supplies shared signed-grid validation, independent matching,
+coupled evolution, and interpolation for the unsuffixed public RGR kernels.
+NLO supports GI gamma-t/gamma-z hybrid and ratio, and CG gamma-t/gamma-z
+hybrid, ratio and MSbar. NNLO supports GI gamma-t hybrid only. Selection accepts
+source_component re/im/both for these channels without adding a parity suffix.
+Existing suffixed kernels remain directly loadable for reproducibility.
+
+The internal grid is 1/N,...,1 with N=evolution_points (default100). Matching
+is first computed as a square matrix on the quasi input grid, preserving its
+full plus-prescription subtraction and NNLO inverse convolution. Linear
+interpolation transfers the complete matched matrix to the signed evolution
+grid; the helper converts to [q,qbar], evolves, then
+converts back using f(-x)=-qbar(x). It independently evaluates the full matched
+state at each requested intrinsic scale 2*kappa*abs(x)*Pz, before selecting
+that output row. It does not recursively assemble an intrinsic-scale PDF.
+The positive and negative sectors use the same infrared cutoff. Output points
+can be nonuniform; active radii below 1/N are rejected rather than extrapolated.
+
+NLO uses P0/P1 and two-loop coupling. NNLO uses P0/P1/P2 and three-loop coupling
+both in matching and evolution. Splitting nf=3 and the existing threshold-matched
+coupling follow the package convention, not variable-flavor splitting evolution.
+CG MSbar NLO retains the existing multiplicative Zpsi factor. No CG NNLO,
+polarized general nonsinglet, singlet/gluon mixing, or total valence P_ns_v
+implementation is implied. The latter differs from flavor-difference P_ns_minus
+at NNLO. The supplied finite-grid diagonal/tail prescription is preserved;
+production convergence and continuum sum-rule validation remain analysis tasks.
+
+The NNLO wrapper reuses `_prepare_nnlo_rgr_matching` from the fixed NNLO module,
+an explicit exception to the shared-implementation-only import pattern. This
+avoids copying its two-loop formulas. It precomputes matching's polynomial in
+log(mu^2/Pz^2) at three scales, then evaluates that polynomial at each mu0.
+Tests compare this with the direct three-loop-coupling matching formula at
+independent scales. Other public wrappers use the shared implementation module.
+Tests also check charge-conjugation sectors, signed support, the no-evolution
+limit, and the complete stage including real/complex NetCDF round trips.
+Independent grid-transfer regression tests assemble the NLO column subtraction
+without the production matching builders on the 200-point Fourier grid, check
+every new kernel against square matching followed by NumPy interpolation, and
+compare evolved transferred states with a separate ODE solve at both orders.
+
 ## Development workflow
 
 This workflow applies to both human contributors and coding agents. Current

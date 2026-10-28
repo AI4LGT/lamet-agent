@@ -226,6 +226,25 @@ is the execution order; there is no separate `metadata.stages` list.
 Architecture, file ownership, and contributor workflows are documented in
 [`DEVELOPMENT.md`](DEVELOPMENT.md).
 
+Unpolarized nonsinglet RGR matches independently at mu0=2*kappa*abs(x)*Pz
+and evolves coupled quark and antiquark components to the requested scale.
+Set `resummation: "rgr"` with `order: "nlo"` for GI/CG gamma-t or gamma-z
+(GI hybrid/ratio; CG hybrid/ratio/MSbar), or `order: "nnlo"` for GI gamma-t
+hybrid. Upstream `source_component` may be `re`, `im`, or `both`.
+These are flavor differences such as u-d and ubar-dbar; singlet/gluon mixing
+and total flavor-summed valence evolution are not included.
+
+The signed convention is f(-x)=-antiquark(x). Input x must be uniform,
+increasing, nonzero and cover [-1,1]. Output x may be nonuniform within [-1,1].
+`kernel_parameters` accepts `kappa`, `mu_min_gev`, `evolution_points` (default
+100), `evolution_steps` (40), and `y_max` (100); NNLO also accepts
+`quadrature_order` (64). Rows below the cutoff are zero on both sides;
+active points below 1/evolution_points are rejected. Splitting functions use
+nf=3 with the supplied package's prescription and the existing running-coupling
+threshold policy. Check numerical convergence for a production analysis.
+Legacy suffixed RGR kernels remain available directly. See each kernel's
+companion Markdown for its formula and numerical prescription.
+
 ## Intermediate Data (NetCDF)
 
 Stage-to-stage numerical artifacts are stored as NetCDF files. Every array has:
