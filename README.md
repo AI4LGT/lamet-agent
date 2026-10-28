@@ -498,3 +498,4 @@ If you find this work useful in your research, you can refer to the following te
 ## Related Links
 
 - [LQCD_Master](https://github.com/sjtu-sai-agents/LQCD_Master) ([arXiv:2607.15001](https://arxiv.org/abs/2607.15001))
+- test
