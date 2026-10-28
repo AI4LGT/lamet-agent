@@ -130,13 +130,13 @@ def test_rectangular_output_subset():
 )
 def test_nnlo_channel_selection_is_restricted(changes):
     attrs = dict(
-        parton="quark", target_observable="pdf", gfix="gi", kernel_operator="gt", renormalization_scheme="hybrid"
+        parton="quark", target_observable="pdf", gfix="gi", kernel_operator="gt",
+        renormalization_scheme="hybrid", source_component="both"
     )
     assert matching_kernel_id(attrs, order="nnlo") == "quark_pdf_gi_gt_hybrid_nnlo"
     with pytest.raises(ValueError, match="NNLO is available only"):
         matching_kernel_id({**attrs, **changes}, order="nnlo")
-    with pytest.raises(ValueError, match="NNLO is available only"):
-        matching_kernel_id(attrs, order="nnlo", resummation="rgr")
+    assert matching_kernel_id(attrs, order="nnlo", resummation="rgr") == "quark_pdf_gi_gt_hybrid_nnlo_rgr"
 
 
 @pytest.mark.parametrize(

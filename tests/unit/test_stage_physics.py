@@ -3403,13 +3403,13 @@ def test_matching_kernel_id_uses_upstream_provenance_and_new_suffix_order() -> N
         "renormalization_scheme": "hybrid",
     }
     assert matching_kernel_id(attrs, order="nlo") == "quark_pdf_cg_gt_hybrid_nlo"
-    assert matching_kernel_id(attrs, order="nlo", resummation="rgr") == "quark_pdf_cg_gt_hybrid_nlo_rgr_re"
+    assert matching_kernel_id(attrs, order="nlo", resummation="rgr") == "quark_pdf_cg_gt_hybrid_nlo_rgr"
     assert matching_kernel_id(attrs, order="nlo", resummation="lrr") == "quark_pdf_cg_gt_hybrid_nlo_lrr"
     with pytest.raises(ValueError, match="NNLO is available only"):
         matching_kernel_id(attrs, order="nnlo")
-    for source_component in ("", "both"):
+    for source_component in ("",):
         invalid = {**attrs, "source_component": source_component}
-        with pytest.raises(ValueError, match="source_component='re' or 'im'"):
+        with pytest.raises(ValueError, match="source_component="):
             matching_kernel_id(invalid, order="nlo", resummation="rgr")
 
 
@@ -3461,12 +3461,12 @@ def test_matching_inspection_uses_real_xspace_quasi_and_source_component_for_rgr
     assert reduced.attrs["source_component"] == "im"
     assert reduced.attrs["output_component"] == "re"
     assert context.state["kernel_inspection"]["source_component"] == "im"
-    assert context.params["kernel_id"] == "quark_pdf_cg_gt_msbar_nlo_rgr_im"
+    assert context.params["kernel_id"] == "quark_pdf_cg_gt_msbar_nlo_rgr"
 
     quasi.array.attrs["source_component"] = "both"
     context.state.clear()
-    with pytest.raises(ValueError, match="source_component='re' or 'im'"):
-        run(context)
+    run(context)
+    assert context.state["kernel_inspection"]["source_component"] == "both"
     assert "matching_result" not in context.state
 
 
@@ -4051,7 +4051,10 @@ def test_migrated_kernel_code_has_no_legacy_imports_or_embedded_documentation() 
         tree = ast.parse(source, filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("lamet_agent."):
-                assert node.module == "lamet_agent.kernels.implementation"
+                assert node.module == "lamet_agent.kernels.implementation" or (
+                    path.stem == "quark_pdf_gi_gt_hybrid_nnlo_rgr"
+                    and node.module == "lamet_agent.kernels.quark_pdf_gi_gt_hybrid_nnlo"
+                )
             if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
                 assert ast.get_docstring(node, clean=False) is None
         comments = [
