@@ -1,10 +1,53 @@
-<!-- lamet-agent formula cache; kernel=quark_pdf_cg_gt_msbar_nlo_rgr_im; arxiv=2209.01236; equations=App. 'A Method Solving RG Equation' (Eq. matchingRGI); digest=22e3606ba75182a2; paper_used=true -->
-$$C_{\rm RGR}\left(\xi,\frac{\mu}{|x|P_z}\right) = \delta(1-\xi) + \frac{\alpha_s(\mu_0)}{2\pi} C_F \left[\,g(\xi,L(\mu_0))\,\right]^{(-\infty,\infty)}_{+(1)} + \mathcal{O}(\alpha_s^2),$$
-with $\xi=x/y$, $L(\mu_0)=\ln\!\big(4y^2P_z^2/\mu_0^2\big)$, and the per-row scale $\mu_0(x)=2\kappa xP_z$ (the code uses $\kappa=1$ for the central value). The plus prescription is the paper's $[g]^{D}_{+(x_0)}$ with $x_0=1$ and domain $D=(-\infty,\infty)$, defined by
-$$\int_{-\infty}^{\infty} d\xi\, [g(\xi)]^{D}_{+(1)}\, h(\xi) = \int_{-\infty}^{\infty} d\xi\, g(\xi)\big[h(\xi)-h(1)\big],$$
-and the regular coefficient is
-$$g(\xi,L) = \frac{1+\xi^2}{1-\xi}\Big[L + \ln\!\Big(\frac{\xi}{1-\xi}\Big)\Big] + \xi - 1 + \frac{3\xi-1}{\xi-1}\frac{\arctan\!\big(\sqrt{1-2\xi}/|\xi|\big)}{\sqrt{1-2\xi}} - \frac{3}{2|1-\xi|},$$
-where the arctan branch applies for $\xi<1/2$ and the arctanh branch for $\xi>1/2$ (the code's `_atan_piece`). The scheme-specific correction is the $+0.5/|1-\xi|$ term added to $C_{\rm ratio}$ to form $C_{\rm msbar}$ (Eq. 2.14 of the paper), which is included in the regular coefficient above. The resummation is not fixed-order: each row $x$ is built from the fixed-order matrix evaluated at $\mu_0(x)$, then evolved to $\mu$ by a path-ordered matrix exponential of the two-loop (NLL) non-singlet splitting function $P_{qq}^{(1)}$ (the code's `_p_nlo_full_unpolarized`), with rows whose $\mu_0(x)<\mu_{\min}=0.6$ GeV set to zero (the paper's $x_{\min}$ cutoff).
+# quark_pdf_cg_gt_msbar_nlo_rgr_im
 
-#### Consistency check
-The code reproduces App. 'A Method Solving RG Equation' (Eq. matchingRGI) of arXiv:2209.01236. The regular coefficient matches the paper's Eq. (2.16) for $C_{\rm ratio}$ plus the $0.5/|1-\xi|$ MSbar correction, with the same log arguments ($L=\ln(4y^2P_z^2/\mu^2)$ and $\ln(\xi/(1-\xi))$), the same arctan/arctanh branch, and the same $+1.5/|1-\xi|$ term (the paper's $+3/[2(1-\xi)]$ in the $0<\xi<1$ region, with the sign flipped for $\xi>1$). The plus prescription matches the paper's $[\,\cdot\,]^{D}_{+(1)}$ with domain $(-\infty,\infty)$, and the delta term $\delta(1-\xi)$ is present. The scheme-specific correction is exactly the paper's $+0.5/|1-\xi|$ in $C_{\rm msbar}$. The resummation procedure (per-row scale, DGLAP evolution, cutoff) follows the paper's Appendix A method. No discrepancies found.
+## Fixed-order input
+
+The local `_fixed_order` function builds the NLO inverse matching matrix
+using the existing coefficient and plus-prescription implementation.
+See [quark_pdf_cg_gt_msbar_nlo](quark_pdf_cg_gt_msbar_nlo.md) for the corresponding fixed-order channel.
+The RGR update does not change those coefficients or their finite-grid subtraction.
+The two-loop evolution coefficient is `_p_nlo_full_unpolarized`; the shared LO coefficient
+is `_p_qq_lo`.
+
+## Independent-scale RGR
+
+For each output point, set $\mu_i=2\kappa x_i P_z$. Build the full
+fixed-order matrix $B(\mu_i)$ independently at that scale, evolve it to
+$\mu$, then select row $i$:
+
+$$M_{ij}(\mu)=Z_i[U(\mu,\mu_i)B(\mu_i)]_{ij}.$$
+
+Here $Z_i$ is `_zpsi_msbar_ratio(mu0)`. Each row is matched independently; higher-$x$
+rows from previous matching steps are not carried into subsequent steps.
+This is the package's chosen prescription, not the recursive construction
+in [arXiv:2209.01236, Appendix D](https://arxiv.org/html/2209.01236v2#A4).
+That paper motivates the intrinsic scale and ordered evolution, but is not
+an exact validation of this Coulomb-gauge channel or its coefficients.
+
+For column-vector PDFs, with $t=\ln\mu^2$ and $a=\alpha_s/(4\pi)$,
+
+$$\frac{dU}{dt}=[a(t)D_0+a(t)^2D_1]U,\qquad U(t_i,t_i)=I.$$
+
+The implementation uses 20 midpoint exponential steps. Each new step
+multiplies on the left, so the result has the correct scale ordering for
+both upward and downward evolution. This is a finite-step approximation.
+The existing uniform-grid column-sum subtraction in $D_0,D_1$ is retained;
+this update does not establish continuum or grid/range convergence.
+
+## Domain and controls
+
+`momentum_gev`, `scale_gev`, `kappa`, and `mu_min_gev` must be finite
+and positive. The output grid must be a nonempty finite 1D array,
+increasing and uniformly spaced when it contains more than one point.
+The input grid retains the fixed-order builder's requirements.
+
+Rows with $\mu_i<\mu_{\min}$ are zero. With positive momentum and
+$\kappa$, this also zeros nonpositive-$x$ rows; it is not a prescription
+for independently reconstructed negative-$x$ PDFs. The defaults are
+`kappa=1` and `mu_min_gev=0.6`. The cutoff does not itself certify
+perturbative reliability at every retained scale.
+
+The regression checks compare the evolution and independent matching
+against a high-accuracy ODE solution for the same discrete generators.
+They do not establish agreement with a physical data set or the reference
+notebook's different coupling, subtraction, and matching choices.

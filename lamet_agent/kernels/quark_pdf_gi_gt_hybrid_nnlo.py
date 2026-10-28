@@ -1325,6 +1325,43 @@ def hybrid_two_loop(xi: float, log_scale: float, y: float, zspz: float, *, eps: 
     return _msbar(float(xi), float(ell)) + analytic + checked
 
 
+def _prepare_nnlo_rgr_matching(
+    x: np.ndarray, y: np.ndarray, *, momentum_gev: float, zs_fm: float,
+    eps: float, quadrature_order: int,
+):
+    zspz = zs_fm * momentum_gev / GEV_FM
+    identity = _lo_interp_matrix(x, y)
+    first, second = [], []
+    for logarithm in (-1.0, 0.0, 1.0):
+        scale = momentum_gev * np.exp(logarithm / 2)
+        density_one = _pdf_density(
+            lambda xi, log_scale, yy: C_hybrid_gi(xi, log_scale, yy, zspz, eps),
+            momentum_gev, scale,
+        )
+        c1 = CF * _plus_prescription_matrix(x, y, density_one, eps)
+        c1_input = CF * _plus_prescription_matrix(y, y, density_one, eps)
+        density_two = _pdf_density(
+            lambda xi, log_scale, yy: hybrid_two_loop(
+                xi, log_scale, yy, zspz, eps=eps, order=quadrature_order,
+            ),
+            momentum_gev, scale,
+        )
+        c2 = _plus_prescription_matrix(x, y, density_two, eps)
+        first.append(c1)
+        second.append(c1 @ c1_input - c2)
+    c10, c11 = first[1], (first[2] - first[0]) / 2
+    c20 = second[1]
+    c21 = (second[2] - second[0]) / 2
+    c22 = (second[2] + second[0]) / 2 - second[1]
+
+    def at_scale(scale_gev: float) -> np.ndarray:
+        logarithm = 2 * np.log(scale_gev / momentum_gev)
+        a = alpha_s(3, scale_gev, "running") / (2 * np.pi)
+        return identity - a * (c10 + logarithm * c11) + a*a * (c20 + logarithm*c21 + logarithm**2*c22)
+
+    return at_scale
+
+
 def kernel(
     x_out: np.ndarray,
     x_in: np.ndarray,
@@ -1334,12 +1371,15 @@ def kernel(
     zs_fm: float,
     eps: float = 1e-12,
     quadrature_order: int = 64,
+    coupling_loops: int = 2,
 ) -> np.ndarray:
     for name, value in (("momentum_gev", momentum_gev), ("scale_gev", scale_gev), ("zs_fm", zs_fm), ("eps", eps)):
         if not np.isfinite(value) or value <= 0:
             raise ValueError(f"`{name}` must be finite and positive.")
     if isinstance(quadrature_order, bool) or not isinstance(quadrature_order, int) or not 16 <= quadrature_order <= 256:
         raise ValueError("`quadrature_order` must be an integer between 16 and 256.")
+    if isinstance(coupling_loops, bool) or coupling_loops not in (2, 3):
+        raise ValueError("`coupling_loops` must be 2 or 3.")
     x = np.asarray(x_out, dtype=float)
     y = np.asarray(x_in, dtype=float)
     if x.ndim != 1 or not x.size or not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)):
@@ -1370,4 +1410,8 @@ def kernel(
     )
     forward_two = _plus_prescription_matrix(x, y, density, eps)
     a = alpha_s(ALPHAS_N_LOOP, scale_gev, "running") / (2 * np.pi)
-    return inverse_nlo + forward_one @ forward_one_square - a**2 * forward_two
+    if coupling_loops == 2:
+        return inverse_nlo + forward_one @ forward_one_square - a**2 * forward_two
+    a3 = alpha_s(3, scale_gev, "running") / (2 * np.pi)
+    ratio = a3 / a
+    return identity - ratio * forward_one + ratio**2 * (forward_one @ forward_one_square) - a3**2 * forward_two
