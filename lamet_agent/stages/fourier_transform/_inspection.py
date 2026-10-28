@@ -161,6 +161,10 @@ def prepare(context: ToolContext) -> tuple[Any, float]:
         value = value[0]
     data = load_data(value)
     target = str(context.manifest["metadata"]["target_observable"]).lower()
+    if target == "tmdwf":
+        from lamet_agent.stages.fourier_transform.physics import prepare_tmdwf_projection
+
+        data = prepare_tmdwf_projection(data, context.params["tmdwf_projection"], context.params["negative_z"])
     if target in {"pdf", "gpd"}:
         hadron = str(data.attrs.get("hadron", "")).strip().lower()
         if hadron not in {"pion", "proton", "nucleon"}:

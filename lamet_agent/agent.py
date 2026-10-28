@@ -42,8 +42,7 @@ _MAX_ASSISTANT_TURNS = 40
 _LLM_TRANSCRIPT_FILENAME = "llm_transcript.md"
 _SAFE_TOOL = re.compile(r"^[a-z][a-z0-9_]*$")
 _WORKFLOW_STAGES = frozenset(
-    {"correlator_analysis", "renormalization", "fourier_transform", "perturbative_matching", "extrapolation",
-     "tmdwf_analysis"}
+    {"correlator_analysis", "renormalization", "fourier_transform", "perturbative_matching", "extrapolation"}
 )
 
 

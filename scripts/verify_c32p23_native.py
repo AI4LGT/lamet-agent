@@ -39,7 +39,7 @@ def verify(root, artifacts, descriptor):
     final = EnsembleData.from_netcdf(artifacts / "quasi_tmdwf.nc")
     assert final.n_sample == samples and np.isfinite(final.values).all()
     assert final.attrs["resample_id"] == first.attrs["resample_id"]
-    factors = list((artifacts / "02_tmdwf_analysis").glob("wilson_*/output.nc"))
+    factors = list((artifacts / "02_renormalization").glob("wilson_*/output.nc"))
     assert len(factors) == 1
     factor = EnsembleData.from_netcdf(factors[0])
     assert factor.n_sample == samples and factor.attrs["factor_uncertainty"] == "fixed_central_value_not_propagated"

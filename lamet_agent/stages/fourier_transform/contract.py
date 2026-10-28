@@ -77,6 +77,10 @@ def _nonzero(value: int) -> bool:
 # ruff: disable[E501]
 # fmt: off
 PARAM_RULES = (
+    Depends("tmdwf", "tmdwf_projection", physics="Select the midpoint component before endpoint rotation."),
+    Value("tmdwf.tmdwf_projection", Literal["real", "imag"], physics="Two paired jobs retain the complex TMDWF."),
+    Depends("tmdwf", "negative_z", physics="Explicit negative-z convention of the midpoint amplitude."),
+    Value("tmdwf.negative_z", Literal["even_both_notebook"], physics="Both midpoint components are assumed even."),
     Provides("", "tmdwf", "$.metadata.target_observable", physics="Explicit reuse of the native DA tail for each real even midpoint component at fixed transverse separation."),
     Depends("tmdwf", "tmdwf_profile", physics="Requires two separately prepared midpoint components; this is a tail ansatz choice, not DA matching."),
     Value("tmdwf.tmdwf_profile", Literal["pion_da_components"], physics="Fit each even midpoint component with the existing light-light DA tail, then combine the two transforms externally."),

@@ -73,34 +73,20 @@ def prepare(root, pz, p1, p2, b):
                 jobs.append({"id": f"fit_{channel}", "inputs": {"correlators": [
                     {"json": descriptor.relative_to(root).as_posix(), "id": ident} for ident in identifiers]}})
     descriptor.write_text(json.dumps({"correlators": records}, indent=2), encoding="utf-8")
-    baseline = json.loads((root / "examples/c32p23_tmdwf_manifest.json").read_text(encoding="utf-8"))
-    wilson = copy.deepcopy(baseline["stages"]["tmdwf_analysis"]["jobs"][1])
+    baseline = json.loads((root / "examples/c32p23_native_p4_p1_2_b1_agent.json").read_text(encoding="utf-8"))
+    manifest = copy.deepcopy(baseline)
+    manifest["metadata"].update(run_id=f"c32p23_native_{label}",
+                                artifacts_directory=f"runs/c32p23_native_{label}/artifacts", samples=count)
+    stages = manifest["stages"]
+    stages["correlator_analysis"]["jobs"] = jobs
+    wilson, application = stages["renormalization"]["jobs"]
     wilson["id"] = f"wilson_b{b}"
     wilson["settings"]["b"] = b
     wilson["inputs"]["raw"] = {"file": path.relative_to(root).as_posix()}
-    bridges = [{"id": f"bridge_{part}", "operation": "native_bridge",
-                "settings": {"projection": part, "negative_z": "even_both_notebook"},
-                "inputs": {"targets": [job["id"] for job in jobs], "denominator": wilson["id"]}}
-               for part in ("real", "imag")]
-    metadata = dict(baseline["metadata"])
-    metadata.update(run_id=f"c32p23_native_{label}", artifacts_directory=f"runs/c32p23_native_{label}/artifacts",
-                    parameter_recommendation_retries=1, samples=count)
-    manifest = {"metadata": metadata, "stages": {
-        "correlator_analysis": {"defaults": {
-            "analysis_method": "lsqfit", "component": "both", "fit_scope": ["qda_ratio"],
-            "nstate": {"qda_ratio": [1]}, "fitting_form": "Breit", "model_average": False,
-            "pt2_windows": [{"tmin": t, "tmax": 15} for t in (4, 6, 8)],
-            "pt3_windows": [], "svdcut": 1e-3, "prior_width": [1.0],
-            "posterior_prior_error_scale": 10.0, "q_min": 0.05}, "jobs": jobs},
-        "tmdwf_analysis": {"jobs": [wilson, *bridges]},
-        "fourier_transform": {"defaults": {
-            "tmdwf_profile": "pion_da_components", "quasi_y_ls": {"start": -0.5, "stop": 1.5, "num": 1000},
-            "zmin_fm": [round(t * ensemble["a_s"], 12) for t in (6, 8, 9)],
-            "zmax_fm": [round(12 * ensemble["a_s"], 12)], "zmax_ext_fm": 48 * ensemble["a_s"],
-            "smooth": "linear", "scheme_scan": {"order": ["LA", "NLA"], "sector": "full", "Lambda0_gev": 0.0,
-                "posterior_prior_error_scale": [10.0], "model_average": False, "q_min": 0.05, "max_schemes": 20}},
-            "jobs": [{"id": f"fourier_{part}", "inputs": {"input": f"bridge_{part}"}} for part in ("real", "imag")]}
-    }}
+    application["id"] = f"renormalized_b{b}"
+    application["inputs"] = {"targets": [job["id"] for job in jobs], "denominator": wilson["id"]}
+    for job in stages["fourier_transform"]["jobs"]:
+        job["inputs"]["input"] = application["id"]
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return manifest_path
 

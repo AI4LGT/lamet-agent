@@ -8,8 +8,8 @@ from lamet_agent.agent import create_session
 from lamet_agent.data import EnsembleData
 from lamet_agent.llm import create_backend
 from lamet_agent.manifest import load_manifest
-from lamet_agent.stages.tmdwf_analysis.native import combine_transforms
-from lamet_agent.stages.tmdwf_analysis.workflow import plot
+from lamet_agent.stages.fourier_transform.physics import combine_tmdwf_transforms
+from lamet_agent.stages.fourier_transform.reporting import plot_tmdwf
 from lamet_agent.ui import PlainUi, log
 
 
@@ -37,9 +37,9 @@ def combine(folder):
     stage = folder / "03_fourier_transform"
     real = EnsembleData.from_netcdf(stage / "fourier_real/output.nc")
     imag = EnsembleData.from_netcdf(stage / "fourier_imag/output.nc")
-    result = combine_transforms(real, imag)
+    result = combine_tmdwf_transforms(real, imag)
     result.to_netcdf(folder / "quasi_tmdwf.nc")
-    plot(result, folder / "quasi_tmdwf.png")
+    plot_tmdwf(result, folder / "quasi_tmdwf.png")
     (folder / "combination.json").write_text(json.dumps({
         "inputs": ["03_fourier_transform/fourier_real/output.nc", "03_fourier_transform/fourier_imag/output.nc"],
         "formula": "real + 1j * imag (paired samples)", "sample_count": result.n_sample,

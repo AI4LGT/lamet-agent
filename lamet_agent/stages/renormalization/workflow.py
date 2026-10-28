@@ -10,6 +10,11 @@ from lamet_agent.stages.renormalization._inspection import run as inspect
 
 def run(context: ToolContext, _session: LlmSession) -> None:
     """Inspect and execute one explicit fit or apply job without LLM orchestration."""
+    if context.params["strategy"] == "wilson_loop":
+        from lamet_agent.stages.renormalization._wilson import run as wilson
+
+        wilson(context)
+        return
     inspect(context)
     (fit if context.params["type"] == "fit" else apply)(context)
 

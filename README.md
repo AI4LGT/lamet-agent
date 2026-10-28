@@ -2,17 +2,16 @@
 
 The C32P23 bootstrap TMDWF example is documented in
 [the Chinese README](README.zh-CN.md#c32p23-bootstrap-tmdwf-最小接入示例).
-It adds one deterministic stage with bare fitting, Wilson-loop fitting,
-renormalization and Fourier operations, preserving existing bootstrap samples.
-Run `python -X utf8 scripts/run_c32p23_tmdwf.py examples/c32p23_tmdwf_manifest.json`
-from the project root after supplying its local data files. The initial validated
-scope is Pz=4, b=1; this reproduces the legacy notebook and stops before hard matching.
+It uses the existing three stages, with no separately registered TMDWF stage:
+`correlator_analysis` fits the four qDA ratios; `renormalization` fits and applies
+one fixed central Wilson denominator; `fourier_transform` prepares each midpoint
+component and uses the existing LA/NLA tail scan and Fourier transform.
 
-For native interface reuse, use `examples/c32p23_native_p4_p1_2_b1.json` with
-`scripts/run_c32p23_native.py`. It runs the existing `correlator_analysis` qDA-ratio
-fits and `fourier_transform` LA/NLA tail scans. A small data bridge applies the
-Wilson factor and prepares real/imaginary midpoint projections for the native DA
-tail template; it then combines their paired Fourier outputs into a complex TMDWF.
+Use `examples/c32p23_native_p4_p1_2_b1.json` with `scripts/run_c32p23_native.py`.
+Channel averaging is owned by correlator physics, Wilson fitting/application by
+renormalization physics, and phase projection/complex recombination by Fourier
+physics. The runner calls the Fourier combination function on the paired outputs.
+The initial validated scope is Pz=4, p1=2, p2=-2, b=1. This workflow has eight jobs.
 The descriptor explicitly preserves precomputed bootstrap samples. Pass
 `--fixed-suggestions` for a local integration test without an LLM; otherwise the
 selected provider receives averaged correlator evidence for recommendations.

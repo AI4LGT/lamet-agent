@@ -8,7 +8,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-from lamet_agent.stages.tmdwf_analysis.wilson_io import AXES, GROUP, load_wilson, parse_text
+from lamet_agent.stages.renormalization._wilson_io import AXES, GROUP, load_wilson, parse_text
 
 
 def add_wilson(source, destination):

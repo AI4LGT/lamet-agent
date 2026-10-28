@@ -110,8 +110,16 @@ def _nonnegative_finite(value: int | float) -> bool:
 # ruff: disable[E501]
 # fmt: off
 PARAM_RULES = (
+    Provides("", "wilson_loop", "strategy", physics="Fit and apply a fixed central Wilson-loop denominator."),
+    Depends("wilson_loop", "type", physics="Fit a central factor or apply it to paired matrix elements."),
+    Value("wilson_loop.type", Literal["fit", "apply"], physics="Wilson fit and application are separate jobs."),
+    Provides("wilson_loop", "fit", "wilson_loop.type", physics="Fit the raw-configuration Wilson mean."),
+    Provides("wilson_loop", "apply", "wilson_loop.type", physics="Average four fitted channels and divide by the Wilson factor."),
+    Depends("wilson_loop.fit", "settings", physics="Explicit C32P23 geometry, fit window, priors, and ZO."),
+    Value("wilson_loop.fit.settings", dict, physics="Wilson fit settings are validated together with their geometry."),
+
     Depends("", "strategy", physics="Renormalization factors are either supplied through an external denominator or extracted by fitting reference matrix elements in the self-renormalization workflow."),
-    Value("strategy", Literal["external_denominator", "self_renormalization"], physics="Selects whether the denominator factor is externally determined or fitted from reference matrix elements."),
+    Value("strategy", Literal["external_denominator", "self_renormalization", "wilson_loop"], physics="Selects whether the denominator factor is externally determined or fitted from reference matrix elements."),
     Provides("", "external_denominator", "strategy", physics="External-denominator jobs apply a renormalization factor determined outside this workflow to the target matrix element."),
     Provides("", "self_renormalization", "strategy", physics="Self-renormalization jobs extract a reusable factor from reference matrix elements and apply it to target matrix elements."),
     Depends("", "normalization", physics="Selects whether matrix-element inputs are normalized at the origin z=0 before the renormalization prescription is applied."),
@@ -162,6 +170,15 @@ PARAM_RULES = (
 INPUT_RULES = ()
 
 JOB_CONDITIONAL_RULES = (
+    Depends("wilson_loop.fit", "inputs", physics="Wilson fitting consumes raw configurations."),
+    Depends("wilson_loop.fit.inputs", "raw", physics="Raw Wilson text or HDF5 input."),
+    Source("wilson_loop.fit.inputs.raw", physics="Wilson measurements with explicit configuration and geometry axes."),
+    Depends("wilson_loop.apply", "inputs", physics="Apply the fitted factor to paired channel outputs."),
+    Depends("wilson_loop.apply.inputs", "targets", physics="Four gtg5/gzg5 x zdir0/zdir1 fit outputs."),
+    Source("wilson_loop.apply.inputs.targets", allow_list=True, physics="Paired bootstrap channels averaged after fitting."),
+    Depends("wilson_loop.apply.inputs", "denominator", physics="A fixed central Wilson denominator."),
+    Source("wilson_loop.apply.inputs.denominator", physics="The preceding Wilson factor or an external NetCDF factor."),
+
     Depends("external_denominator", "inputs", physics="External renormalization applies the supplied denominator factor to one target matrix element."),
     Depends("external_denominator.inputs", "target", physics="The target is the bare matrix element selected for renormalization."),
     Depends("external_denominator.inputs", "denominator", physics="The denominator is the externally determined renormalization factor, supplied as a coordinate-dependent source or a nonzero constant."),
@@ -184,7 +201,13 @@ JOB_CONDITIONAL_RULES = (
 
 
 def check_path(context: CheckContext) -> Issue | None:
-    physics = "Only declared renormalization strategy, type, and scheme combinations define a valid numerical path; the renormalon-related mass term is extracted by fitting and supplied when applying the factor."
+    if context.params.get("strategy") == "wilson_loop":
+        return None
+    physics = (
+        "Only declared renormalization strategy, type, and scheme combinations define a valid numerical "
+        "path; the renormalon-related mass term is extracted by fitting and supplied when applying the "
+        "factor."
+    )
     params = context.params
     strategy = params.get("strategy")
     job_type = params.get("type")
@@ -200,7 +223,11 @@ def check_path(context: CheckContext) -> Issue | None:
 def check_hybrid(context: CheckContext) -> Issue | None:
     params = context.params
     inputs = context.inputs
-    physics = "Hybrid renormalization separates short- and long-distance treatments at an explicit switching distance; the external branch additionally requires its mass-subtraction parameters and coordinate-dependent denominator."
+    physics = (
+        "Hybrid renormalization separates short- and long-distance treatments at an explicit switching "
+        "distance; the external branch additionally requires its mass-subtraction parameters and "
+        "coordinate-dependent denominator."
+    )
     if params.get("scheme") == "hybrid":
         missing = ["zs_fm"] if "zs_fm" not in params else []
         if missing:
@@ -217,7 +244,12 @@ def check_hybrid(context: CheckContext) -> Issue | None:
 
 
 def check_inputs(context: CheckContext) -> Issue | None:
-    physics = "The strategy, job type, and scheme determine whether target, denominator, reference, and fitted factor roles are physically required; no additional input roles are meaningful."
+    if context.params.get("strategy") == "wilson_loop":
+        return None
+    physics = (
+        "The strategy, job type, and scheme determine whether target, denominator, reference, and fitted "
+        "factor roles are physically required; no additional input roles are meaningful."
+    )
     params = context.params
     strategy = params.get("strategy")
     scheme = params.get("scheme")
@@ -235,7 +267,8 @@ def check_inputs(context: CheckContext) -> Issue | None:
     if active != expected:
         return Issue(
             "inputs",
-            f"must provide exactly {sorted(expected)}; missing={sorted(expected - active)}, unexpected={sorted(active - expected)}",
+            f"must provide exactly {sorted(expected)}; missing={sorted(expected - active)}, "
+            f"unexpected={sorted(active - expected)}",
             physics,
         )
     for role in active:
@@ -271,7 +304,10 @@ def check_kernel(context: CheckContext) -> list[Issue] | Issue | None:
     kernel_id = params.get("kernel_id")
     if not isinstance(kernel_id, str):
         return None
-    physics = "Self-renormalization matches the selected operator's short-distance behavior to an explicit coordinate-space MSbar kernel; its signature and authored overrides must be consistent."
+    physics = (
+        "Self-renormalization matches the selected operator's short-distance behavior to an explicit "
+        "coordinate-space MSbar kernel; its signature and authored overrides must be consistent."
+    )
     try:
         kernel = load_renormalization_kernel(kernel_id)
     except (ImportError, OSError, TypeError, ValueError) as exc:
@@ -287,6 +323,8 @@ def check_kernel(context: CheckContext) -> list[Issue] | Issue | None:
 
 
 def _check_scale(context: CheckContext) -> Issue | None:
+    if context.params.get("strategy") == "wilson_loop":
+        return None
     params = context.params
     scheme = params.get("scheme")
     strategy = params.get("strategy")
@@ -296,17 +334,66 @@ def _check_scale(context: CheckContext) -> Issue | None:
         return Issue(
             "mu",
             "is required for this renormalization path",
-            "Scale-dependent renormalization paths require a positive perturbative scale; pure external ratio division does not.",
+            "Scale-dependent renormalization paths require a positive perturbative scale; pure external "
+            "ratio division does not.",
         )
     if (is_fit or strategy == "self_renormalization") and "LambdaQCD_gev" not in params:
         return Issue(
             "LambdaQCD_gev",
             "is required for self-renormalization fitting and application",
-            "The reusable zR fit and its target remap must use one shared QCD scale so their UV running and finite remapping remain in the same prescription.",
+            "The reusable zR fit and its target remap must use one shared QCD scale so their UV running and "
+            "finite remapping remain in the same prescription.",
         )
     return None
 
 
+def check_wilson(context: CheckContext) -> list[Issue]:
+    """Validate the fixed-central C32P23 Wilson prescription before executing a job."""
+    params = context.params
+    if params.get("strategy") != "wilson_loop":
+        return []
+    physics = "Preserve paired bootstrap samples and divide by one fitted central Wilson denominator."
+    issues = []
+
+    def require(ok, path, message):
+        if not ok:
+            issues.append(Issue(path, message, physics))
+
+    def number(value, positive=False):
+        return type(value) in (int, float) and math.isfinite(value) and (not positive or value > 0)
+
+    meta = context.manifest["metadata"]
+    require(meta["target_observable"] == "tmdwf", "strategy", "requires target_observable=tmdwf")
+    require(meta["resample_mode"] == "bootstrap" and meta["bin_size"] == 1,
+            "strategy", "requires paired bootstrap samples and bin_size=1")
+    require(params.get("normalization") is False, "normalization", "Wilson application must not normalize at z=0")
+    fit = params.get("type") == "fit"
+    roles = {"raw"} if fit else {"targets", "denominator"}
+    require(set(context.inputs) == roles, "inputs", f"requires exactly {sorted(roles)}")
+    if not fit:
+        require(isinstance(context.inputs.get("targets"), list) and len(context.inputs["targets"]) == 4,
+                "inputs.targets", "requires four source/direction fits")
+        return issues
+    cfg = params.get("settings", {})
+    fields = {"b", "a_fm", "L", "ZO", "fit_start", "fit_stop", "priors", "svdcut"}
+    require(set(cfg) == fields, "settings", f"requires exactly {sorted(fields)}")
+    if set(cfg) != fields:
+        return issues
+    for field in ("a_fm", "ZO", "svdcut"):
+        require(number(cfg[field], True), f"settings.{field}", "must be finite and positive")
+    require(type(cfg["b"]) is int and 1 <= cfg["b"] <= 10, "settings.b", "supported range is 1..10")
+    valid = all(type(cfg[k]) is int for k in ("fit_start", "fit_stop", "L"))
+    require(valid and 0 <= cfg["fit_start"] < cfg["fit_stop"] <= 26 and cfg["L"] >= 0,
+            "settings.fit_start", "requires an ordered window in 0..26 and nonnegative L")
+    priors = cfg["priors"]
+    valid = isinstance(priors, dict) and set(priors) == {"c", "E", "c1", "delta_E"}
+    if valid:
+        valid = all(isinstance(v, list) and len(v) == 2 and number(v[0]) and number(v[1], True)
+                    for v in priors.values())
+    require(valid, "settings.priors", "requires finite mean/positive-width pairs for c, E, c1, delta_E")
+    return issues
+
+
 JOB_RULES = stage_job_rules(PARAM_RULES, INPUT_RULES, JOB_CONDITIONAL_RULES)
 
-CHECKS = (check_path, check_hybrid, check_inputs, check_kernel, _check_scale)
+CHECKS = (check_wilson, check_path, check_hybrid, check_inputs, check_kernel, _check_scale)

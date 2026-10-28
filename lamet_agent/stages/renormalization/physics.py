@@ -517,3 +517,70 @@ def fit_factor(
         lattice_spacing_range_fm=lattice_spacing_range_fm,
         sample_error_mode=sample_error_mode,
     ).factor
+
+
+def wilson_model(x, p):
+    return p["c"] * np.exp(-x * p["E"]) * (1 + p["c1"] * np.exp(-x * p["delta_E"]))
+
+
+def wilson_factor(path, cfg, samples):
+    """Fit the raw Wilson mean once; return identical central denominators for paired samples."""
+    import lsqfit
+
+    from lamet_agent.stages.renormalization._wilson_io import load_wilson
+
+    raw, provenance = load_wilson(path)
+    values = (raw[:, 0, :, cfg["b"]] + raw[:, 1, :, cfg["b"]] + raw[:, 2, :, cfg["b"]]) / 3
+    n = values.shape[0]
+    # Match the notebook's leave-one-out, diagonal-error mean fit.
+    jackknife = (np.sum(values, axis=0) - values) / (n - 1)
+    x = np.arange(cfg["fit_start"], cfg["fit_stop"])
+    y = gv.gvar(jackknife.mean(axis=0)[x], jackknife.std(axis=0)[x] * np.sqrt(n - 1))
+    fit = lsqfit.nonlinear_fit(data=(x, y), prior={k: gv.gvar(*v) for k, v in cfg["priors"].items()},
+                              fcn=wilson_model, svdcut=cfg["svdcut"], maxit=500000)
+    if fit.error is not None:
+        raise RuntimeError(f"Wilson fit failed: {fit.error}")
+    central = wilson_model(np.arange(13) + 2 * cfg["L"], gv.mean(fit.p))
+    if not np.all(np.isfinite(central)) or np.any(central <= 0):
+        raise ValueError("Fitted Wilson loop must be positive and finite on the application grid")
+    denominator = cfg["ZO"] * np.sqrt(central)
+    attrs = {"target_observable": "tmdwf", "ensemble_id": "C32P23", "a_fm": cfg["a_fm"],
+             "coord_unit": "fm", "b_perp_lattice": cfg["b"], "ZO": cfg["ZO"], "L": cfg["L"],
+             "factor_uncertainty": "fixed_central_value_not_propagated",
+             "factor_samples": "identical copies of fixed denominator, not resampled Wilson data",
+             "wilson_error_estimator": "leave_one_out_jackknife",
+             "wilson_fit_mode": "single_mean_fit_with_diagonal_errors",
+             "wilson_configuration_count": n, "wilson_source_sha256": provenance["source_sha256"]}
+    data = EnsembleData(None, "bootstrap", list(np.broadcast_to(denominator, (samples, 13)).copy()),
+                        ["z"], {"z": (np.arange(13) * cfg["a_fm"]).tolist()},
+                        attrs=attrs, name="wilson_denominator")
+    diagnostics = {"chi2": float(fit.chi2), "dof": int(fit.dof), "Q": float(fit.Q),
+                   "parameters": {k: [float(gv.mean(v)), float(gv.sdev(v))] for k, v in fit.p.items()},
+                   "configuration_count": n, "factor_uncertainty": attrs["factor_uncertainty"],
+                   "error_estimator": attrs["wilson_error_estimator"], "fit_mode": attrs["wilson_fit_mode"],
+                   "input_provenance": provenance}
+    return data, diagnostics
+
+
+def apply_wilson_factor(target, denominator):
+    """Apply a fixed positive Wilson denominator, preserving the target ensemble and replicas."""
+    target = physical_z_coordinates(target)
+    for key in ("ensemble_id", "a_fm", "b_perp_lattice"):
+        if target.attrs.get(key) != denominator.attrs.get(key):
+            raise ValueError(f"Target and Wilson factor mismatch: {key}")
+    if target.coords != denominator.coords:
+        raise ValueError("Target and Wilson factor z grids differ")
+    if not np.isfinite(denominator.values).all() or np.any(denominator.values <= 0):
+        raise ValueError("Wilson denominator must be positive and finite")
+    if denominator.attrs.get("factor_uncertainty") != "fixed_central_value_not_propagated":
+        raise ValueError("Wilson application requires the explicit fixed-central policy")
+    if not np.array_equal(denominator.values, np.broadcast_to(denominator.values[0], denominator.values.shape)):
+        raise ValueError("Wilson fixed-central denominator must be identical across samples")
+    output = ratio(target, denominator)
+    attrs = output.attrs
+    attrs.update({"renormalization_scheme": "tmdwf_wilson_loop",
+                         "factor_uncertainty": denominator.attrs["factor_uncertainty"],
+                         "ZO": denominator.attrs["ZO"], "L": denominator.attrs["L"],
+                         "normalized_at_origin": 0})
+    return EnsembleData(target.ensemble, target.resample, list(output.values), output.dims,
+                        output.coords, attrs=attrs, name="renormalized_tmdwf")

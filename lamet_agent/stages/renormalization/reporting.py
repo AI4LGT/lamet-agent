@@ -474,6 +474,36 @@ def _fit_validation_lines(
 
 
 def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_directory: Path) -> Path:
+    wilson = tuple(record for record in records if record.params.get("strategy") == "wilson_loop")
+    if wilson:
+        standard = tuple(record for record in records if record.params.get("strategy") != "wilson_loop")
+        lines = (
+            write_stage_report(records=standard, artifact_directory=artifact_directory).read_text(
+                encoding="utf-8"
+            ).splitlines()
+            if standard else ["# Renormalization Stage Report", ""]
+        )
+        lines += ["", "## Wilson-loop prescription", "",
+                  "Fit c exp(-E l) (1 + c1 exp(-delta_E l)) to the raw configuration mean using",
+                  "leave-one-out jackknife diagonal errors. Only the fitted central value is applied:",
+                  "h_R(z,b) = mean_channels(h(z,b)) / [ZO sqrt(W(|z|+2L,b))].",
+                  "The gtg5/gzg5 and direction channels are averaged after their independent fits.",
+                  "Wilson/ZO uncertainty is fixed by policy; z=0 is not normalized to unity.", ""]
+        for record in wilson:
+            diag = record.summary["diagnostics"]
+            lines += [f"### `{record.job_id}` ({record.params['type']})", "",
+                      f"Samples: {record.output.n_sample}; factor policy: fixed central value.", ""]
+            if record.params["type"] == "fit":
+                lines += [f"Mean fit Q: {format_value(diag['Q'])}; configurations: {diag['configuration_count']}.", ""]
+            else:
+                stem = f"wilson_{record.job_id}"
+                render_result(record.output, directory=artifact_directory, stem=stem, formats=("svg",),
+                              sample_error_mode="variance")
+                lines += [f"![Renormalized matrix element]({stem}.svg)", ""]
+            for filename in record.summary["artifacts"]:
+                link = (record.artifact_directory / filename).relative_to(artifact_directory).as_posix()
+                lines.append(f"- [{filename}]({link})")
+        return write_report(artifact_directory, lines)
     formal_figures = _render_formal_figures(records, artifact_directory)
     apply_records = tuple(_apply_records(records))
     overview_lines = (

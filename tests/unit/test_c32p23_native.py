@@ -13,8 +13,19 @@ from lamet_agent.stages.correlator_analysis._input import load_descriptor, resam
 from lamet_agent.stages.correlator_analysis.physics import fit_qda_samples
 from lamet_agent.stages.fourier_transform._inspection import derive_conventions
 from lamet_agent.stages.fourier_transform.physics import complete_signed_z
-from lamet_agent.stages.tmdwf_analysis.native import combine_transforms, prepare_projection
-from lamet_agent.stages.tmdwf_analysis.physics import ensemble
+from lamet_agent.stages.correlator_analysis.physics import average_tmdwf_channels
+from lamet_agent.stages.fourier_transform.physics import combine_tmdwf_transforms, prepare_tmdwf_projection
+from lamet_agent.stages.renormalization.physics import apply_wilson_factor
+from scripts.prepare_c32p23_native import prepare
+
+
+def ensemble(values, coords, attrs, name):
+    return EnsembleData(None, "bootstrap", list(values), list(coords), coords, attrs=attrs, name=name)
+
+
+def prepare_projection(inputs, factor, part):
+    return prepare_tmdwf_projection(apply_wilson_factor(average_tmdwf_channels(inputs), factor),
+                                    part, "even_both_notebook")
 
 
 INFO = EnsembleInfo("test", "test", 0.1, 0.1, 32, 64, 0.23)
@@ -117,7 +128,7 @@ def test_two_projection_transform_preserves_complex_midpoint_amplitude():
         transformed = fourier_transform(signed, x, momentum_gev=momentum, prefactor="pz_over_2pi")
         np.testing.assert_allclose(transformed.values.imag, 0, atol=1e-15)
         transforms.append(transformed.real)
-    combined = combine_transforms(*transforms)
+    combined = combine_tmdwf_transforms(*transforms)
     signed_z = np.concatenate((-z[:0:-1], z))
     values = inputs[0].values / 2
     signed_values = np.concatenate((values[:, :0:-1], values), axis=1)
@@ -126,7 +137,7 @@ def test_two_projection_transform_preserves_complex_midpoint_amplitude():
     np.testing.assert_allclose(combined.values, direct.values, atol=1e-15)
     transforms[1].array.attrs["resample_id"] = "mismatch"
     with pytest.raises(ValueError, match="provenance"):
-        combine_transforms(*transforms)
+        combine_tmdwf_transforms(*transforms)
 
 
 def test_projection_rejects_missing_channel_or_sample_pairing():
@@ -136,3 +147,39 @@ def test_projection_rejects_missing_channel_or_sample_pairing():
     inputs[1].array.attrs["resample_id"] = "mismatch"
     with pytest.raises(ValueError, match="incompatible"):
         prepare_projection(inputs, factor, "real")
+
+
+def test_preparation_generates_only_existing_stages_and_preserves_nonzero_phase(tmp_path):
+    from pathlib import Path
+
+    from lamet_agent.manifest import load_manifest
+
+    examples = tmp_path / "examples"
+    examples.mkdir()
+    template = Path(__file__).resolve().parents[2] / "examples/c32p23_native_p4_p1_2_b1_agent.json"
+    (examples / template.name).write_bytes(template.read_bytes())
+    source = tmp_path / "data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5"
+    source.parent.mkdir(parents=True)
+    with h5py.File(source, "w") as handle:
+        handle.attrs.update(resample_mode="bootstrap", bootstrap_samples=6, source_sha256="paired")
+        handle.create_group("wilson_loops")
+        for op in ("gtg5", "gzg5"):
+            for direction in (0, 1):
+                prefix = f"{op}/gamma_sink0/PX0PY0PZ5/p1_3_p2_-2"
+                handle.create_dataset(f"{prefix}/bT0/zdir{direction}/bz0", data=np.full((15, 6), 2 + 9j))
+                for z in range(13):
+                    handle.create_dataset(f"{prefix}/bT2/zdir{direction}/bz{z}",
+                                          data=np.full((15, 6), 0.8 + 0.2j))
+    manifest_path = prepare(tmp_path, 5, 3, -2, 2)
+    manifest = load_manifest(manifest_path)
+    assert not manifest.validate()
+    assert list(manifest.document["stages"]) == ["correlator_analysis", "renormalization", "fourier_transform"]
+    jobs = manifest.document["stages"]["renormalization"]["jobs"]
+    assert jobs[0]["settings"]["b"] == 2 and jobs[1]["inputs"]["denominator"] == "wilson_b2"
+    path = tmp_path / "data_C32P23/native/p5_p1_3_b2/correlators.h5"
+    with h5py.File(path, "r") as handle:
+        for direction in (0, 1):
+            angle = 2 * np.pi * (3 - 5 / 2) * np.arange(13) / 32 * (-1)**direction
+            expected = np.broadcast_to((0.8 + 0.2j) * np.exp(1j * angle), (6, 15, 13))
+            np.testing.assert_array_equal(handle[f"gtg5_d{direction}/nonlocal"][()], expected)
+            np.testing.assert_array_equal(handle[f"gtg5_d{direction}/local"][()], np.full((6, 15), 2.))

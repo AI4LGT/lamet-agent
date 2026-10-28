@@ -455,3 +455,26 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
             ]
         )
     return write_report(artifact_directory, lines)
+
+
+def plot_tmdwf(data, path):
+    import numpy as np
+
+    from matplotlib.figure import Figure
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+    figure = Figure(figsize=(8, 4), constrained_layout=True)
+    FigureCanvasAgg(figure)
+    axis = figure.add_subplot()
+    dim = data.dims[0]
+    x = np.asarray(data.coords[dim])
+    for label, values in (("real", data.values.real), ("imag", data.values.imag)):
+        if label == "imag" and not np.iscomplexobj(data.values):
+            continue
+        center, error = values.mean(axis=0), values.std(axis=0, ddof=1)
+        axis.plot(x, center, label=label)
+        axis.fill_between(x, center - error, center + error, alpha=0.2)
+    axis.set_xlabel("z [fm]" if dim == "z" else "x")
+    axis.set_title(data.name)
+    axis.legend()
+    figure.savefig(path, dpi=150)

@@ -113,11 +113,10 @@
         }
       ]
     },
-    "tmdwf_analysis": {
+    "renormalization": {
       "jobs": [
         {
           "id": "wilson_b1",
-          "operation": "wilson_loop_fit",
           "settings": {
             "b": 1,
             "a_fm": 0.1053,
@@ -149,32 +148,16 @@
             "raw": {
               "file": "data_C32P23/native/p4_p1_2_b1/correlators.h5"
             }
-          }
+          },
+          "strategy": "wilson_loop",
+          "type": "fit",
+          "normalization": false
         },
         {
-          "id": "bridge_real",
-          "operation": "native_bridge",
-          "settings": {
-            "projection": "real",
-            "negative_z": "even_both_notebook"
-          },
-          "inputs": {
-            "targets": [
-              "fit_gtg5_d0",
-              "fit_gtg5_d1",
-              "fit_gzg5_d0",
-              "fit_gzg5_d1"
-            ],
-            "denominator": "wilson_b1"
-          }
-        },
-        {
-          "id": "bridge_imag",
-          "operation": "native_bridge",
-          "settings": {
-            "projection": "imag",
-            "negative_z": "even_both_notebook"
-          },
+          "id": "renormalized_b1",
+          "strategy": "wilson_loop",
+          "type": "apply",
+          "normalization": false,
           "inputs": {
             "targets": [
               "fit_gtg5_d0",
@@ -218,20 +201,23 @@
           "model_average": false,
           "q_min": 0.05,
           "max_schemes": 20
-        }
+        },
+        "negative_z": "even_both_notebook"
       },
       "jobs": [
         {
           "id": "fourier_real",
           "inputs": {
-            "input": "bridge_real"
-          }
+            "input": "renormalized_b1"
+          },
+          "tmdwf_projection": "real"
         },
         {
           "id": "fourier_imag",
           "inputs": {
-            "input": "bridge_imag"
-          }
+            "input": "renormalized_b1"
+          },
+          "tmdwf_projection": "imag"
         }
       ]
     }

@@ -87,8 +87,7 @@ def _signed_from_positive(
     )
 
 
-# Octet baryons (proton, Lambda, Xi0) share the nucleon PDF tail family.
-_NUCLEON_HADRONS = {"nucleon", "proton", "lambda", "xi0"}
+_NUCLEON_HADRONS = {"nucleon", "proton"}
 
 
 def _tail_family(
@@ -1375,3 +1374,52 @@ def scan_fourier_transform(
         "sample_model_weights": sample_weights.tolist(),
         "workers": workers,
     }
+
+
+def prepare_tmdwf_projection(data, projection, negative_z):
+    """Rotate one even midpoint component to the existing endpoint DA tail convention."""
+    if projection not in {"real", "imag"} or negative_z != "even_both_notebook":
+        raise ValueError("TMDWF requires an explicit real/imag projection and even midpoint components")
+    if (data.dims != ["z"] or data.attrs.get("coord_unit") != "fm"
+            or data.attrs.get("phase_convention") != "midpoint"
+            or data.attrs.get("renormalization_scheme") != "tmdwf_wilson_loop"
+            or data.ensemble is None or data.resample != "bootstrap"
+            or not data.attrs.get("resample_id") or not np.isfinite(data.values).all()):
+        raise ValueError("TMDWF projection requires finite, paired, Wilson-renormalized midpoint data in fm")
+    momentum = data.attrs.get("momentum_gev")
+    if not isinstance(momentum, (int, float)) or not np.isfinite(momentum) or momentum <= 0:
+        raise ValueError("TMDWF projection requires positive finite momentum_gev")
+    lam = np.asarray(data.coords["z"]) * momentum / HBAR_C_GEV_FM
+    values = getattr(data.values, projection)
+    attrs = data.attrs
+    attrs.update({"tmdwf_projection": projection, "phase_convention": "endpoint_from_even_midpoint",
+                  "negative_z": negative_z, "native_tail_profile": "pion_da_components"})
+    return EnsembleData(data.ensemble, data.resample, list(values * np.exp(-0.5j * lam)),
+                        ["z"], data.coords, attrs=attrs, name=f"tmdwf_{projection}_endpoint")
+
+
+def combine_tmdwf_transforms(real, imag):
+    """Combine paired native transforms without dropping imaginary TMDWF values."""
+    if (real.ensemble != imag.ensemble or real.resample != imag.resample or real.n_sample != imag.n_sample
+            or real.dims != ["x"] or imag.dims != ["x"] or real.coords != imag.coords):
+        raise ValueError("native component transforms must have identical sample and x grids")
+    keys = ("resample_id", "b_perp_lattice", "momentum_gev", "phase_convention", "negative_z")
+    if not real.attrs.get("resample_id") or any(real.attrs.get(k) != imag.attrs.get(k) for k in keys):
+        raise ValueError("native component transforms must share physical and sampling provenance")
+    if real.attrs.get("tmdwf_projection") != "real" or imag.attrs.get("tmdwf_projection") != "imag":
+        raise ValueError("expected the real and imaginary midpoint projections in order")
+    if (not np.isfinite(real.values).all() or not np.isfinite(imag.values).all()
+            or np.any(np.asarray(real.values).imag != 0) or np.any(np.asarray(imag.values).imag != 0)):
+        raise ValueError("component Fourier outputs must be finite and real")
+    attrs = real.attrs
+    attrs.pop("tmdwf_projection", None)
+    for key in ("source_operator", "zdir", "correlator_id"):
+        attrs.pop(key, None)
+    attrs.update({"observable": "quasi_tmdwf_before_hard_matching", "output_component": "both",
+                  "component_combination": "native_FT(real_midpoint) + i*native_FT(imag_midpoint)",
+                  "fourier_convention": "exp(+1i*(x-0.5)*P*z) on even complex midpoint amplitude",
+                  "x_shift": 0.5, "phase_convention": "midpoint",
+                  "component_input_phase_convention": "endpoint_from_even_midpoint",
+                  "tail_model_note": "independent native light-light DA ansatz per midpoint component"})
+    return EnsembleData(real.ensemble, real.resample, list(real.values + 1j * imag.values),
+                        real.dims, real.coords, attrs=attrs, name="quasi_tmdwf")

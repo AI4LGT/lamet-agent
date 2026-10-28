@@ -4,8 +4,8 @@ import h5py
 import numpy as np
 import pytest
 
-from lamet_agent.stages.tmdwf_analysis.physics import wilson_factor
-from lamet_agent.stages.tmdwf_analysis.wilson_io import GROUP, load_wilson, parse_text
+from lamet_agent.stages.renormalization.physics import wilson_factor
+from lamet_agent.stages.renormalization._wilson_io import GROUP, load_wilson, parse_text
 from scripts.add_c32p23_wilson_h5 import add_wilson
 
 
