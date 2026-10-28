@@ -46,8 +46,8 @@ $$
 **Our TMDWF convention:** both parts are even under $\lambda\to-\lambda$:
 
 $$
-\operatorname{Re}\Phi(-\lambda)=\operatorname{Re}\Phi(\lambda),\qquad
-\operatorname{Im}\Phi(-\lambda)=\operatorname{Im}\Phi(\lambda).
+\mathrm{Re}\Phi(-\lambda)=\mathrm{Re}\Phi(\lambda),\qquad
+\mathrm{Im}\Phi(-\lambda)=\mathrm{Im}\Phi(\lambda).
 $$
 
 Extend the negative-$\lambda$ region by **even reflection of both parts**, not complex conjugation.
