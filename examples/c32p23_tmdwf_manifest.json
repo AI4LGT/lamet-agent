@@ -1,0 +1,223 @@
+{
+  "metadata": {
+    "run_id": "c32p23_tmdwf_p4_b1",
+    "root_directory": "..",
+    "artifacts_directory": "runs/c32p23_tmdwf_p4_b1_verified/artifacts",
+    "random_seed": 1984,
+    "workers": 4,
+    "target_observable": "tmdwf",
+    "parton": "quark",
+    "resample_mode": "bootstrap",
+    "bin_size": 1,
+    "sample_error_mode": "variance",
+    "samples": 1000
+  },
+  "stages": {
+    "tmdwf_analysis": {
+      "jobs": [
+        {
+          "id": "bare_p4_b1",
+          "operation": "bare_fit",
+          "settings": {
+            "pz": 4,
+            "p1": 2,
+            "p2": -2,
+            "b": 1,
+            "a_fm": 0.1053,
+            "L_s": 32,
+            "windows": [
+              [
+                1,
+                3,
+                14,
+                4,
+                14
+              ],
+              [
+                1,
+                3,
+                14,
+                4,
+                14
+              ],
+              [
+                1,
+                3,
+                14,
+                4,
+                14
+              ],
+              [
+                1,
+                3,
+                14,
+                4,
+                14
+              ],
+              [
+                1,
+                3,
+                14,
+                4,
+                14
+              ],
+              [
+                1,
+                3,
+                14,
+                4,
+                14
+              ],
+              [
+                1,
+                4,
+                14,
+                4,
+                14
+              ],
+              [
+                1,
+                4,
+                14,
+                4,
+                14
+              ],
+              [
+                1,
+                4,
+                14,
+                4,
+                14
+              ],
+              [
+                1,
+                4,
+                14,
+                4,
+                14
+              ],
+              [
+                1,
+                4,
+                14,
+                4,
+                14
+              ],
+              [
+                1,
+                4,
+                14,
+                4,
+                14
+              ],
+              [
+                1,
+                4,
+                14,
+                4,
+                14
+              ]
+            ],
+            "svdcut": 0.001
+          },
+          "inputs": {
+            "raw": {
+              "file": "data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5"
+            }
+          }
+        },
+        {
+          "id": "wilson_b1",
+          "operation": "wilson_loop_fit",
+          "settings": {
+            "b": 1,
+            "a_fm": 0.1053,
+            "L": 6,
+            "ZO": 0.92208,
+            "fit_start": 5,
+            "fit_stop": 20,
+            "priors": {
+              "c": [
+                0,
+                10
+              ],
+              "E": [
+                0,
+                10
+              ],
+              "c1": [
+                10,
+                10
+              ],
+              "delta_E": [
+                1,
+                1
+              ]
+            },
+            "svdcut": 1e-08
+          },
+          "inputs": {
+            "raw": {
+              "file": "data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5"
+            }
+          }
+        },
+        {
+          "id": "renormalized_p4_b1",
+          "operation": "renormalize",
+          "settings": {},
+          "inputs": {
+            "target": "bare_p4_b1",
+            "denominator": "wilson_b1"
+          }
+        },
+        {
+          "id": "fourier_p4_b1",
+          "operation": "fourier",
+          "settings": {
+            "tail_start": 9,
+            "tail_stop": 13,
+            "stitch_index": 9,
+            "extent_factor": 4,
+            "priors": {
+              "d": [
+                1,
+                2
+              ],
+              "lambda0": [
+                6.39824343029508,
+                6.39824343029508
+              ],
+              "c1": [
+                -1,
+                10
+              ],
+              "c2": [
+                1,
+                10
+              ],
+              "f1": [
+                0.5,
+                10
+              ],
+              "f2": [
+                1.5,
+                10
+              ]
+            },
+            "svdcut": 1e-05,
+            "x_start": -0.5,
+            "x_stop": 1.5,
+            "x_points": 1000,
+            "negative_z": "even_both_notebook",
+            "phase_sign": 1,
+            "x_shift": 0.5
+          },
+          "inputs": {
+            "input": "renormalized_p4_b1"
+          }
+        }
+      ]
+    }
+  }
+}

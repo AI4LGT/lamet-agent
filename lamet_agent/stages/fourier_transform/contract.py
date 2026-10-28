@@ -77,6 +77,9 @@ def _nonzero(value: int) -> bool:
 # ruff: disable[E501]
 # fmt: off
 PARAM_RULES = (
+    Provides("", "tmdwf", "$.metadata.target_observable", physics="Explicit reuse of the native DA tail for each real even midpoint component at fixed transverse separation."),
+    Depends("tmdwf", "tmdwf_profile", physics="Requires two separately prepared midpoint components; this is a tail ansatz choice, not DA matching."),
+    Value("tmdwf.tmdwf_profile", Literal["pion_da_components"], physics="Fit each even midpoint component with the existing light-light DA tail, then combine the two transforms externally."),
     Depends("", "quasi_y_ls", physics="Dimensionless quasi momentum-fraction grid y for P_z/(2 pi hbar c) sum_z w_z exp(+i y P_z z/(hbar c)) h(z), with z and w_z in fm and full endpoint weights on a uniform grid; it becomes the downstream matching input grid, so its range and spacing set numerical coverage but add no lattice information."),
     Depends("", "zmin_fm", physics="Candidate lower separations for the long-distance tail fit in fm; positive-z data with zmin <= z <= zmax constrain the tail, and one common range is selected from the sample-average data before resample fits.", null_hook=recommend_zmin_fm),
     Depends("", "zmax_fm", physics="Candidate upper separations of measured data entering the tail fit in fm; varying zmax tests the balance between large-|z| asymptotic validity and deteriorating lattice signal, independently of the later extension endpoint.", null_hook=recommend_zmax_fm),
@@ -161,7 +164,7 @@ def check_observable_sector(context: CheckContext) -> Issue | None:
     if scan is None:
         return None
     observable = str(context.manifest["metadata"]["target_observable"]).lower()
-    if observable == "da" and scan["sector"] != "full":
+    if observable in {"da", "tmdwf"} and scan["sector"] != "full":
         return Issue(
             "scheme_scan.sector",
             "must be full for a DA",

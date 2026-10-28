@@ -2,7 +2,8 @@
 
 A dataset path may contain coordinate placeholders such as ``{tsep}`` and
 ``{z}``.  ``dataset_dims`` states the leaf-array axis order explicitly; the
-loader never guesses axes from shapes.
+loader never guesses axes from shapes. Optional ``sampling`` metadata declares
+already paired bootstrap replicas; these bypass binning and resampling.
 """
 
 from __future__ import annotations
@@ -79,8 +80,18 @@ def load_descriptor(path: Path, *, selected_ids: set[str] | None = None) -> dict
             "current",
             "source_sink_separation",
         }
-        if set(record) != required:
+        if set(record) - {"sampling"} != required:
             raise ValueError(f"correlator record must contain exactly: {sorted(required)}")
+        sampling = record.get("sampling")
+        if sampling is not None and (
+            not isinstance(sampling, dict)
+            or set(sampling) != {"mode", "resample_id"}
+            or sampling["mode"] != "bootstrap"
+            or not isinstance(sampling["resample_id"], str)
+            or not sampling["resample_id"].strip()
+        ):
+            raise ValueError("sampling requires mode=bootstrap and a nonempty paired resample_id")
+        sample_dim = "bootstrap" if sampling is not None else "configuration"
         if (
             not isinstance(record["id"], str)
             or not record["id"]
@@ -94,9 +105,9 @@ def load_descriptor(path: Path, *, selected_ids: set[str] | None = None) -> dict
             record["format"] != "hdf5"
             or not isinstance(record["dims"], list)
             or not record["dims"]
-            or record["dims"][0] != "configuration"
+            or record["dims"][0] != sample_dim
         ):
-            raise ValueError("only HDF5 descriptors with configuration as the first dimension are supported")
+            raise ValueError(f"HDF5 descriptor first dimension must be {sample_dim}")
         if any(not isinstance(dim, str) or not dim or dim == "resample" for dim in record["dims"]) or len(
             set(record["dims"])
         ) != len(record["dims"]):
@@ -159,7 +170,7 @@ def load_descriptor(path: Path, *, selected_ids: set[str] | None = None) -> dict
         if set(remaining_dims) != set(dataset_dims):
             raise ValueError("dataset_dims plus dataset placeholders must cover dims exactly")
         shape = [
-            configuration_count if dim == "configuration" else len(record["coords"].get(dim, []))
+            configuration_count if dim == sample_dim else len(record["coords"].get(dim, []))
             for dim in record["dims"]
         ]
         if any(size == 0 for size in shape):
@@ -178,10 +189,10 @@ def load_descriptor(path: Path, *, selected_ids: set[str] | None = None) -> dict
                 if leaf.ndim != len(dataset_dims):
                     raise ValueError(f"dataset rank does not match dataset_dims: {dataset_name}")
                 sizes = dict(zip(dataset_dims, leaf.shape))
-                if sizes.get("configuration") != configuration_count:
+                if sizes.get(sample_dim) != configuration_count:
                     raise ValueError(f"configuration count does not match descriptor: {dataset_name}")
                 for dim, size in sizes.items():
-                    if dim != "configuration" and size > len(record["coords"][dim]):
+                    if dim != sample_dim and size > len(record["coords"][dim]):
                         raise ValueError(f"dataset is longer than declared coordinate {dim}: {dataset_name}")
                 if values is None:
                     values = np.zeros(shape, dtype=leaf.dtype)
@@ -193,7 +204,7 @@ def load_descriptor(path: Path, *, selected_ids: set[str] | None = None) -> dict
                 for dim in record["dims"]:
                     if dim in selected:
                         selection.append(record["coords"][dim].index(selected[dim]))
-                    elif dim == "configuration":
+                    elif dim == sample_dim:
                         selection.append(slice(None))
                     else:
                         selection.append(slice(0, sizes[dim]))
@@ -231,6 +242,10 @@ def load_descriptor(path: Path, *, selected_ids: set[str] | None = None) -> dict
             "bz_direction",
             "bT",
             "momentum",
+            "zdir",
+            "p1",
+            "p2",
+            "phase_convention",
         ):
             if key in record["selectors"]:
                 attrs[key] = record["selectors"][key]
@@ -240,9 +255,12 @@ def load_descriptor(path: Path, *, selected_ids: set[str] | None = None) -> dict
             value = record.get(key, current.get(key))
             if value is not None:
                 attrs[key] = value
+        if sampling is not None:
+            attrs["resample_id"] = sampling["resample_id"]
+            attrs["sampling_origin"] = "precomputed_bootstrap"
         raw = EnsembleData(
             ensemble,
-            "raw",
+            "bootstrap" if sampling is not None else "raw",
             [values[index] for index in range(values.shape[0])],
             dims[1:],
             {dim: coords[dim] for dim in dims[1:]},
@@ -256,12 +274,22 @@ def load_descriptor(path: Path, *, selected_ids: set[str] | None = None) -> dict
 def resample_correlators(
     raw: dict[str, Any], *, mode: str, group: str, bin_size: int, n_boot: int | None, seed: int
 ) -> dict[str, EnsembleData]:
-    """Apply one explicit plan to every configuration-aligned correlator."""
+    """Apply one shared raw-data plan, or validate and preserve paired bootstrap inputs."""
     data = raw["correlators"]
     first = next(iter(data.values()))
     n_configurations = first.n_sample
     if any(item.n_sample != n_configurations for item in data.values()):
         raise ValueError("configuration counts differ inside one resample group")
+    modes = {item.resample for item in data.values()}
+    if modes != {"raw"}:
+        if modes != {"bootstrap"}:
+            raise ValueError("cannot mix raw configurations and precomputed bootstrap samples")
+        if mode != "bootstrap" or bin_size != 1 or n_boot != n_configurations:
+            raise ValueError("precomputed bootstrap requires bootstrap mode, bin_size=1 and matching samples")
+        identifiers = {item.attrs.get("resample_id") for item in data.values()}
+        if len(identifiers) != 1 or not next(iter(identifiers)):
+            raise ValueError("precomputed bootstrap inputs require one matching nonempty resample_id")
+        return dict(data)
     if bin_size < 1 or n_configurations // bin_size < 2:
         raise ValueError("bin_size leaves fewer than two configurations")
     plan_seed: int | None = None

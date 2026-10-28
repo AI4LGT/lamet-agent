@@ -1,0 +1,239 @@
+{
+  "metadata": {
+    "run_id": "c32p23_native_p4_p1_2_b1",
+    "root_directory": "..",
+    "artifacts_directory": "runs/c32p23_native_p4_p1_2_b1/artifacts",
+    "random_seed": 1984,
+    "workers": 4,
+    "target_observable": "tmdwf",
+    "parton": "quark",
+    "resample_mode": "bootstrap",
+    "bin_size": 1,
+    "sample_error_mode": "variance",
+    "samples": 1000,
+    "parameter_recommendation_retries": 1
+  },
+  "stages": {
+    "correlator_analysis": {
+      "defaults": {
+        "analysis_method": "lsqfit",
+        "component": "both",
+        "fit_scope": [
+          "qda_ratio"
+        ],
+        "nstate": {
+          "qda_ratio": [
+            1
+          ]
+        },
+        "fitting_form": "Breit",
+        "model_average": false,
+        "pt2_windows": [
+          {
+            "tmin": 4,
+            "tmax": 15
+          },
+          {
+            "tmin": 6,
+            "tmax": 15
+          },
+          {
+            "tmin": 8,
+            "tmax": 15
+          }
+        ],
+        "pt3_windows": [],
+        "svdcut": 0.001,
+        "prior_width": [
+          1.0
+        ],
+        "posterior_prior_error_scale": 10.0,
+        "q_min": 0.05
+      },
+      "jobs": [
+        {
+          "id": "fit_gtg5_d0",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "data_C32P23/native/p4_p1_2_b1/correlators.json",
+                "id": "gtg5_d0_nonlocal"
+              },
+              {
+                "json": "data_C32P23/native/p4_p1_2_b1/correlators.json",
+                "id": "gtg5_d0_local"
+              }
+            ]
+          }
+        },
+        {
+          "id": "fit_gtg5_d1",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "data_C32P23/native/p4_p1_2_b1/correlators.json",
+                "id": "gtg5_d1_nonlocal"
+              },
+              {
+                "json": "data_C32P23/native/p4_p1_2_b1/correlators.json",
+                "id": "gtg5_d1_local"
+              }
+            ]
+          }
+        },
+        {
+          "id": "fit_gzg5_d0",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "data_C32P23/native/p4_p1_2_b1/correlators.json",
+                "id": "gzg5_d0_nonlocal"
+              },
+              {
+                "json": "data_C32P23/native/p4_p1_2_b1/correlators.json",
+                "id": "gzg5_d0_local"
+              }
+            ]
+          }
+        },
+        {
+          "id": "fit_gzg5_d1",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "data_C32P23/native/p4_p1_2_b1/correlators.json",
+                "id": "gzg5_d1_nonlocal"
+              },
+              {
+                "json": "data_C32P23/native/p4_p1_2_b1/correlators.json",
+                "id": "gzg5_d1_local"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "tmdwf_analysis": {
+      "jobs": [
+        {
+          "id": "wilson_b1",
+          "operation": "wilson_loop_fit",
+          "settings": {
+            "b": 1,
+            "a_fm": 0.1053,
+            "L": 6,
+            "ZO": 0.92208,
+            "fit_start": 5,
+            "fit_stop": 20,
+            "priors": {
+              "c": [
+                0,
+                10
+              ],
+              "E": [
+                0,
+                10
+              ],
+              "c1": [
+                10,
+                10
+              ],
+              "delta_E": [
+                1,
+                1
+              ]
+            },
+            "svdcut": 1e-08
+          },
+          "inputs": {
+            "raw": {
+              "file": "data_C32P23/native/p4_p1_2_b1/correlators.h5"
+            }
+          }
+        },
+        {
+          "id": "bridge_real",
+          "operation": "native_bridge",
+          "settings": {
+            "projection": "real",
+            "negative_z": "even_both_notebook"
+          },
+          "inputs": {
+            "targets": [
+              "fit_gtg5_d0",
+              "fit_gtg5_d1",
+              "fit_gzg5_d0",
+              "fit_gzg5_d1"
+            ],
+            "denominator": "wilson_b1"
+          }
+        },
+        {
+          "id": "bridge_imag",
+          "operation": "native_bridge",
+          "settings": {
+            "projection": "imag",
+            "negative_z": "even_both_notebook"
+          },
+          "inputs": {
+            "targets": [
+              "fit_gtg5_d0",
+              "fit_gtg5_d1",
+              "fit_gzg5_d0",
+              "fit_gzg5_d1"
+            ],
+            "denominator": "wilson_b1"
+          }
+        }
+      ]
+    },
+    "fourier_transform": {
+      "defaults": {
+        "tmdwf_profile": "pion_da_components",
+        "quasi_y_ls": {
+          "start": -0.5,
+          "stop": 1.5,
+          "num": 1000
+        },
+        "zmin_fm": [
+          0.6318,
+          0.8424,
+          0.9477
+        ],
+        "zmax_fm": [
+          1.2636
+        ],
+        "zmax_ext_fm": 5.0544,
+        "smooth": "linear",
+        "scheme_scan": {
+          "order": [
+            "LA",
+            "NLA"
+          ],
+          "sector": "full",
+          "Lambda0_gev": 0.0,
+          "posterior_prior_error_scale": [
+            10.0
+          ],
+          "model_average": false,
+          "q_min": 0.05,
+          "max_schemes": 20
+        }
+      },
+      "jobs": [
+        {
+          "id": "fourier_real",
+          "inputs": {
+            "input": "bridge_real"
+          }
+        },
+        {
+          "id": "fourier_imag",
+          "inputs": {
+            "input": "bridge_imag"
+          }
+        }
+      ]
+    }
+  }
+}

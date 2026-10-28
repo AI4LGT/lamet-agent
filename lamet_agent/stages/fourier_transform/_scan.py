@@ -52,6 +52,12 @@ def attempt(context: ToolContext) -> dict[str, object]:
     is_da = target == "da"
     is_gpd = target == "gpd"
     da = context.params if is_da else None
+    if target == "tmdwf":
+        if context.params.get("tmdwf_profile") != "pion_da_components":
+            raise ValueError("TMDWF requires an explicit native tail profile")
+        # Each prepared input is a real even midpoint amplitude rotated to the
+        # endpoint convention. The native DA equations apply to that projection.
+        da = {"phase_transfer_da": False, "psi1_flavor_class": "light", "psi2_flavor_class": "light"}
     requested_grid = list(grid)
     result = scan_fourier_transform(
         source,
@@ -65,7 +71,7 @@ def attempt(context: ToolContext) -> dict[str, object]:
             "smoothing_method": context.params["smooth"],
         },
         scan=scan,
-        observable=target.upper(),
+        observable="DA" if target == "tmdwf" else target.upper(),
         phase_transfer_da=da["phase_transfer_da"] if da is not None else False,
         psi1_flavor_class=da["psi1_flavor_class"] if da is not None else "heavy",
         psi2_flavor_class=da["psi2_flavor_class"] if da is not None else "heavy",
@@ -246,6 +252,9 @@ def publish(context: ToolContext, result: dict[str, object]) -> dict[str, object
     )
     save_figure(context.artifact_directory / "output_xdep.pdf")
     extended = selected_candidate["extended"]
+    if context.manifest["metadata"]["target_observable"] == "tmdwf":
+        extended.to_netcdf(context.artifact_directory / "extended.nc")
+        artifacts.append("extended.nc")
     z_min_fm = float(selected_range["z_min_fm"])
     z_max_fm = float(selected_range["z_max_fm"])
     extension_z = np.asarray(extended.coords["z"], dtype=float)

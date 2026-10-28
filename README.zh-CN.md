@@ -69,6 +69,117 @@ lamet-agent run examples/pion_pdf_cg_manifest.json \
 
 ## 命令行
 
+### C32P23 bootstrap TMDWF 最小接入示例
+
+#### 使用现有拟合、λ 延拓和傅里叶接口
+
+`examples/c32p23_native_p4_p1_2_b1.json` 接到正常 agent job loop，依次运行：
+
+1. `correlator_analysis` 的 `qda_ratio`：四个 `gtg5/gzg5 × zdir0/zdir1` 通道各自拟合。
+2. `tmdwf_analysis`：拟合 Wilson-loop 因子，平均四个已拟合的通道、重整化，并准备两个相位投影。
+3. `fourier_transform`：每个投影使用现有 LA/NLA 尾部拟合、λ 延拓、平滑和傅里叶扫描。
+4. 启动脚本只将两个输出按 bootstrap 编号组合成复数 `quasi_tmdwf.nc`，不另做拟合或变换。
+
+已准备的输入在 `data_C32P23/native/p4_p1_2_b1/`，其中 `correlators.h5` 同时含有两点函数
+和 Wilson-loop 数据。主文件 `data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5`
+也包含完整 Wilson-loop 组。两份 HDF5 都使用以下附加结构，原有两点函数路径保持不变：
+
+```text
+wilson_loops/C32P23/
+  raw                 (451, 3, 26, 11): configuration, direction, length_lattice, b_perp_lattice
+  configuration       451 个实际组态编号
+  direction           0..2
+  length_lattice      0..25
+  b_perp_lattice      0..10
+  mean                (26, 11): 对组态及方向平均的未拟合 Wilson loop
+  source_text         原始 txt 字节；组属性保存 SHA-256
+```
+
+Wilson 组明确标记 `sample_kind=raw_configuration`；不把它的 451 个组态当成两点函数的
+1000 个 bootstrap 样本。Wilson 的原始组态用 leave-one-out jackknife 估计均值的对角误差，
+对均值拟合一次；拟合后仅使用固定中心值作为全部 bootstrap 样本共同的分母，
+这是本分析明确选择的处理方式，不传播 Wilson-loop 或 `ZO` 误差。
+新增导入命令如下；重复导入相同内容安全，冲突内容会拒绝覆盖：
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -B scripts\add_c32p23_wilson_h5.py data_C32P23\wilson_loops\wiloop_hyp1_C32P23.txt data_C32P23\correlators\C32P23\2pt\C32P23_2pt_bootstrap.h5
+```
+
+若在新目录准备 native 输入，先完成 Wilson 导入，再运行
+`python -X utf8 -B scripts/prepare_c32p23_native.py`；它会连同 Wilson 组一起复制，
+遇到已有目标文件会停止，避免覆盖。
+非局域分子保留复数，分母为同一 source／方向的 `b=0,z=0` 局域实部。
+descriptor 的 `sampling={"mode":"bootstrap","resample_id":"..."}` 显式标记已有样本，
+`dims` 首维为 `bootstrap`；`count` 和 `metadata.samples` 均为 1000，`bin_size=1`。
+系统校验样本 ID、数量和模式，不重新 bootstrap。未写 `sampling` 的原有 descriptor 仍走 raw 抽样流程。
+
+从项目根目录进行纯本地数值接入测试（建议由固定测试参数提供，不调用 LLM）：
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -B scripts\run_c32p23_native.py examples\c32p23_native_p4_p1_2_b1.json --fixed-suggestions
+.\.venv\Scripts\python.exe -X utf8 -B scripts\verify_c32p23_native.py runs\c32p23_native_p4_p1_2_b1\artifacts_offline
+```
+
+真实模型测试配置为 `examples/c32p23_native_p4_p1_2_b1_agent.json`，时间窗口、`zmin_fm` 和
+`zmax_fm` 均设为 `null`，由原有推荐接口向模型请求。允许 provider 接收均值、误差及拟合诊断后运行：
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -B scripts\run_c32p23_native.py examples\c32p23_native_p4_p1_2_b1_agent.json --provider codex --model gpt-6.1-sol
+```
+
+也可用正常 `lamet-agent run` 执行该 manifest，再用启动脚本的 `--combine-only` 组合两路输出。
+离线测试写入 `runs/c32p23_native_p4_p1_2_b1/artifacts_offline`；上述真实 provider 配置写入
+`runs/c32p23_native_p4_p1_2_b1_agent/artifacts`，两者分开保存。
+该真实 Codex 测试已完成 9 个 job 和 6 次模型建议调用，最终保留 1000 个样本、1000 个 x 点；
+模型建议与调用用量见输出目录的 `agent_execution_verification.json`，数值检查见 `native_verification.json`。
+重复运行前请在 manifest 中设置新的 `artifacts_directory`，以保留原结果。
+
+这里的 `tmdwf_profile=pion_da_components` 是明确选择的尾部模型适配：延续旧 notebook 的
+midpoint 实部、虚部均为偶函数的负 z 约定；分别取实部和虚部振幅、乘 `exp(-i*λ/2)`，
+再使用原有 light-light DA 尾部和 `exp(+i*x*λ)` 核。两路最后按 `F_re + i*F_im` 合成，
+不会丢弃 TMDWF 虚部。它复用现有算法，但不表示 TMDWF 等同于 DA，也不调用 DA matching。
+与旧 notebook 的先平均再拟合、六参数联合尾部模型不同，数值无需逐点相等。
+
+验证范围为 `Pz=4,p1=2,p2=-2,b=1`，物理时间坐标为 `t=1..15`，拟合窗口右端不包含。
+本地测试完成全部 9 个 job，保留 1000 个样本和 1000 个 x 点。
+全量数据入口和复数 Fourier 相位恒等式检查见 `native_verification.json`。
+Wilson-loop 和 `ZO` 按本分析约定使用固定中心值；结果尚未进行硬核匹配。
+本例验证接口可运行，后续需要比较时间窗口、态数和尾部模型的系统误差。
+
+#### 旧 notebook 数值复现接口
+
+`examples/c32p23_tmdwf_manifest.json` 使用新增的确定性 `tmdwf_analysis` 阶段，
+按四个 job 执行裸矩阵元拟合、Wilson-loop 因子拟合、重整化和尾部外推／傅里叶变换。
+它直接使用已有的 1000 个 bootstrap 样本，不重新抽样，也不调用 LLM。
+从项目根目录运行（Windows 使用 `-X utf8`）：
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -B scripts\run_c32p23_tmdwf.py examples\c32p23_tmdwf_manifest.json --artifacts-directory runs/c32p23_tmdwf_rerun/artifacts
+```
+
+本地输入统一为 `data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5`，
+Wilson-loop job 读取其中的 `wilson_loops/C32P23/raw`；文本入口仍兼容。数据目录不进入 Git。
+source 编号 0/1 对应 `gtg5`/`gzg5`。示例验证范围是 `Pz=4, b=1`，
+全部 13 个 z 点及 1000 个 bootstrap 样本。每个 job 保存 `output.nc`、
+`settings.json`、`diagnostics.json` 和 `plot.png`；阶段目录保存 `report.md`。
+傅里叶 job 另外保存 `extended.nc`、尾部参数和拟合质量。
+
+该阶段由正常 agent job loop 调度；外层脚本只提供无 LLM 的启动方式。
+现有 `lamet-agent run ... --provider ...` 也能调度这一阶段，但仍会初始化所选 provider。
+重复运行时使用新的输出目录；现有输出非空时，框架会询问是否覆盖。
+
+当前配置明确复现旧 notebook：拟合时间窗口是零基数组索引、右端不包含；
+每个 source／方向先除以同通道局域关联函数实部，再做相位旋转和等权平均；
+Wilson-loop 使用拟合中心值，除以 `ZO * sqrt(Z_E(|z|+2L,b))`，不再做 z=0 归一化。
+`ZO` 和 Wilson-loop 的不确定度未传播。负 z 延拓保留旧代码实部和虚部均为偶函数的约定，
+傅里叶核为 `exp(+i*(x-0.5)*Pz*z)`。这些设置用于复现，不代表已独立验证其物理正确性。
+输出是硬核匹配前的 quasi-TMDWF；低 Q 拟合会报告并保留，不会伪装成质量通过。
+
+可用 `scripts/verify_c32p23_tmdwf.py ARTIFACTS --legacy-directory LEGACY_BOOTSTRAP_DIR`
+与旧 `fit_npy/bare_wf_b1.npy`、`wf_npy/Re_wf_p4_b1.npy`、`wf_npy/Im_wf_p4_b1.npy`
+进行全量数值比较，并写出 `verification.json`。切换其他动量／b 时必须同时修改裸拟合窗口、
+Wilson-loop 参数以及尾部窗口和先验；当前只对上述组合做过端到端验证。
+
 `lamet-agent` 和 `python -m lamet_agent` 提供相同的接口：
 
 ```text
@@ -281,7 +392,7 @@ loader 接受 JSON 和 JSONC 注释。当前 manifest envelope 为：
 - `samples`，仅在 bootstrap 模式下必填；
 - `parameter_recommendation_retries`，默认为每个 job 额外尝试一次。
 
-`target_observable` 接受 `pdf`、`da` 和 `gpd`。`sample_error_mode` 接受 `covariance`、`variance` 以及仅用于 bootstrap 的 `one_sigma`。
+`target_observable` 接受 `pdf`、`da`、`gpd` 及上述局部扩展的 `tmdwf`。`sample_error_mode` 接受 `covariance`、`variance` 以及仅用于 bootstrap 的 `one_sigma`。
 
 目前 Fourier、matching 和 extrapolation 支持系统学变体。这些变体会在执行前展开为具体 jobs，并保存到 `resolved_manifest.json`。
 
@@ -386,7 +497,7 @@ python -m pip install -e ".[dev]"
 
 ## 引用
 
-如果本工作对你的研究有帮助，请参考以下文本致谢 “We acknowledge the use of LaMET-Agent to assist with preliminary data analysis and result validation in this work.” 并引用：
+如果本工作对你的研究有帮助，请引用：
 ```bib
 @article{He:2026kft,
     author = "He, Jinchen and Jiang, Xiangyu and Yao, Fei and Zhao, Dian-Jun",

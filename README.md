@@ -1,5 +1,30 @@
 # lamet-agent
 
+The C32P23 bootstrap TMDWF example is documented in
+[the Chinese README](README.zh-CN.md#c32p23-bootstrap-tmdwf-最小接入示例).
+It adds one deterministic stage with bare fitting, Wilson-loop fitting,
+renormalization and Fourier operations, preserving existing bootstrap samples.
+Run `python -X utf8 scripts/run_c32p23_tmdwf.py examples/c32p23_tmdwf_manifest.json`
+from the project root after supplying its local data files. The initial validated
+scope is Pz=4, b=1; this reproduces the legacy notebook and stops before hard matching.
+
+For native interface reuse, use `examples/c32p23_native_p4_p1_2_b1.json` with
+`scripts/run_c32p23_native.py`. It runs the existing `correlator_analysis` qDA-ratio
+fits and `fourier_transform` LA/NLA tail scans. A small data bridge applies the
+Wilson factor and prepares real/imaginary midpoint projections for the native DA
+tail template; it then combines their paired Fourier outputs into a complex TMDWF.
+The descriptor explicitly preserves precomputed bootstrap samples. Pass
+`--fixed-suggestions` for a local integration test without an LLM; otherwise the
+selected provider receives averaged correlator evidence for recommendations.
+This is an explicit tail ansatz at fixed transverse separation, not DA matching.
+Wilson/ZO are intentionally fixed central values. Both the master and native
+HDF5 files include `wilson_loops/C32P23/raw` with explicit configuration and
+geometry coordinates, plus the original text bytes and source checksum. Import
+them with `scripts/add_c32p23_wilson_h5.py SOURCE.txt EXISTING.h5`.
+For model-recommended time and tail ranges, run
+`examples/c32p23_native_p4_p1_2_b1_agent.json`; its range fields are null and use
+the existing recommendation hooks. Hard matching remains outside this example.
+
 <p align="right">
   <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a>
 </p>
@@ -462,7 +487,7 @@ in [`DEVELOPMENT.md`](DEVELOPMENT.md).
 
 ## Citation
 
-If you find this work useful in your research, you can refer to the following text "We acknowledge the use of LaMET-Agent to assist with preliminary data analysis and result validation in this work." and cite:
+If you find this work useful in your research, please cite:
 ```bib
 @article{He:2026kft,
     author = "He, Jinchen and Jiang, Xiangyu and Yao, Fei and Zhao, Dian-Jun",

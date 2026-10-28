@@ -11,11 +11,7 @@ import numpy as np
 
 from lamet_agent.agent import ToolContext
 from lamet_agent.kernels.implementation import HBAR_C_GEV_FM
-from lamet_agent.stages.fourier_transform.physics import (
-    _NUCLEON_HADRONS,
-    complete_signed_z,
-    load_data,
-)
+from lamet_agent.stages.fourier_transform.physics import complete_signed_z, load_data
 
 
 def effective_zmin_fm(context: ToolContext, data: Any) -> list[float]:
@@ -35,7 +31,13 @@ def derive_conventions(attrs: Mapping[str, object], *, target_observable: str, s
         raise ValueError("the migrated Fourier examples require parton='quark' provenance")
     if gfix not in {"GI", "CG"}:
         raise ValueError("Fourier input must carry GI or CG gfix provenance")
-    if target == "da":
+    if target in {"da", "tmdwf"}:
+        if target == "tmdwf" and (
+            attrs.get("tmdwf_projection") not in {"real", "imag"}
+            or attrs.get("phase_convention") != "endpoint_from_even_midpoint"
+            or attrs.get("renormalization_scheme") != "tmdwf_wilson_loop"
+        ):
+            raise ValueError("TMDWF requires a Wilson-renormalized, endpoint-rotated real midpoint projection")
         if sector != "full":
             raise ValueError("DA Fourier transformation requires sector='full'")
         source_component, output_scale = "both", 1.0
@@ -161,10 +163,9 @@ def prepare(context: ToolContext) -> tuple[Any, float]:
     target = str(context.manifest["metadata"]["target_observable"]).lower()
     if target in {"pdf", "gpd"}:
         hadron = str(data.attrs.get("hadron", "")).strip().lower()
-        if hadron != "pion" and hadron not in _NUCLEON_HADRONS:
-            allowed = ", ".join(sorted({"pion", *_NUCLEON_HADRONS}))
+        if hadron not in {"pion", "proton", "nucleon"}:
             raise ValueError(
-                f"Fourier input hadron must be one of {allowed} for {target.upper()} tails; "
+                f"Fourier input hadron must be one of nucleon, pion, proton for {target.upper()} tails; "
                 f"got {hadron or '<missing>'}"
             )
     if data.attrs.get("coord_unit") != "fm":
