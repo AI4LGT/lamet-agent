@@ -73,8 +73,8 @@ For two hadron momenta $P_1^z$ and $P_2^z$, use the corresponding hard kernels $
 $$
 K(x,b_\perp,\mu;P_1^z,P_2^z)
 =\frac{1}{\ln(P_1^z/P_2^z)}
-\ln\!\left|\frac{H_2\,\widetilde\Psi(x,b_\perp,P_1^z)}
-{H_1\,\widetilde\Psi(x,b_\perp,P_2^z)}\right|.
+\ln\!\left|\frac{H_2 \ \widetilde\Psi(x,b_\perp,P_1^z)}
+{H_1 \ \widetilde\Psi(x,b_\perp,P_2^z)}\right|.
 $$
 
 Propagate statistical uncertainties throughout. Further physical-limit extrapolations are not included.
