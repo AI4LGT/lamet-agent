@@ -73,8 +73,17 @@ def matching_kernel_id(
         raise ValueError(f"matching provenance gfix must be 'gi' or 'cg', got {gauge!r}")
     if scheme not in _VALID_SCHEMES:
         raise ValueError(f"matching scheme is not supported: {scheme!r}")
-    if order != "nlo":
-        raise ValueError(f"matching order is not supported: {order!r}; only 'nlo' is available")
+    if order not in {"nlo", "nnlo"}:
+        raise ValueError(f"matching order is not supported: {order!r}; use 'nlo' or 'nnlo'")
+    if order == "nnlo" and (parton, observable, gauge, operator, scheme, resummation) != (
+        "quark",
+        "pdf",
+        "gi",
+        "gt",
+        "hybrid",
+        "",
+    ):
+        raise ValueError("NNLO is available only for the fixed-order GI gamma-t hybrid nonsinglet quark PDF")
     if resummation not in _VALID_RESUMMATIONS:
         raise ValueError(f"resummation must be '', 'rgr', or 'lrr', got {resummation!r}")
     tokens = [parton, observable, gauge, operator, scheme, order]

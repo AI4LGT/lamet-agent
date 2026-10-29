@@ -119,7 +119,7 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
     lines = [
         "# Perturbative Matching Stage Report",
         "",
-        "This stage applies the selected NLO matching kernel sample by sample to convert quasi-distributions "
+        "This stage applies the selected perturbative matching kernel sample by sample to convert quasi-distributions "
         "into light-cone distributions.",
         "",
         "## Job Summary",
@@ -149,12 +149,13 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
             "",
             "| field | meaning |",
             "|---|---|",
-            "| `order` | Explicit perturbative order; currently only `nlo` is supported and it is encoded in the "
-            "kernel filename. |",
+            "| `order` | Explicit perturbative order: `nlo` or the supported fixed-order `nnlo` channel. "
+            "Encoded in the kernel filename. |",
             "| `kernel_id` | Runtime-derived public kernel filename stem built from upstream "
             "renormalization and operator provenance, "
             "`order`, and resummation options. |",
-            "| `resummation` | Empty selects fixed-order NLO; `rgr` derives its `re` or `im` kernel suffix "
+            "| `resummation` | Empty selects fixed-order matching at the requested order; NNLO requires empty. "
+            "`rgr` derives its `re` or `im` kernel suffix "
             "from upstream `source_component`; `lrr` has no component suffix. |",
             "| `mu` | MSbar renormalization/matching scale in GeV. |",
             "| `zs_fm` | Wilson-line switching distance inherited from upstream hybrid renormalization. |",
@@ -253,8 +254,8 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
                 _scheme_text(str(attrs["renormalization_scheme"])),
                 "",
                 "The LO contribution is the identity. The shipped kernel document above is the source of truth "
-                "for the implemented NLO coefficient, plus prescription, support regions, and any RGR or hybrid "
-                "correction.",
+                "for the implemented fixed-order coefficients, plus prescription, support regions, "
+                "and any RGR or hybrid correction.",
                 "",
                 "### Figures",
                 "",
