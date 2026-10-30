@@ -167,14 +167,14 @@ def _lookup_atom_n_states(n_states: Mapping[str, int] | int, atom: str) -> int:
 
 def _plotted_three_point_n_states(n_states: Mapping[str, int] | int) -> int:
     if isinstance(n_states, Mapping):
-        if "3pt_ratio" in n_states:
-            return atom_state_count(n_states, "3pt_ratio")
-        if "self_ratio" in n_states:
-            return atom_state_count(n_states, "self_ratio")
+        if "3pt_over_2pt" in n_states:
+            return atom_state_count(n_states, "3pt_over_2pt")
+        if "3pt_over_3pt" in n_states:
+            return atom_state_count(n_states, "3pt_over_3pt")
         if "3pt" in n_states:
             return atom_state_count(n_states, "3pt")
         raise ValueError("n_states is missing a three-point atom")
-    return _lookup_atom_n_states(n_states, "3pt_ratio")
+    return _lookup_atom_n_states(n_states, "3pt_over_2pt")
 
 
 def matrix_element_fcn(x: Mapping[str, Any], parameters: Mapping[str, Any]) -> np.ndarray:
@@ -200,8 +200,8 @@ def matrix_element_fcn(x: Mapping[str, Any], parameters: Mapping[str, Any]) -> n
                 values.append(
                     _three_point_model(x["ratio_t"], x["ratio_tau"], parameters, atom_n_states, form, component)
                 )
-        elif atom in {"3pt_ratio", "self_ratio"}:
-            denominator_prefix = "D" if atom == "self_ratio" else ""
+        elif atom in {"3pt_over_2pt", "3pt_over_3pt"}:
+            denominator_prefix = "D" if atom == "3pt_over_3pt" else ""
             for component in components:
                 values.append(
                     _ratio_model(
@@ -218,7 +218,7 @@ def matrix_element_fcn(x: Mapping[str, Any], parameters: Mapping[str, Any]) -> n
         elif atom == "qda":
             for component in components:
                 values.append(_qda_correlator(x["qda_t"], parameters, extent, atom_n_states, component))
-        elif atom == "qda_ratio":
+        elif atom == "wf_over_2pt":
             denominator_key = "zprime" if x.get("denominator_kind") == "qda_z0" else None
             denominator = (
                 _qda_correlator(x["qda_t"], parameters, extent, atom_n_states, denominator_key)
@@ -263,20 +263,20 @@ def matrix_element_prior(
     atoms = set(scope.split("+")) if isinstance(scope, str) else set(scope)
     if form not in {"Breit", "NonBreit"} or not atoms:
         raise ValueError("unsupported fitting form or scope")
-    if form == "NonBreit" and atoms - {"2pt", "3pt", "3pt_ratio", "self_ratio"}:
-        raise ValueError("NonBreit fitting supports only 2pt, 3pt, 3pt_ratio, and self_ratio")
+    if form == "NonBreit" and atoms - {"2pt", "3pt", "3pt_over_2pt", "3pt_over_3pt"}:
+        raise ValueError("NonBreit fitting supports only 2pt, 3pt, 3pt_over_2pt, and 3pt_over_3pt")
     counts = {atom: _lookup_atom_n_states(n_states, atom) for atom in atoms}
     prior = gv.BufferDict()
     suffixes = ("",) if form == "Breit" else ("_i", "_f")
     for atom in atoms:
         _add_spectrum_prior(prior, counts[atom], width_scale, suffixes)
-    if atoms & {"3pt", "3pt_ratio", "self_ratio"}:
-        matrix_n_states = max(counts[atom] for atom in atoms if atom in {"3pt", "3pt_ratio", "self_ratio"})
+    if atoms & {"3pt", "3pt_over_2pt", "3pt_over_3pt"}:
+        matrix_n_states = max(counts[atom] for atom in atoms if atom in {"3pt", "3pt_over_2pt", "3pt_over_3pt"})
         if form == "Breit":
             matrix_indices = [(row, column) for row in range(matrix_n_states) for column in range(row, matrix_n_states)]
         else:
             matrix_indices = [(sink, source) for sink in range(matrix_n_states) for source in range(matrix_n_states)]
-        prefixes = ("O", "D") if "self_ratio" in atoms else ("O",)
+        prefixes = ("O", "D") if "3pt_over_3pt" in atoms else ("O",)
         for prefix in prefixes:
             for row, column in matrix_indices:
                 if prefix == "D" and row == 0 and column == 0:
@@ -297,10 +297,10 @@ def matrix_element_prior(
     if denominator_kind == "qda_z0" and "2pt" in atoms:
         for state in range(counts["2pt"]):
             prior.setdefault(f"zprime{state}", gv.gvar(1.0, 10.0 * width_scale) / 3**state)
-    if atoms & {"qda", "qda_ratio"}:
+    if atoms & {"qda", "wf_over_2pt"}:
         if form != "Breit":
             raise ValueError("qDA fitting supports only Breit kinematics")
-        qda_n_states = max(counts[atom] for atom in atoms if atom in {"qda", "qda_ratio"})
+        qda_n_states = max(counts[atom] for atom in atoms if atom in {"qda", "wf_over_2pt"})
         if denominator_kind == "qda_z0":
             for state in range(qda_n_states):
                 prior.setdefault(f"zprime{state}", gv.gvar(1.0, 10.0 * width_scale) / 3**state)
@@ -391,8 +391,8 @@ def _matrix_sample0_plot_payload(
     if posterior is None:
         return None
     plots: list[dict[str, Any]] = []
-    self_ratio = "self_ratio" in fit_scope
-    if fit_scope in {"3pt_ratio", "3pt_ratio+FH", "self_ratio", "self_ratio+FH"}:
+    self_ratio = "3pt_over_3pt" in fit_scope
+    if fit_scope in {"3pt_over_2pt", "3pt_over_2pt+FH", "3pt_over_3pt", "3pt_over_3pt+FH"}:
         source_ratios = self_ratios if self_ratio else ratios
         for component in selected_components:
             series = []
@@ -407,7 +407,7 @@ def _matrix_sample0_plot_payload(
                     ["tau"],
                     {"tau": available_tau[mask].tolist()},
                 ).average(sample_error_mode)
-                # The 3pt_ratio fit uses the periodic two-point denominator.
+                # The 3pt_over_2pt fit uses the periodic two-point denominator.
                 # For the diagnostic figure, restore the legacy forward-
                 # denominator convention so its asymptotic band is directly
                 # comparable with O00/(2 E0). The self-ratio already carries its
@@ -466,7 +466,7 @@ def _matrix_sample0_plot_payload(
                     "plateau_sdev": float(gv.sdev(plateau)),
                 }
             )
-    if fit_scope in {"FH", "3pt_ratio+FH", "self_ratio+FH"}:
+    if fit_scope in {"FH", "3pt_over_2pt+FH", "3pt_over_3pt+FH"}:
         summed = []
         for tsep in tsep_values:
             mask = (available_tau >= tau_min) & (available_tau <= tsep - tau_min)
@@ -563,8 +563,8 @@ def fit_matrix_element_samples(
         raise ValueError("ordinary matrix-element fitting requires a three-point or FH fit_scope")
     if fitting_form not in {"Breit", "NonBreit"}:
         raise ValueError("fitting_form must be Breit or NonBreit")
-    if fitting_form == "NonBreit" and pipeline.atom_set - {"2pt", "3pt", "3pt_ratio", "self_ratio"}:
-        raise ValueError("NonBreit fitting supports only 2pt, 3pt, 3pt_ratio, and self_ratio")
+    if fitting_form == "NonBreit" and pipeline.atom_set - {"2pt", "3pt", "3pt_over_2pt", "3pt_over_3pt"}:
+        raise ValueError("NonBreit fitting supports only 2pt, 3pt, 3pt_over_2pt, and 3pt_over_3pt")
     if "FH" in pipeline.atom_set and atom_state_count(atom_counts, "FH") > 2:
         raise ValueError("FH fitting supports at most two states")
     selected_components = {"real": ("re",), "imag": ("im",), "both": ("re", "im")}.get(components)
@@ -624,10 +624,10 @@ def fit_matrix_element_samples(
     three_values = np.asarray(three_point.values)
     z_values = list(three_point.coords["z"])
     origin_index = None
-    if "self_ratio" in pipeline.atom_set:
+    if "3pt_over_3pt" in pipeline.atom_set:
         origin = np.flatnonzero(np.isclose(np.asarray(z_values, dtype=float), 0.0, rtol=0.0, atol=1e-12))
         if origin.size != 1:
-            raise ValueError("self_ratio fitting requires exactly one z=0 coordinate")
+            raise ValueError("3pt_over_3pt fitting requires exactly one z=0 coordinate")
         origin_index = int(origin[0])
     ratios: dict[int, np.ndarray] = {}
     self_ratios: dict[int, np.ndarray] = {}
@@ -742,9 +742,13 @@ def fit_matrix_element_samples(
                         pieces.append(np.real(initial_values[:, pt2_mask]) * correlator_rescale)
                         if fitting_form == "NonBreit":
                             pieces.append(np.real(final_values[:, pt2_mask]) * correlator_rescale)
-                    elif atom in {"3pt", "3pt_ratio", "self_ratio"}:
+                    elif atom in {"3pt", "3pt_over_2pt", "3pt_over_3pt"}:
                         source_values = (
-                            selected_raw if atom == "3pt" else selected_self if atom == "self_ratio" else selected_ratio
+                            selected_raw
+                            if atom == "3pt"
+                            else selected_self
+                            if atom == "3pt_over_3pt"
+                            else selected_ratio
                         )
                         for component in selected_components:
                             component_parts = [
@@ -846,10 +850,10 @@ def fit_matrix_element_samples(
                 )
                 energy_summary[f"{energy_key}_samples"] = energy_samples
             sample_diagnostics = _sample_diagnostic_records(result) if fit_samples else []
-            ratio_scope = "self_ratio" if origin_index is not None else "3pt_ratio"
+            ratio_scope = "3pt_over_3pt" if origin_index is not None else "3pt_over_2pt"
             plot_scope = (
                 f"{ratio_scope}+FH"
-                if "FH" in pipeline.final_stage and pipeline.atom_set & {"3pt", "3pt_ratio", "self_ratio"}
+                if "FH" in pipeline.final_stage and pipeline.atom_set & {"3pt", "3pt_over_2pt", "3pt_over_3pt"}
                 else "FH"
                 if "FH" in pipeline.final_stage
                 else ratio_scope
@@ -1174,7 +1178,7 @@ def fit_qda_samples(
     pipeline = parse_fit_scope(fit_scope)
     atom_counts = resolve_atom_n_states(n_states, pipeline)
     if not pipeline.is_qda:
-        raise ValueError("qDA fitting requires a qda or qda_ratio atom")
+        raise ValueError("qDA fitting requires a qda or wf_over_2pt atom")
     selected_components = {"real": ("re",), "imag": ("im",), "both": ("re", "im")}.get(components)
     if selected_components is None:
         raise ValueError("components must be real, imag, or both")
@@ -1265,7 +1269,7 @@ def fit_qda_samples(
                 for atom in atoms:
                     if atom == "2pt":
                         pieces.append(np.real(denominator_values[:, selected]) * raw_scale)
-                    elif atom in {"qda", "qda_ratio"}:
+                    elif atom in {"qda", "wf_over_2pt"}:
                         selected_values = (
                             source_values[:, selected, z_index] if atom == "qda" else window_ratios[:, :, z_index]
                         )
@@ -1357,7 +1361,7 @@ def fit_qda_samples(
             sample0_plot = None
             if fit_samples and result.sample_posteriors and result.sample_posteriors[0] is not None:
                 posterior = result.sample_posteriors[0]
-                qda_atom = next(atom for atom in pipeline.atoms if atom in {"qda", "qda_ratio"})
+                qda_atom = next(atom for atom in pipeline.atoms if atom in {"qda", "wf_over_2pt"})
                 final_n_states = atom_counts[qda_atom]
                 fit_t = (
                     np.asarray([float(t[selected][0]) - 0.5, float(t[selected][-1]) + 0.5])
@@ -1510,7 +1514,7 @@ def matrix_element_samples(
     show_progress: bool = False,
     n_states: Mapping[str, int] | int = 1,
     prior_width: float = 1.0,
-    fit_scope: list[str] | tuple[str, ...] = ("qda_ratio",),
+    fit_scope: list[str] | tuple[str, ...] = ("wf_over_2pt",),
     _parallel: _ParallelPool | None = None,
 ) -> tuple[np.ndarray | None, list[float], dict[str, Any]]:
     """Extract ratio/summation-style matrix-element samples from correlators.

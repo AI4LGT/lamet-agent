@@ -16,11 +16,11 @@
       "defaults": {
         "component": "re",
         "fit_scope": [
-          "2pt+3pt_ratio"
+          "2pt+3pt_over_2pt"
         ],
         "nstate": {
           "2pt": [2],
-          "3pt_ratio": [2]
+          "3pt_over_2pt": [2]
         },
         "fitting_form": "Breit",
         "model_average": false,

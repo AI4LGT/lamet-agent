@@ -298,7 +298,7 @@ def write_fit_artifacts(
     scope_atoms = {atom for value in scope_values for atom in str(value).split("+")}
     # The dispersion plot compares fitted ground-state energies across momenta, so
     # it is only meaningful when two-point information enters the likelihood.
-    if scope_atoms & {"2pt", "3pt_ratio", "FH"} and not scope_atoms & {"qda", "qda_ratio"}:
+    if scope_atoms & {"2pt", "3pt_over_2pt", "FH"} and not scope_atoms & {"qda", "wf_over_2pt"}:
         energy_fits = [
             fit
             for fit in fits

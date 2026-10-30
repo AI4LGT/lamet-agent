@@ -16,10 +16,10 @@ points for every authored state count. One-state fits are a constant
 nonlocal/local ratio; multi-state fits describe the same ratio with a periodic
 spectral model, so the window must remain overdetermined for the selected
 `nstate`. In `fit_scope`, list order denotes chained stages and `+` denotes atoms
-fit jointly in one stage: for example, `["qda_ratio"]` fits the ratio directly,
+fit jointly in one stage: for example, `["wf_over_2pt"]` fits the ratio directly,
 `["2pt+qda"]` jointly fits the local two-point and raw qDA correlators, and
 `["2pt", "qda"]` propagates a widened two-point posterior into the raw qDA fit.
-`nstate` is keyed by those atoms (`2pt`, `qda`, `qda_ratio`), never by a joint
+`nstate` is keyed by those atoms (`2pt`, `qda`, `wf_over_2pt`), never by a joint
 `'+'` stage string; a joint `["2pt+qda"]` fit still writes `"2pt"` and `"qda"`
 separately and may give them different state counts.
 Parameters listed under

@@ -1740,8 +1740,10 @@ def test_correlator_contract_rejects_removed_fit_strategy() -> None:
         ["2pt+3pt"],
         ["2pt", "3pt+FH"],
         ["FH"],
-        ["3pt_ratio"],
-        ["qda_ratio"],
+        ["3pt_over_2pt"],
+        ["3pt_over_3pt"],
+        ["2pt+3pt_over_3pt"],
+        ["wf_over_2pt"],
         ["2pt", "qda"],
         ["2pt+qda"],
     ],
@@ -1759,8 +1761,8 @@ def test_correlator_fit_scope_accepts_ordered_joint_and_chained_pipelines(fit_sc
         ["qda", "3pt"],
         ["2pt", "2pt+3pt"],
         ["3pt", "2pt"],
-        ["qda+qda_ratio"],
-        ["3pt", "3pt_ratio"],
+        ["qda+wf_over_2pt"],
+        ["3pt", "3pt_over_2pt"],
         ["2pt++3pt"],
     ],
 )
@@ -1774,12 +1776,12 @@ def test_correlator_fit_scope_rejects_legacy_mixed_and_duplicate_pipelines(fit_s
 def test_nstate_combinations_expand_per_atom_grids() -> None:
     from lamet_agent.stages.correlator_analysis._scope import nstate_combinations
 
-    assert nstate_combinations({"2pt": [1, 2], "3pt_ratio": [1]}, ["2pt+3pt_ratio"]) == [
-        {"2pt": 1, "3pt_ratio": 1},
-        {"2pt": 2, "3pt_ratio": 1},
+    assert nstate_combinations({"2pt": [1, 2], "3pt_over_2pt": [1]}, ["2pt+3pt_over_2pt"]) == [
+        {"2pt": 1, "3pt_over_2pt": 1},
+        {"2pt": 2, "3pt_over_2pt": 1},
     ]
     with pytest.raises(ValueError, match="individual correlator atoms"):
-        nstate_combinations({"2pt+3pt_ratio": [2]}, ["2pt+3pt_ratio"])
+        nstate_combinations({"2pt+3pt_over_2pt": [2]}, ["2pt+3pt_over_2pt"])
 
 
 def test_manifest_enforces_global_sampling_relationships(tmp_path: Path) -> None:
@@ -2074,7 +2076,7 @@ def test_correlator_contract_keeps_lanczos_and_ground_fit_parameters_exclusive()
 
 
 @pytest.mark.parametrize("state_counts", [[2], [1, 2]])
-@pytest.mark.parametrize("fit_scope", [["qda_ratio"], ["2pt", "qda"], ["2pt+qda"]])
+@pytest.mark.parametrize("fit_scope", [["wf_over_2pt"], ["2pt", "qda"], ["2pt+qda"]])
 def test_correlator_contract_allows_qda_candidate_grid(state_counts: list[int], fit_scope: list[str]) -> None:
     from lamet_agent.stages.correlator_analysis._scope import parse_fit_scope
 
@@ -2108,7 +2110,7 @@ def test_correlator_contract_requires_nstate_keys_to_match_fit_scope() -> None:
     params = {
         "analysis_method": "lsqfit",
         "component": "re",
-        "fit_scope": ["2pt", "3pt_ratio"],
+        "fit_scope": ["2pt", "3pt_over_2pt"],
         "nstate": {"2pt": [2]},
         "fitting_form": "Breit",
         "model_average": False,
@@ -2128,8 +2130,8 @@ def test_correlator_contract_rejects_joint_nstate_keys() -> None:
     params = {
         "analysis_method": "lsqfit",
         "component": "re",
-        "fit_scope": ["2pt+3pt_ratio"],
-        "nstate": {"2pt+3pt_ratio": [2]},
+        "fit_scope": ["2pt+3pt_over_2pt"],
+        "nstate": {"2pt+3pt_over_2pt": [2]},
         "fitting_form": "Breit",
         "model_average": False,
         "pt2_windows": [{"tmin": 3, "tmax": 8}],
@@ -2147,8 +2149,8 @@ def test_correlator_contract_allows_unequal_atom_nstates() -> None:
     params = {
         "analysis_method": "lsqfit",
         "component": "re",
-        "fit_scope": ["2pt+3pt_ratio"],
-        "nstate": {"2pt": [2], "3pt_ratio": [1]},
+        "fit_scope": ["2pt+3pt_over_2pt"],
+        "nstate": {"2pt": [2], "3pt_over_2pt": [1]},
         "fitting_form": "Breit",
         "model_average": False,
         "pt2_windows": [{"tmin": 3, "tmax": 8}],
@@ -2771,7 +2773,7 @@ def test_correlator_workflow_asks_only_for_typed_fit_parameters(tmp_path: Path, 
         "correlator",
         {
             "analysis_method": "lsqfit",
-            "fit_scope": ["qda_ratio"],
+            "fit_scope": ["wf_over_2pt"],
             "component": "re",
             "pt2_windows": [{"tmin": 2, "tmax": 8}],
             "q_min": 0.05,
@@ -2883,8 +2885,8 @@ def test_joint_qda_null_hook_and_tune_z_share_one_recommendation(tmp_path: Path)
         "correlator",
         {
             "component": "re",
-            "fit_scope": ["qda_ratio"],
-            "nstate": {"qda_ratio": [1]},
+            "fit_scope": ["wf_over_2pt"],
+            "nstate": {"wf_over_2pt": [1]},
         },
         {},
         {},
@@ -3131,7 +3133,7 @@ def test_correlator_workflow_recommends_once_more_after_low_quality(tmp_path: Pa
         context.state["matrix_element_candidates"] = [
             {
                 "id": f"matrix_{len(attempts):03d}",
-                "fit_scope": ["qda_ratio"],
+                "fit_scope": ["wf_over_2pt"],
                 "window": {"tmin": 2, "tmax": 8, "tau_min": None},
                 "nstate": 1,
                 "prior_width": 1.0,
@@ -3159,7 +3161,7 @@ def test_correlator_workflow_recommends_once_more_after_low_quality(tmp_path: Pa
         "correlator",
         {
             "analysis_method": "lsqfit",
-            "fit_scope": ["qda_ratio"],
+            "fit_scope": ["wf_over_2pt"],
             "q_min": 0.05,
             "pt2_windows": [{"tmin": 2, "tmax": 8}],
         },
@@ -3208,7 +3210,7 @@ def test_correlator_workflow_publishes_best_candidate_when_q_min_is_never_met(
         context.state["matrix_element_candidates"] = [
             {
                 "id": "matrix_001",
-                "fit_scope": ["qda_ratio"],
+                "fit_scope": ["wf_over_2pt"],
                 "window": {"tmin": 2, "tmax": 8, "tau_min": None},
                 "nstate": 1,
                 "prior_width": 1.0,
@@ -3233,7 +3235,7 @@ def test_correlator_workflow_publishes_best_candidate_when_q_min_is_never_met(
         "correlator",
         {
             "analysis_method": "lsqfit",
-            "fit_scope": ["qda_ratio"],
+            "fit_scope": ["wf_over_2pt"],
             "q_min": 0.05,
             "pt2_windows": [{"tmin": 2, "tmax": 8}],
         },
@@ -3447,7 +3449,7 @@ def test_matrix_retry_uses_the_same_cross_scan_selector_as_publication(tmp_path:
         "matrix",
         {
             "analysis_method": "lsqfit",
-            "fit_scope": ["3pt_ratio"],
+            "fit_scope": ["3pt_over_2pt"],
             "q_min": 0.05,
             "pt2_windows": [{"tmin": 2, "tmax": 8}],
             "pt3_windows": [{"tau_cut": 1}],
@@ -3504,7 +3506,7 @@ def test_qda_retry_treats_invalid_recommendations_as_failed_attempts(
         context.state["matrix_element_candidates"] = [
             {
                 "id": "matrix_001",
-                "fit_scope": ["qda_ratio"],
+                "fit_scope": ["wf_over_2pt"],
                 "window": {"tmin": 2, "tmax": 8, "tau_min": None},
                 "nstate": 1,
                 "prior_width": 1.0,
@@ -3530,7 +3532,7 @@ def test_qda_retry_treats_invalid_recommendations_as_failed_attempts(
         "correlator",
         {
             "analysis_method": "lsqfit",
-            "fit_scope": ["qda_ratio"],
+            "fit_scope": ["wf_over_2pt"],
             "q_min": 0.05,
             "pt2_windows": [{"tmin": 2, "tmax": 8}],
         },

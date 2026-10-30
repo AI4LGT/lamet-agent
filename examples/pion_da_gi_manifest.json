@@ -17,10 +17,10 @@
       "defaults": {
         "component": "both",
         "fit_scope": [
-          "qda_ratio"
+          "wf_over_2pt"
         ],
         "nstate": {
-          "qda_ratio": [1]
+          "wf_over_2pt": [1]
         },
         "fitting_form": "Breit",
         "model_average": false,
