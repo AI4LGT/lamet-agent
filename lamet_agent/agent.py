@@ -42,7 +42,7 @@ _MAX_ASSISTANT_TURNS = 40
 _LLM_TRANSCRIPT_FILENAME = "llm_transcript.md"
 _SAFE_TOOL = re.compile(r"^[a-z][a-z0-9_]*$")
 _WORKFLOW_STAGES = frozenset(
-    {"correlator_analysis", "renormalization", "fourier_transform", "perturbative_matching", "extrapolation"}
+    {"correlator_analysis", "renormalization", "fourier_transform", "matching", "extrapolation"}
 )
 
 
@@ -131,7 +131,7 @@ _FIT_QUALITY_KEYS = ("Q", "chi2", "dof", "chi2_dof", "aic", "logGBF")
 
 def _review_fit_quality(stage_id: str, summary: Mapping[str, Any]) -> dict[str, Any]:
     """Return normalized selected-fit quality without sample-level diagnostics."""
-    if stage_id == "perturbative_matching":
+    if stage_id == "matching":
         return {"status": "not_applicable"}
     diagnostics = summary.get("diagnostics")
     if not isinstance(diagnostics, Mapping):

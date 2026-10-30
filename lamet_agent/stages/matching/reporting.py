@@ -1,4 +1,4 @@
-"""Stage-level perturbative-matching reporting."""
+"""Stage-level matching reporting."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import numpy as np
 
 from lamet_agent.data import EnsembleData
 from lamet_agent.kernels import load_kernel_document
-from lamet_agent.stages.perturbative_matching.physics import is_even_about_zero, select_output_component
+from lamet_agent.stages.matching.physics import is_even_about_zero, select_output_component
 from lamet_agent.stages._reporting import (
     StageReportRecord,
     artifact_rows,
@@ -117,7 +117,7 @@ def _has_interior_gap(data: EnsembleData) -> bool:
 def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_directory: Path) -> Path:
     kernel_ids = list(dict.fromkeys(_record_kernel_id(record) for record in records))
     lines = [
-        "# Perturbative Matching Stage Report",
+        "# Matching Stage Report",
         "",
         "This stage applies the selected NLO matching kernel sample by sample to convert quasi-distributions "
         "into light-cone distributions.",

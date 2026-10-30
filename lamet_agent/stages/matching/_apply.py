@@ -17,7 +17,7 @@ from lamet_agent.plotting import (
     series_color,
     start_plot,
 )
-from lamet_agent.stages.perturbative_matching.physics import apply_matrix, is_even_about_zero, select_output_component
+from lamet_agent.stages.matching.physics import apply_matrix, is_even_about_zero, select_output_component
 
 
 def _one(value):

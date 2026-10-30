@@ -170,11 +170,19 @@ manifest 包含运行元数据以及按顺序排列的 stage job 列表映射。
 1. `correlator_analysis`
 2. `renormalization`
 3. `fourier_transform`
-4. `perturbative_matching`
+4. `matching`
 5. `extrapolation`
 6. `review`
 
 部分工作流可以省略不需要的 stages。`stages` 下各键的顺序就是执行顺序；不存在单独的 `metadata.stages` 列表。
+
+Matching 的 Python 包、manifest 和 systematics key，以及新运行的产物目录均使用 `matching`。
+已有 manifest 需要将 `perturbative_matching` 改为 `matching`；旧标识不再受支持。
+
+Soft Analysis 是可选占位 stage。可在 `stages` 下添加 `"soft_analysis": {"jobs": []}`，
+预留一个位置，不执行任务、不调用模型，也不生成该 stage 的产物。数值实现待定，非空 jobs
+会在校验阶段被拒绝。其他 stages 仍要求非空 jobs。仅含此占位的 manifest 可通过校验，
+但运行时会提示 `manifest has no jobs`。
 
 架构、文件所有权和贡献者工作流记录在 [`DEVELOPMENT.md`](DEVELOPMENT.md) 中。
 

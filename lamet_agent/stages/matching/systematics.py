@@ -30,7 +30,7 @@ def expand(document: dict[str, Any], config: dict[str, Any], state: dict[str, An
     if len(set(labels)) != len(labels):
         raise ValueError("Fourier-propagated and matching scale ids must be disjoint")
 
-    block = document["stages"]["perturbative_matching"]
+    block = document["stages"]["matching"]
     defaults = block.get("defaults", {})
     central = list(block["jobs"])
     suffixes = tuple(f"_{label}" for label in labels)
