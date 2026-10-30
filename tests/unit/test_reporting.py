@@ -15,7 +15,7 @@ _TEST_ENSEMBLE = EnsembleInfo("test", "a06", 0.06, 0.06, 64, 128, 0.13)
 def test_correlator_report_labels_render_joint_and_chained_scopes() -> None:
     from lamet_agent.stages.correlator_analysis.reporting import _method_name
 
-    assert _method_name("lsqfit", ["qda_ratio"]) == "qDA nonlocal/local ratio fit"
+    assert _method_name("lsqfit", ["wf_over_2pt"]) == "qDA nonlocal/local ratio fit"
     assert _method_name("lsqfit", ["2pt+qda"]) == "2pt spectrum + raw qDA correlator fit"
     assert _method_name("lsqfit", ["2pt", "qda"]) == "2pt spectrum → raw qDA correlator fit"
 
@@ -241,7 +241,7 @@ def test_correlator_report_renders_only_the_authored_kinematic_formula(tmp_path:
         params = {
             **_correlator_lsqfit_params(),
             "fitting_form": form,
-            "fit_scope": ["2pt+3pt_ratio"],
+            "fit_scope": ["2pt+3pt_over_2pt"],
         }
         summary = {
             "result": "bare_matrix_element",
@@ -326,7 +326,7 @@ def test_correlator_report_limits_job_figures_to_first_middle_and_last_z(tmp_pat
 
     artifacts = ["output.nc"]
     for z_value in (1, 2, 3, 4):
-        artifacts.append(f"fit_logs/plots/ca_joint_3pt_ratio_z{z_value}_sample0_pt3_ratio_re.pdf")
+        artifacts.append(f"fit_logs/plots/ca_joint_3pt_over_2pt_z{z_value}_sample0_pt3_ratio_re.pdf")
     summary = {
         "result": "bare_matrix_element",
         "decisions": {"method": "lsqfit"},

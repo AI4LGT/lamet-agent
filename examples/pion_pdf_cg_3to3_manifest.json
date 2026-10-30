@@ -16,10 +16,10 @@
       "defaults": {
         "component": "both",
         "fit_scope": [
-          "self_ratio"
+          "3pt_over_3pt"
         ],
         "nstate": {
-          "self_ratio": [2]
+          "3pt_over_3pt": [2]
         },
         "fitting_form": "Breit",
         "model_average": true,

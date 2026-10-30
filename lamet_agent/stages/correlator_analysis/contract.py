@@ -88,7 +88,7 @@ PARAM_RULES = (
     Depends("lsqfit", "nstate", physics="Each correlator atom in fit_scope needs its own candidate state-count list so joint or chained stages can assign different truncations to different correlators."),
     Depends("lanczos", "nstate", physics="Lanczos uses one authored exported Ritz-state count and infers its internal order."),
     List("lsqfit.fit_scope", "scope", physics="The ordered entries form chained fit stages; atoms joined with '+' inside one entry share a correlated joint likelihood.", validator=_nonempty),
-    Value("lsqfit.fit_scope.scope", str, physics="Each list entry is one joint fit stage whose atoms are separated by '+'. List order denotes chained posterior propagation. Supported atoms are 2pt, 3pt, qda, FH, 3pt_ratio, self_ratio, and qda_ratio; a self_ratio scope uses the likelihood C3(z,Pz,t,tau)/C3(0,Pz,t,tau) and publishes h_B(z)/h_B(0).", validator=valid_scope_stage),
+    Value("lsqfit.fit_scope.scope", str, physics="Each list entry is one joint fit stage whose atoms are separated by '+'. List order denotes chained posterior propagation. Supported atoms are 2pt, 3pt, qda, FH, 3pt_over_2pt, 3pt_over_3pt, and wf_over_2pt; a 3pt_over_3pt scope uses the likelihood C3(z,Pz,t,tau)/C3(0,Pz,t,tau) and publishes h_B(z)/h_B(0).", validator=valid_scope_stage),
     Depends("lsqfit", "fitting_form", physics="The matrix-element model needs a forward or non-forward spectral decomposition selected by the kinematics."),
     Recommends("lsqfit", "prior_width", physics="A default prior scale is needed to set the uncertainty of underconstrained spectral and matrix-element parameters; the default is deliberately loose, and a self-ratio scope with no two-point block leaves the excited-state sector and the overall overlap scale weakly constrained.", default=[1.0]),
     Depends("lsqfit", "model_average", physics="At a fixed data window and fit-scope pipeline, false publishes the selected nstate/prior-width model; true forms per-resample, per-z logGBF-weighted means over those models."),
@@ -97,7 +97,7 @@ PARAM_RULES = (
     Recommends("lsqfit", "svdcut", physics="Correlated fits need a relative covariance singular-value cutoff to suppress numerically unresolved directions.", default=1e-12),
     Depends("lsqfit", "posterior_prior_error_scale", physics="The fit needs a scale for propagating prior uncertainty; chained fits also use it to widen the preceding spectrum posterior."),
     Depends("lsqfit", "q_min", physics="Candidate comparison needs a preferred fit-quality probability; after recommendation retries are exhausted, selection falls back across all retained numerical candidates."),
-    Value("lsqfit.nstate", dict, physics="A mapping from each correlator atom in fit_scope to the positive state counts scanned for that correlator. Keys must be atoms such as 2pt, 3pt_ratio, or self_ratio, never a joint '+' stage string.", validator=_valid_nstate_map),
+    Value("lsqfit.nstate", dict, physics="A mapping from each correlator atom in fit_scope to the positive state counts scanned for that correlator. Keys must be atoms such as 2pt, 3pt_over_2pt, or 3pt_over_3pt, never a joint '+' stage string.", validator=_valid_nstate_map),
     List("lanczos.nstate", "state_count", physics="Lanczos exports one authored Ritz-state count.", validator=_nonempty),
     List("lsqfit.prior_width", "width", physics="Multiple prior widths let the candidate scan test prior sensitivity.", validator=_nonempty),
     List("lsqfit.pt2_windows", "window", physics="Multiple two-point windows let the candidate scan test fit-range stability.", validator=_nonempty),
@@ -157,7 +157,7 @@ def check_method_family(context: CheckContext) -> Issue | None:
         return Issue(
             "nstate",
             "keys must match the correlator atoms in fit_scope",
-            "Each atom such as 2pt or 3pt_ratio needs its own nstate list; joint stage strings are not keys.",
+            "Each atom such as 2pt or 3pt_over_2pt needs its own nstate list; joint stage strings are not keys.",
         )
     return None
 
@@ -176,13 +176,13 @@ def check_lsqfit_windows(context: CheckContext) -> Issue | None:
             "is required for three-point, self-ratio, and FH fit scopes",
             "The matrix-element fitter needs authored source-sink and insertion-time candidates.",
         )
-    nonbreit_atoms = scope.atom_set & {"3pt", "3pt_ratio", "self_ratio"}
+    nonbreit_atoms = scope.atom_set & {"3pt", "3pt_over_2pt", "3pt_over_3pt"}
     if lsqfit["fitting_form"] == "NonBreit" and (
-        not nonbreit_atoms or scope.atom_set - {"2pt", "3pt", "3pt_ratio", "self_ratio"}
+        not nonbreit_atoms or scope.atom_set - {"2pt", "3pt", "3pt_over_2pt", "3pt_over_3pt"}
     ):
         return Issue(
             "fit_scope",
-            "NonBreit requires a raw 3pt, 3pt_ratio, or self_ratio path and permits only an accompanying 2pt atom",
+            "NonBreit requires a raw 3pt, 3pt_over_2pt, or 3pt_over_3pt path and permits only an accompanying 2pt atom",
             "qDA and FH models currently use the forward spectral decomposition.",
         )
     for index, window in enumerate(lsqfit.get("pt2_windows") or []):

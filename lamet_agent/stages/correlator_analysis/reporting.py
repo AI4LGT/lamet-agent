@@ -30,17 +30,17 @@ C_3(t,\tau,z)=\sum_{m,n}
 e^{-E_m(t-\tau)}e^{-E_n\tau}.
 $$
 
-An explicit `3pt_ratio` scope instead uses $R=C_3/C_2$ as its likelihood;
+An explicit `3pt_over_2pt` scope instead uses $R=C_3/C_2$ as its likelihood;
 raw `3pt` scopes use $C_3$ itself. Both paths retain ratio diagnostics.
 The published Breit matrix element is $O_{00}(z)/(2E_0)$ for raw `3pt`,
-`3pt_ratio`, and Feynman--Hellmann scopes.
+`3pt_over_2pt`, and Feynman--Hellmann scopes.
 Candidate quality is evaluated at the tool-selected tuning z values; the
 chosen window and model are held fixed for the full-z sample fits.
 """.strip()
 
 
 _SELF_RATIO_METHOD = r"""
-A `self_ratio` scope divides every three-point slice by the real $z=0$ slice, so
+A `3pt_over_3pt` scope divides every three-point slice by the real $z=0$ slice, so
 its likelihood is $R_{\rm self}(t,\tau,z)=C_3(t,\tau,z)/C_3(t,\tau,0)$ and no
 two-point denominator enters. The local $z=0$ three-point function is real, so
 the same real block $D_{mn}$, whose ground state is normalized to one, divides
@@ -60,7 +60,7 @@ R_{\rm NB}(t,\tau,z)=\frac{C_3^{f\leftarrow i}(t,\tau,z)}{C_2^f(t)}
 {C_2^f(t-\tau)C_2^i(\tau)C_2^i(t)}\right]^{1/2},
 $$
 
-and for raw `3pt` and `3pt_ratio` scopes
+and for raw `3pt` and `3pt_over_2pt` scopes
 
 $$
 h_{\rm NB}(z)=\operatorname{sign}(z_{0,i}z_{0,f})
@@ -75,7 +75,7 @@ When a unique momentum- and resampling-compatible `two_point` input is selected,
 it supplies the denominator and the published matrix element is $O_{00}/z_0$.
 Otherwise the qDA $z=0$ slice supplies an independent local overlap $z'_0$ and
 the published matrix element is $O_{00}/z'_0$. Raw `qda` scopes fit the raw
-nonlocal correlator; explicit `qda_ratio` scopes fit the derived ratio. Both
+nonlocal correlator; explicit `wf_over_2pt` scopes fit the derived ratio. Both
 paths retain ratio diagnostics. A `+` joins likelihoods in one correlated fit,
 while successive list entries propagate widened posteriors.
 The selected time window is applied to every production sample.
@@ -107,10 +107,10 @@ def _atom_name(scope: object) -> str:
         "2pt": "2pt spectrum",
         "3pt": "raw 3pt correlator",
         "qda": "raw qDA correlator",
-        "3pt_ratio": "3pt ratio",
-        "self_ratio": "3pt self ratio",
+        "3pt_over_2pt": "3pt ratio",
+        "3pt_over_3pt": "3pt self ratio",
         "FH": "Feynman--Hellmann",
-        "qda_ratio": "qDA nonlocal/local ratio",
+        "wf_over_2pt": "qDA nonlocal/local ratio",
         "2pt_spectrum": "2pt spectrum",
         "3pt_matrix": "3pt matrix element",
     }.get(str(scope), str(scope))
@@ -210,11 +210,11 @@ def _method_lines(records: tuple[StageReportRecord, ...]) -> list[str]:
         lines.extend([_BREIT_METHOD, ""])
     if "NonBreit" in forms:
         lines.extend([_NONBREIT_METHOD, ""])
-    if scopes & {"qda", "qda_ratio"}:
+    if scopes & {"qda", "wf_over_2pt"}:
         lines.extend([_QDA_METHOD, ""])
     if "FH" in scopes:
         lines.extend([_FH_METHOD, ""])
-    if "self_ratio" in scopes:
+    if "3pt_over_3pt" in scopes:
         lines.extend([_SELF_RATIO_METHOD, ""])
     if lsq_records:
         lines.append(

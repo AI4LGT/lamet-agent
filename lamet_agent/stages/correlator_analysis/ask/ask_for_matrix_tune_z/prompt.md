@@ -10,12 +10,12 @@ while larger separations are usually noisier.
 Return exactly the fields named by `requested_fields`. Choose 3–5 representative
 available z coordinates as `tune_z_values`: include the smallest or most trusted
 z, one mid-range z, and the largest z when the grid is wide. Do not enumerate the
-full z grid. A `self_ratio` scope divides `C3(z)` by its own `z=0` slice, so
+full z grid. A `3pt_over_3pt` scope divides `C3(z)` by its own `z=0` slice, so
 never choose `z=0` as a tuning coordinate there. When requested, choose stable
 half-open `pt2_windows` and compatible `pt3_windows`. Every three-point window
 contains `tsep_ls` and a nonnegative `tau_cut`; retain enough insertion-time
 support after the endpoint cut and obey `2*tau_cut <= tsep`. `nstate` is keyed by
-individual correlator atoms such as `2pt`, `3pt_ratio`, and `self_ratio`, never
+individual correlator atoms such as `2pt`, `3pt_over_2pt`, and `3pt_over_3pt`, never
 by a joint `'+'` stage string; atoms in one joint likelihood may use different
 state counts. Parameters listed under `fixed_parameters` are user-authored for
 the initial attempt and must not be changed.

@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from itertools import product
 
 
-FIT_SCOPE_ORDER = ("2pt", "3pt", "qda", "FH", "3pt_ratio", "self_ratio", "qda_ratio")
+FIT_SCOPE_ORDER = ("2pt", "3pt", "qda", "FH", "3pt_over_2pt", "3pt_over_3pt", "wf_over_2pt")
 FIT_SCOPE_ATOMS = frozenset(FIT_SCOPE_ORDER)
-QDA_ATOMS = frozenset({"qda", "qda_ratio"})
-ORDINARY_ATOMS = frozenset({"3pt", "3pt_ratio", "self_ratio", "FH"})
+QDA_ATOMS = frozenset({"qda", "wf_over_2pt"})
+ORDINARY_ATOMS = frozenset({"3pt", "3pt_over_2pt", "3pt_over_3pt", "FH"})
 
 
 @dataclass(frozen=True)
@@ -89,9 +89,9 @@ def parse_fit_scope(values: Sequence[str] | Iterable[str]) -> FitScope:
     atom_set = set(atoms)
     if atom_set & QDA_ATOMS and atom_set & ORDINARY_ATOMS:
         raise ValueError("qDA and three-point/FH fit scopes cannot be mixed")
-    if {"qda", "qda_ratio"}.issubset(atom_set):
-        raise ValueError("raw qda and qda_ratio cannot be fitted in the same pipeline")
-    if len(atom_set & {"3pt", "3pt_ratio", "self_ratio"}) > 1:
+    if {"qda", "wf_over_2pt"}.issubset(atom_set):
+        raise ValueError("raw qda and wf_over_2pt cannot be fitted in the same pipeline")
+    if len(atom_set & {"3pt", "3pt_over_2pt", "3pt_over_3pt"}) > 1:
         raise ValueError("raw 3pt and the three-point ratios cannot be fitted in the same pipeline")
     if atom_set == {"2pt"} and stages != (("2pt",),):
         raise ValueError("a 2pt-only fit_scope must be exactly ['2pt']")

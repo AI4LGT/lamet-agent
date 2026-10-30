@@ -120,7 +120,7 @@ def test_raw_correlator_fcns_match_lametlat_reference_formulas() -> None:
         {
             **common,
             "form": "Breit",
-            "atoms": ("3pt_ratio",),
+            "atoms": ("3pt_over_2pt",),
             "components": ("re",),
             "ratio_t": times,
             "ratio_tau": insertions,
@@ -657,7 +657,7 @@ def test_qda_rejects_multiple_or_incompatible_explicit_two_point_inputs() -> Non
 
 @pytest.mark.parametrize(
     ("fit_scope", "expected_n_data"),
-    [(["2pt+qda_ratio"], 15), (["2pt", "qda_ratio"], 10)],
+    [(["2pt+wf_over_2pt"], 15), (["2pt", "wf_over_2pt"], 10)],
 )
 @pytest.mark.parametrize("ratio_states", [1, 2])
 def test_qda_scope_pipeline_uses_local_denominator(
@@ -695,7 +695,7 @@ def test_qda_scope_pipeline_uses_local_denominator(
         tune_z=1.0,
         fit_samples=False,
         fit_scope=fit_scope,
-        n_states={"2pt": 1, "qda_ratio": ratio_states},
+        n_states={"2pt": 1, "wf_over_2pt": ratio_states},
     )
 
     assert values is None
@@ -757,7 +757,7 @@ def test_matrix_and_qda_fits_keep_same_ensemble_off_diagonal_covariance(monkeypa
             ),
         },
         fitting_form="Breit",
-        fit_scope=["2pt+3pt_ratio"],
+        fit_scope=["2pt+3pt_over_2pt"],
         components="real",
         tmin=3,
         tmax=8,
@@ -845,8 +845,8 @@ def test_correlator_publish_requires_complete_scan_and_deterministic_best_candid
         {
             "id": "matrix_001",
             "method": "lsqfit",
-            "fit_scope": ["qda_ratio"],
-            "nstate": {"qda_ratio": 1},
+            "fit_scope": ["wf_over_2pt"],
+            "nstate": {"wf_over_2pt": 1},
             "prior_width": 1.0,
             "observable": "matrix_element",
             "window": {"tmin": 2, "tmax": 5, "tau_min": None},
@@ -863,8 +863,8 @@ def test_correlator_publish_requires_complete_scan_and_deterministic_best_candid
         {
             "id": "matrix_002",
             "method": "lsqfit",
-            "fit_scope": ["qda_ratio"],
-            "nstate": {"qda_ratio": 1},
+            "fit_scope": ["wf_over_2pt"],
+            "nstate": {"wf_over_2pt": 1},
             "prior_width": 1.0,
             "observable": "matrix_element",
             "window": {"tmin": 3, "tmax": 6, "tau_min": None},
@@ -882,8 +882,8 @@ def test_correlator_publish_requires_complete_scan_and_deterministic_best_candid
     params = {
         "observable": "matrix_element",
         "analysis_method": "lsqfit",
-        "fit_scope": ["qda_ratio"],
-        "nstate": {"qda_ratio": [1]},
+        "fit_scope": ["wf_over_2pt"],
+        "nstate": {"wf_over_2pt": [1]},
         "prior_width": [1.0],
         "q_min": 0.9,
         "tune_z_values": [1],
@@ -972,7 +972,7 @@ def test_correlator_dataset_key_groups_nstate_and_prior_on_one_window() -> None:
 
     shared = {
         "method": "lsqfit",
-        "fit_scope": ["3pt_ratio"],
+        "fit_scope": ["3pt_over_2pt"],
         "window": {"tmin": 3, "tmax": 8, "tau_min": 2},
         "tsep_values": [8],
     }
@@ -991,7 +991,7 @@ def test_correlator_dataset_key_groups_nstate_and_prior_on_one_window() -> None:
         "nstate": 1,
         "prior_width": 1.0,
         **shared,
-        "fit_scope": ["3pt_ratio"],
+        "fit_scope": ["3pt_over_2pt"],
     }
     grouped = models_on_dataset([anchor, same_dataset, other_window, other_scope], anchor)
     assert [candidate["id"] for candidate in grouped] == ["matrix_001", "matrix_002"]
@@ -1068,7 +1068,7 @@ def test_combine_matrix_samples_weights_per_sample_and_skips_failed_siblings() -
 
 
 def test_matrix_element_prior_keeps_original_inactive_component_parameters() -> None:
-    prior = matrix_element_prior(2, form="Breit", scope="3pt_ratio", components=("re",), width_scale=1.0)
+    prior = matrix_element_prior(2, form="Breit", scope="3pt_over_2pt", components=("re",), width_scale=1.0)
     assert "O00_im" in prior and "O01_im" in prior and "O11_im" in prior
     assert float(prior["O00_im"].mean) == 1.0
     assert "log(E0)" in prior
@@ -1077,9 +1077,9 @@ def test_matrix_element_prior_keeps_original_inactive_component_parameters() -> 
 
 def test_matrix_element_prior_unions_per_atom_state_counts() -> None:
     two_plus_one = matrix_element_prior(
-        {"2pt": 2, "3pt_ratio": 1},
+        {"2pt": 2, "3pt_over_2pt": 1},
         form="Breit",
-        scope=("2pt", "3pt_ratio"),
+        scope=("2pt", "3pt_over_2pt"),
         components=("re",),
         width_scale=1.0,
     )
@@ -1088,9 +1088,9 @@ def test_matrix_element_prior_unions_per_atom_state_counts() -> None:
     assert "O01_re" not in two_plus_one and "O11_re" not in two_plus_one
 
     one_plus_two = matrix_element_prior(
-        {"2pt": 1, "3pt_ratio": 2},
+        {"2pt": 1, "3pt_over_2pt": 2},
         form="Breit",
-        scope=("2pt", "3pt_ratio"),
+        scope=("2pt", "3pt_over_2pt"),
         components=("re",),
         width_scale=1.0,
     )
@@ -1205,7 +1205,7 @@ def test_matrix_fit_tool_records_a_numerically_rejected_candidate(monkeypatch, t
     )
     settings = {
         "fitting_form": "Breit",
-        "fit_scope": ["3pt_ratio"],
+        "fit_scope": ["3pt_over_2pt"],
         "pt2_windows": [{"tmin": 3, "tmax": 8}, {"tmin": 4, "tmax": 8}],
         "pt3_windows": [{"tsep_ls": [8], "tau_cut": 2}],
         "svdcut": 1e-6,
@@ -1241,7 +1241,7 @@ def test_matrix_fit_tool_records_a_numerically_rejected_candidate(monkeypatch, t
             raise FitNumericalError("sample-average fit failed: ZeroDivisionError: float division")
         return None, {
             "tune_z": kwargs["tune_z"],
-            "fit_scope": ["3pt_ratio"],
+            "fit_scope": ["3pt_over_2pt"],
             "Q": 0.8,
             "chi2": 8.0,
             "dof": 10,
@@ -1276,7 +1276,7 @@ def test_matrix_fit_tool_scans_authored_grid_in_reference_order(monkeypatch, tmp
     )
     settings = {
         "fitting_form": "Breit",
-        "fit_scope": ["3pt_ratio"],
+        "fit_scope": ["3pt_over_2pt"],
         "pt2_windows": [{"tmin": 3, "tmax": 8}, {"tmin": 4, "tmax": 8}],
         "pt3_windows": [
             {"tsep_ls": [8], "tau_cut": 2},
@@ -1315,7 +1315,7 @@ def test_matrix_fit_tool_scans_authored_grid_in_reference_order(monkeypatch, tmp
         calls.append((kwargs["tmin"], kwargs["tau_min"], kwargs["tune_z"]))
         return None, {
             "tune_z": kwargs["tune_z"],
-            "fit_scope": ["3pt_ratio"],
+            "fit_scope": ["3pt_over_2pt"],
             "Q": 0.8,
             "chi2": 8.0,
             "dof": 10,
@@ -1355,7 +1355,7 @@ def test_qda_fit_tool_tunes_every_window_before_full_application(monkeypatch, tm
         attrs={"correlator_type": "qda"},
     )
     settings = {
-        "fit_scope": ["qda_ratio"],
+        "fit_scope": ["wf_over_2pt"],
         "pt2_windows": [{"tmin": 2, "tmax": 6}, {"tmin": 2, "tmax": 7}],
         "prior_width": [1.0],
         "posterior_prior_error_scale": 3.0,
@@ -1404,10 +1404,10 @@ def test_qda_fit_tool_tunes_every_window_before_full_application(monkeypatch, tm
     observation = tool.run(context, tune_z_values=[1, 2])
 
     assert calls == [
-        (["qda_ratio"], 2, 6, 1.0),
-        (["qda_ratio"], 2, 6, 2.0),
-        (["qda_ratio"], 2, 7, 1.0),
-        (["qda_ratio"], 2, 7, 2.0),
+        (["wf_over_2pt"], 2, 6, 1.0),
+        (["wf_over_2pt"], 2, 6, 2.0),
+        (["wf_over_2pt"], 2, 7, 1.0),
+        (["wf_over_2pt"], 2, 7, 2.0),
     ]
     assert observation["metrics"]["candidate_count"] == 2
     assert observation["metrics"]["recommended_candidate_id"] == "matrix_002"
@@ -1429,11 +1429,11 @@ def test_publish_applies_only_the_selected_tuned_candidate_to_all_samples(monkey
     candidate = {
         "id": "matrix_001",
         "method": "lsqfit",
-        "fit_scope": ["3pt_ratio"],
+        "fit_scope": ["3pt_over_2pt"],
         "observable": "matrix_element",
         "window": {"tmin": 3, "tmax": 8, "tau_min": 2},
         "tsep_values": [8],
-        "nstate": {"3pt_ratio": 2},
+        "nstate": {"3pt_over_2pt": 2},
         "prior_width": 1.0,
         "correlator_rescale": 1.0,
         "quality_passed": True,
@@ -1447,7 +1447,7 @@ def test_publish_applies_only_the_selected_tuned_candidate_to_all_samples(monkey
     }
     settings = {
         "fitting_form": "Breit",
-        "fit_scope": ["3pt_ratio"],
+        "fit_scope": ["3pt_over_2pt"],
         "pt2_windows": [{"tmin": 3, "tmax": 8}],
         "pt3_windows": [{"tsep_ls": [8], "tau_cut": 2}],
         "svdcut": 1e-6,
@@ -1503,11 +1503,11 @@ def test_publish_model_average_applies_every_sibling_on_the_selected_dataset(
         return {
             "id": candidate_id,
             "method": "lsqfit",
-            "fit_scope": ["3pt_ratio"],
+            "fit_scope": ["3pt_over_2pt"],
             "observable": "matrix_element",
             "window": {"tmin": 3, "tmax": 8, "tau_min": 2},
             "tsep_values": [8],
-            "nstate": {"3pt_ratio": nstate},
+            "nstate": {"3pt_over_2pt": nstate},
             "prior_width": 1.0,
             "correlator_rescale": 1.0,
             "quality_passed": True,
@@ -1524,7 +1524,7 @@ def test_publish_model_average_applies_every_sibling_on_the_selected_dataset(
     candidates = [_candidate("matrix_001", 1, 0.9), _candidate("matrix_002", 2, 0.7)]
     settings = {
         "fitting_form": "Breit",
-        "fit_scope": ["3pt_ratio"],
+        "fit_scope": ["3pt_over_2pt"],
         "pt2_windows": [{"tmin": 3, "tmax": 8}],
         "pt3_windows": [{"tsep_ls": [8], "tau_cut": 2}],
         "svdcut": 1e-6,
@@ -1557,7 +1557,7 @@ def test_publish_model_average_applies_every_sibling_on_the_selected_dataset(
 
     def apply_fit(*args, **kwargs):
         calls.append(kwargs)
-        nstate = int(kwargs["n_states"]["3pt_ratio"])
+        nstate = int(kwargs["n_states"]["3pt_over_2pt"])
         if selected_fails and nstate == 2:
             raise FitNumericalError("selected model failed full-grid application")
         log_gbf = 4.0 if nstate == primary_nstate else 1.0
@@ -1589,7 +1589,7 @@ def test_publish_model_average_applies_every_sibling_on_the_selected_dataset(
 
     monkeypatch.setattr(tool, "fit_matrix_element_samples", apply_fit)
     tool.run(context, candidate_id="matrix_002")
-    applied_nstates = sorted(call["n_states"]["3pt_ratio"] for call in calls if call.get("fit_samples") is not False)
+    applied_nstates = sorted(call["n_states"]["3pt_over_2pt"] for call in calls if call.get("fit_samples") is not False)
     if selected_fails:
         assert applied_nstates == [1]
         assert context.summary["decisions"]["candidate_id"] == "matrix_001"
@@ -1620,11 +1620,11 @@ def test_publish_fails_immediately_when_selected_candidate_fails_full_grid(monke
         {
             "id": "matrix_001",
             "method": "lsqfit",
-            "fit_scope": ["3pt_ratio"],
+            "fit_scope": ["3pt_over_2pt"],
             "observable": "matrix_element",
             "window": {"tmin": 3, "tmax": 8, "tau_min": 2},
             "tsep_values": [8],
-            "nstate": {"3pt_ratio": 2},
+            "nstate": {"3pt_over_2pt": 2},
             "prior_width": 1.0,
             "correlator_rescale": 1.0,
             "quality_passed": True,
@@ -1639,11 +1639,11 @@ def test_publish_fails_immediately_when_selected_candidate_fails_full_grid(monke
         {
             "id": "matrix_002",
             "method": "lsqfit",
-            "fit_scope": ["3pt_ratio"],
+            "fit_scope": ["3pt_over_2pt"],
             "observable": "matrix_element",
             "window": {"tmin": 4, "tmax": 8, "tau_min": 2},
             "tsep_values": [8],
-            "nstate": {"3pt_ratio": 2},
+            "nstate": {"3pt_over_2pt": 2},
             "prior_width": 1.0,
             "correlator_rescale": 1.0,
             "quality_passed": True,
@@ -1658,7 +1658,7 @@ def test_publish_fails_immediately_when_selected_candidate_fails_full_grid(monke
     ]
     settings = {
         "fitting_form": "Breit",
-        "fit_scope": ["3pt_ratio"],
+        "fit_scope": ["3pt_over_2pt"],
         "pt2_windows": [{"tmin": 3, "tmax": 8}, {"tmin": 4, "tmax": 8}],
         "pt3_windows": [{"tsep_ls": [8], "tau_cut": 2}],
         "svdcut": 1e-6,
@@ -1721,11 +1721,11 @@ def test_numerically_rejected_matrix_fit_counts_as_an_evaluated_candidate(tmp_pa
         {
             "id": "matrix_001",
             "method": "lsqfit",
-            "fit_scope": ["3pt_ratio"],
+            "fit_scope": ["3pt_over_2pt"],
             "observable": "matrix_element",
             "window": {"tmin": 3, "tmax": 8, "tau_min": 2},
             "tsep_values": [8],
-            "nstate": {"3pt_ratio": 2},
+            "nstate": {"3pt_over_2pt": 2},
             "prior_width": 1.0,
             "quality_passed": False,
             "numerical_failure": True,
@@ -1734,11 +1734,11 @@ def test_numerically_rejected_matrix_fit_counts_as_an_evaluated_candidate(tmp_pa
         {
             "id": "matrix_002",
             "method": "lsqfit",
-            "fit_scope": ["3pt_ratio"],
+            "fit_scope": ["3pt_over_2pt"],
             "observable": "matrix_element",
             "window": {"tmin": 4, "tmax": 8, "tau_min": 2},
             "tsep_values": [8],
-            "nstate": {"3pt_ratio": 2},
+            "nstate": {"3pt_over_2pt": 2},
             "prior_width": 1.0,
             "quality_passed": True,
             "numerical_failure": False,
@@ -1754,8 +1754,8 @@ def test_numerically_rejected_matrix_fit_counts_as_an_evaluated_candidate(tmp_pa
     params = {
         "observable": "matrix_element",
         "analysis_method": "lsqfit",
-        "fit_scope": ["3pt_ratio"],
-        "nstate": {"3pt_ratio": [2]},
+        "fit_scope": ["3pt_over_2pt"],
+        "nstate": {"3pt_over_2pt": [2]},
         "prior_width": [1.0],
         "pt2_windows": [{"tmin": 3, "tmax": 8}, {"tmin": 4, "tmax": 8}],
         "pt3_windows": [{"tsep_ls": [8], "tau_cut": 2}],
@@ -1787,9 +1787,9 @@ def test_numerically_rejected_matrix_fit_counts_as_an_evaluated_candidate(tmp_pa
         ["3pt"],
         ["FH"],
         ["3pt+FH"],
-        ["3pt_ratio"],
-        ["3pt_ratio+FH"],
-        ["3pt_ratio", "FH"],
+        ["3pt_over_2pt"],
+        ["3pt_over_2pt+FH"],
+        ["3pt_over_2pt", "FH"],
     ],
 )
 def test_native_matrix_element_fit_supports_composable_scopes(fit_scope: list[str]) -> None:
@@ -1839,7 +1839,7 @@ def test_native_matrix_element_fit_supports_composable_scopes(fit_scope: list[st
         tmax=8,
         tsep_values=tseps.tolist(),
         tau_min=2,
-        n_states={"3pt_ratio": 2, "FH": 1} if fit_scope == ["3pt_ratio", "FH"] else 1,
+        n_states={"3pt_over_2pt": 2, "FH": 1} if fit_scope == ["3pt_over_2pt", "FH"] else 1,
         prior_width=1.0,
         correlator_rescale=1.0,
         svdcut=1e-8,
@@ -1849,17 +1849,17 @@ def test_native_matrix_element_fit_supports_composable_scopes(fit_scope: list[st
     assert result.dims == ["z"]
     assert np.all(np.isfinite(result.values))
     atoms = {atom for stage in fit_scope for atom in stage.split("+")}
-    if "3pt_ratio" in atoms or {"2pt", "3pt"}.issubset(atoms):
+    if "3pt_over_2pt" in atoms or {"2pt", "3pt"}.issubset(atoms):
         assert np.isclose(np.mean(np.real(result.values[:, 0])), 0.8 / 0.6, atol=0.16)
     assert diagnostics["fit_scope"] == fit_scope
     production_fit = diagnostics["fits"][0]
     assert len(production_fit["sample_diagnostics"]) == result.n_sample
     assert len(production_fit["E0_samples"]) == result.n_sample
     final_atoms = set(fit_scope[-1].split("+"))
-    if fit_scope == ["3pt_ratio", "FH"]:
+    if fit_scope == ["3pt_over_2pt", "FH"]:
         assert production_fit["n_params"] == 4
-        final_atoms.add("3pt_ratio")
-    expected_kinds = ({"pt3_ratio"} if final_atoms & {"3pt", "3pt_ratio"} else set()) | (
+        final_atoms.add("3pt_over_2pt")
+    expected_kinds = ({"pt3_ratio"} if final_atoms & {"3pt", "3pt_over_2pt"} else set()) | (
         {"fh"} if "FH" in final_atoms else set()
     )
     assert {plot["kind"] for plot in production_fit["sample0_plot"]["plots"]} == expected_kinds
@@ -1896,7 +1896,7 @@ def test_native_matrix_element_fit_supports_composable_scopes(fit_scope: list[st
         assert tuning["n_failed_samples"] == 0
 
 
-@pytest.mark.parametrize("fit_scope", [["2pt+3pt"], ["2pt", "3pt_ratio"]])
+@pytest.mark.parametrize("fit_scope", [["2pt+3pt"], ["2pt", "3pt_over_2pt"]])
 @pytest.mark.parametrize("overlap_sign", [1.0, -1.0])
 def test_native_nonbreit_fit_uses_distinct_source_and_sink_spectra(fit_scope, overlap_sign) -> None:
     ensemble = EnsembleInfo("toy", "toy", 0.1, 0.1, 32, 32, 0.2)
@@ -1984,7 +1984,7 @@ def test_native_nonbreit_fit_uses_distinct_source_and_sink_spectra(fit_scope, ov
     np.testing.assert_allclose(result.values[:, 0], targets, atol=0.02, rtol=0)
     assert np.mean(result.values[:, 0]) == pytest.approx(np.mean(targets), abs=0.005)
     assert diagnostics["fitting_form"] == "NonBreit"
-    if fit_scope[-1] == "3pt_ratio":
+    if fit_scope[-1] == "3pt_over_2pt":
         plots = diagnostics["fits"][0]["sample0_plot"]["plots"]
         for plot in plots:
             expected = targets[0].real if plot["component"] == "re" else targets[0].imag
@@ -2054,20 +2054,20 @@ def test_chained_matrix_fit_transfers_posteriors_sample_by_sample(monkeypatch) -
     fit_matrix_element_samples(
         correlators,
         fitting_form="Breit",
-        fit_scope=["2pt", "3pt_ratio"],
+        fit_scope=["2pt", "3pt_over_2pt"],
         components="real",
         tmin=3,
         tmax=8,
         tsep_values=tseps.tolist(),
         tau_min=2,
-        n_states={"2pt": 1, "3pt_ratio": 1},
+        n_states={"2pt": 1, "3pt_over_2pt": 1},
         prior_width=1.0,
         correlator_rescale=1.0,
         svdcut=1e-8,
         posterior_prior_error_scale=3.0,
         workers=1,
     )
-    assert [call["atoms"] for call in calls] == [("2pt",), ("3pt_ratio",)]
+    assert [call["atoms"] for call in calls] == [("2pt",), ("3pt_over_2pt",)]
     assert calls[0]["sample_priors"] is None
     assert calls[0]["sample_prior_scale"] == 3.0
     assert calls[1]["sample_prior_scale"] is None
@@ -2114,11 +2114,11 @@ def test_qda_ratio_samples_use_the_center_posterior_prior(monkeypatch) -> None:
     monkeypatch.setattr(physics, "nonlinear_fit", wrapped)
     fit_qda_samples(
         {"qda": source},
-        fit_scope=["qda_ratio"],
+        fit_scope=["wf_over_2pt"],
         components="real",
         tmin=2,
         tmax=7,
-        n_states={"qda_ratio": 1},
+        n_states={"wf_over_2pt": 1},
         prior_width=1.0,
         svdcut=1e-8,
         posterior_prior_error_scale=3.0,
