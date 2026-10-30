@@ -21,7 +21,7 @@ def run(
     records = load_catalog(context)
     path = catalog_path(context)
     filters = {
-        "stages": stages,
+        "workflow_stages": stages,
         "hadrons": hadrons,
         "currents": currents,
         "observables": observables,

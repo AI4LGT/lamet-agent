@@ -110,7 +110,7 @@ Other controlled tags:
   lattice_cross_section, hadronic_tensor, current_current_correlator, gradient_flow,
   short_distance_factorization, operator_product_expansion, gaussian_process.
 - workflow_stages: correlator_analysis, renormalization, fourier_transform,
-  perturbative_matching, extrapolation, review.
+  matching, extrapolation, review.
 - renormalization_schemes: ratio, hybrid, ri_mom, modified_ri_mom, msbar,
   self_renormalization, gradient_flow, reduced_itd, nonperturbative.
 - matching_orders: LO, NLO, NNLO, N3LO, resummed, nonperturbative, not_stated.
@@ -180,7 +180,7 @@ ARRAY_ENUMS = {
         "correlator_analysis",
         "renormalization",
         "fourier_transform",
-        "perturbative_matching",
+        "matching",
         "extrapolation",
         "review",
     ],

@@ -1,4 +1,4 @@
-"""Manifest contract for perturbative matching."""
+"""Manifest contract for matching."""
 
 from __future__ import annotations
 

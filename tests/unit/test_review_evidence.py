@@ -95,7 +95,7 @@ def test_review_full_resolution_tool_returns_one_selected_job(tmp_path: Path) ->
         {},
         {"results": [data]},
         {},
-        {"review_bundle": {"jobs": {"matched": {"stage_id": "perturbative_matching"}}}},
+        {"review_bundle": {"jobs": {"matched": {"stage_id": "matching"}}}},
         tmp_path,
         np.random.default_rng(1),
     )

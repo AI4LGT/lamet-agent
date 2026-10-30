@@ -7,8 +7,8 @@ import math
 
 from lamet_agent.agent import ToolContext
 from lamet_agent.kernels import load_kernel, load_kernel_document, matching_kernel_id
-from lamet_agent.stages.perturbative_matching.contract import _kernel_parameter_issues
-from lamet_agent.stages.perturbative_matching.physics import inspect_callable, load_data, select_output_component
+from lamet_agent.stages.matching.contract import _kernel_parameter_issues
+from lamet_agent.stages.matching.physics import inspect_callable, load_data, select_output_component
 
 
 def _one(value):

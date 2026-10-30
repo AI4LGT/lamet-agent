@@ -45,7 +45,7 @@ from lamet_agent.parallel.lanczos import (
 from lamet_agent.stages.extrapolation.physics import basis_terms, fit_candidate
 from lamet_agent.parallel import fourier_transform
 from lamet_agent.stages.fourier_transform.physics import fit_tail_parameters, scan_fourier_transform, tail_model_values
-from lamet_agent.stages.perturbative_matching.physics import inspect_callable
+from lamet_agent.stages.matching.physics import inspect_callable
 from lamet_agent.stages.renormalization.physics import (
     fit_factor,
     load_data as load_renormalization_data,
@@ -3414,7 +3414,7 @@ def test_matching_kernel_id_uses_upstream_provenance_and_new_suffix_order() -> N
 
 
 def test_matching_inspection_uses_real_xspace_quasi_and_source_component_for_rgr(tmp_path) -> None:
-    from lamet_agent.stages.perturbative_matching._inspection import run
+    from lamet_agent.stages.matching._inspection import run
 
     values = [np.array([1.0 + 4.0j, 2.0 + 5.0j]), np.array([1.5 + 4.5j, 2.5 + 5.5j])]
     quasi = EnsembleData(
@@ -3445,7 +3445,7 @@ def test_matching_inspection_uses_real_xspace_quasi_and_source_component_for_rgr
     context = ToolContext(
         {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
         tmp_path / "manifest.json",
-        "perturbative_matching",
+        "matching",
         "match",
         params,
         {"quasi": quasi},
@@ -3471,7 +3471,7 @@ def test_matching_inspection_uses_real_xspace_quasi_and_source_component_for_rgr
 
 
 def test_matching_output_drops_legacy_component_attrs(tmp_path) -> None:
-    from lamet_agent.stages.perturbative_matching._apply import run
+    from lamet_agent.stages.matching._apply import run
 
     quasi = EnsembleData(
         None,
@@ -3493,7 +3493,7 @@ def test_matching_output_drops_legacy_component_attrs(tmp_path) -> None:
     context = ToolContext(
         {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
         tmp_path / "manifest.json",
-        "perturbative_matching",
+        "matching",
         "match",
         {
             "kernel_id": "quark_pdf_cg_gt_ratio_nlo",
@@ -3520,7 +3520,7 @@ def test_matching_output_drops_legacy_component_attrs(tmp_path) -> None:
 
 
 def test_matching_terminal_writes_original_quasi_matched_plot_pair(tmp_path) -> None:
-    from lamet_agent.stages.perturbative_matching._apply import run
+    from lamet_agent.stages.matching._apply import run
 
     x = [-0.5, 0.0, 0.5]
     quasi = EnsembleData(
@@ -3555,7 +3555,7 @@ def test_matching_terminal_writes_original_quasi_matched_plot_pair(tmp_path) -> 
     context = ToolContext(
         {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
         tmp_path / "manifest.json",
-        "perturbative_matching",
+        "matching",
         "match",
         params,
         {},
@@ -3584,7 +3584,7 @@ def test_matching_terminal_writes_original_quasi_matched_plot_pair(tmp_path) -> 
 
 
 def test_matching_plot_crops_even_quasi_to_nonnegative_x(monkeypatch, tmp_path) -> None:
-    import lamet_agent.stages.perturbative_matching._apply as tool
+    import lamet_agent.stages.matching._apply as tool
 
     x = [-0.5, 0.0, 0.5]
     quasi = EnsembleData(
@@ -3629,7 +3629,7 @@ def test_matching_plot_crops_even_quasi_to_nonnegative_x(monkeypatch, tmp_path) 
     context = ToolContext(
         {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
         tmp_path / "manifest.json",
-        "perturbative_matching",
+        "matching",
         "match",
         params,
         {},
@@ -4149,7 +4149,7 @@ def test_matching_inherits_hybrid_provenance_through_fourier_and_netcdf(monkeypa
     from lamet_agent.stages.renormalization._apply import run as renormalize
     from lamet_agent.stages.renormalization._inspection import run as inspect_renormalization
     from lamet_agent.stages.fourier_transform.physics import complete_signed_z, _project_xspace_output
-    from lamet_agent.stages.perturbative_matching import _inspection, _apply
+    from lamet_agent.stages.matching import _inspection, _apply
 
     renorm_path = tmp_path / "renorm"
     renorm_path.mkdir()
@@ -4189,7 +4189,7 @@ def test_matching_inherits_hybrid_provenance_through_fourier_and_netcdf(monkeypa
     matching = ToolContext(
         {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
         tmp_path / "manifest.json",
-        "perturbative_matching",
+        "matching",
         "match",
         {"order": "nlo", "mu": 2.0, "lc_x_ls": grid, "kernel_parameters": {}},
         {"quasi": tmp_path / "quasi.nc"},
@@ -4234,7 +4234,7 @@ def test_matching_inherits_hybrid_provenance_through_fourier_and_netcdf(monkeypa
 def test_matching_inspection_validates_inherited_attrs_and_kernel_types(
     tmp_path, attrs_update, parameters, error
 ) -> None:
-    from lamet_agent.stages.perturbative_matching._inspection import run
+    from lamet_agent.stages.matching._inspection import run
 
     quasi = EnsembleData(
         None,
@@ -4258,7 +4258,7 @@ def test_matching_inspection_validates_inherited_attrs_and_kernel_types(
     context = ToolContext(
         {"metadata": {"workers": 1}},
         tmp_path / "manifest.json",
-        "perturbative_matching",
+        "matching",
         "match",
         {"order": "nlo", "mu": 2.0, "lc_x_ls": [0.25, 0.75], "kernel_parameters": parameters},
         {"quasi": quasi},

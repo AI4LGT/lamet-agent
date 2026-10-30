@@ -901,9 +901,9 @@ def test_stage_overlay_splits_crowded_series_into_even_figures(tmp_path: Path) -
 
 
 def test_matching_stage_report_embeds_shipped_kernel_document(tmp_path: Path) -> None:
-    from lamet_agent.stages.perturbative_matching.reporting import write_stage_report
+    from lamet_agent.stages.matching.reporting import write_stage_report
 
-    stage = tmp_path / "04_perturbative_matching"
+    stage = tmp_path / "04_matching"
     quasi = _data(
         attrs={"momentum_gev": 2.0, "output_scale": 1.0, "source_component": "both", "output_component": "both"}
     )
@@ -949,7 +949,7 @@ def test_matching_stage_report_embeds_shipped_kernel_document(tmp_path: Path) ->
     )
     text = path.read_text(encoding="utf-8")
     assert "quark_da_gi_gzg5_ratio_nlo" in text
-    assert "Matching" in text
+    assert text.startswith("# Matching Stage Report\n")
     assert "Relative change" in text
     assert "Kernel-id and Field Definitions" in text
     assert "Matching Scheme" in text

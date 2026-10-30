@@ -145,7 +145,7 @@
         }
       ]
     },
-    "perturbative_matching": {
+    "matching": {
       "defaults": {
         "order": "nlo",
         "mu": 2.0,
