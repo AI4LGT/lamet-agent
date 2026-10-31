@@ -112,12 +112,8 @@ def run(context: ToolContext, session: LlmSession) -> None:
     three_points = [
         value for value in correlators.values() if value.attrs.get("correlator_type") == "three_point"
     ]
-    local_three_points = [
-        value
-        for value in three_points
-        if len(value.coords.get("z", [])) == 1 and abs(float(value.coords["z"][0])) <= 1e-12
-    ]
-    if context.params["analysis_method"] == "lsqfit" and len(local_three_points) == len(three_points) > 1:
+    target = str(context.manifest.get("metadata", {}).get("target_observable", "")).lower()
+    if context.params["analysis_method"] == "lsqfit" and target in {"ff", "moment"}:
         two_points = [
             value for value in correlators.values() if value.attrs.get("correlator_type") == "two_point"
         ]
@@ -164,7 +160,7 @@ def run(context: ToolContext, session: LlmSession) -> None:
             k_s = fitted.ensemble.k_s
             p_i = k_s * np.asarray(source, dtype=float)
             p_f = k_s * np.asarray(sink, dtype=float)
-            if source != sink:
+            if target == "ff":
                 m_pi = fitted.ensemble.m_pi
                 e_i = np.sqrt(m_pi**2 + p_i @ p_i)
                 e_f = np.sqrt(m_pi**2 + p_f @ p_f)
@@ -172,11 +168,7 @@ def run(context: ToolContext, session: LlmSession) -> None:
             else:
                 x = float(p_f[2])
             points.append((x, fitted, diagnostics))
-        is_form_factor = any(
-            json.loads(point[1].attrs["source_momentum"]) != json.loads(point[1].attrs["sink_momentum"])
-            for point in points
-        )
-        axis = "Q2" if is_form_factor else "Pz"
+        axis = "Q2" if target == "ff" else "Pz"
         points.sort(key=lambda item: item[0])
         values = np.column_stack(
             [np.asarray(point[1].real.values)[:, 0] for point in points]

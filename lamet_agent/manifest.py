@@ -267,7 +267,7 @@ _BASE_RULES: tuple[Depends | Provides | Recommends | Value, ...] = (
     Value("metadata.artifacts_directory", str, physics="The filesystem directory receiving per-job outputs and diagnostics."),
     Value("metadata.random_seed", int, physics="The nonnegative integer seed for reproducible random resampling and numerical procedures.", validator=_nonnegative),
     Value("metadata.workers", int, physics="The positive integer limit on concurrent sample-wise jobs.", validator=_positive),
-    Value("metadata.target_observable", Literal["pdf", "da", "gpd"], physics="'pdf' targets a parton distribution; 'da' targets a distribution amplitude; 'gpd' targets a generalized parton distribution."),
+    Value("metadata.target_observable", Literal["pdf", "da", "gpd", "ff", "moment"], physics="'pdf' targets a parton distribution; 'da' targets a distribution amplitude; 'gpd' targets a generalized parton distribution; 'ff' targets a form factor; 'moment' targets a Mellin moment."),
     Value("metadata.parton", Literal["quark"], physics="'quark' selects quark correlators and quark matching conventions."),
     Value("metadata.resample_mode", Literal["jackknife", "bootstrap"], physics="'jackknife' omits each data group in turn; 'bootstrap' generates replica samples from binned configurations."),
     Value("metadata.sample_error_mode", Literal["covariance", "variance", "one_sigma"], physics="'covariance' retains sample covariance; 'variance' reports variance-only errors; 'one_sigma' uses the median and bootstrap 16/84-percentile interval."),
