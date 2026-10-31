@@ -649,10 +649,23 @@ def _dispersion_lines(records: tuple[StageReportRecord, ...], artifact_directory
 
 
 def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_directory: Path) -> Path:
+    scan_axis = next(
+        (
+            axis
+            for axis in ("Q2", "Pz")
+            if records and all(getattr(record.output, "dims", None) == [axis] for record in records)
+        ),
+        None,
+    )
     lines = [
         "# Correlator Analysis Stage Report",
         "",
-        "This report summarizes the selected correlator fits and their full-z production-sample results.",
+        (
+            "This report summarizes the selected correlator fits of local z=0 matrix elements; "
+            "the stage overview uses Q^2 for form factors and Pz for moments."
+            if scan_axis is not None
+            else "This report summarizes the selected correlator fits and their full-z production-sample results."
+        ),
         "",
     ]
     lines.extend(_method_lines(records))
@@ -704,9 +717,15 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
             *stage_overlay_lines(
                 records,
                 artifact_directory,
-                coordinate="z",
-                stem="correlator_overview",
-                xlabel=r"$z~/~a$",
+                coordinate=scan_axis or "z",
+                stem="local_observable" if scan_axis is not None else "correlator_overview",
+                xlabel=(
+                    r"$Q^2\,[\mathrm{GeV}^2]$"
+                    if scan_axis == "Q2"
+                    else r"$P_z\,[\mathrm{GeV}]$"
+                    if scan_axis == "Pz"
+                    else r"$z~/~a$"
+                ),
                 ylabel="bare matrix element",
             ),
             "",
