@@ -46,6 +46,7 @@ COLUMN_PLUS = frozenset(
         "quark_pdf_cg_gzg5_ratio_nlo",
         "quark_pdf_gi_gt_hybrid_nlo_lrr",
         "quark_pdf_gi_gt_hybrid_nlo",
+        "quark_pdf_gi_gt_hybrid_nnlo",
         "quark_pdf_gi_gt_ratio_nlo",
         "quark_pdf_gi_gtg5_hybrid_nlo_lrr",
         "quark_pdf_gi_gtg5_hybrid_nlo",
