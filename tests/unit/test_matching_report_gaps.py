@@ -80,3 +80,33 @@ def test_matching_report_labels_partial_integrals(tmp_path: Path):
     assert "quasi partial integral" in text
     assert "excluded from both quasi and matched integrals" in text
     assert "bridges that" not in text
+
+
+@pytest.mark.parametrize("complex_values", [False, True])
+def test_output_beyond_quasi_coverage_reports_common_integral(tmp_path, complex_values):
+    item = record(tmp_path, np.linspace(-1, 1, 5), complex_values=complex_values)
+    y = np.linspace(-.8, .8, 8)
+    factor = 1 + 2j if complex_values else 1
+    item.inputs["quasi"] = data(y, factor * (2 + y))
+    np.testing.assert_allclose(_diagnostics(item)[:2], [3.2 * factor, 3.2 * factor])
+    path = write_stage_report(records=(item,), artifact_directory=tmp_path)
+    text = path.read_text(encoding="utf-8")
+    assert "Common integration intervals" in text
+    assert "excluded" in text
+
+
+def test_common_integral_excludes_gaps_in_either_grid(tmp_path):
+    item = record(tmp_path, [-.9, -.8, -.7, .3, .4, .5])
+    y = np.array([-.85, -.75, -.65, .35, .45, .55])
+    item.inputs["quasi"] = data(y, 2 + y)
+    # [-.85,-.7] and [.35,.5], each limited by a different input boundary.
+    np.testing.assert_allclose(_diagnostics(item), [.5475, .5475, 0], atol=1e-14)
+
+
+def test_disjoint_coverage_reports_unavailable_integral(tmp_path):
+    item = record(tmp_path, [.3, .4, .5])
+    y = np.array([-.8, -.7, -.6])
+    item.inputs["quasi"] = data(y, 2 + y)
+    assert np.isnan(_diagnostics(item)).all()
+    path = write_stage_report(records=(item,), artifact_directory=tmp_path)
+    assert "no common interval of positive width" in path.read_text(encoding="utf-8")

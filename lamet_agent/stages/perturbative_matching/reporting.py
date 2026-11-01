@@ -53,12 +53,27 @@ def _integral(data: EnsembleData, *, lo: float, hi: float) -> float | complex:
     return complex(integral) if np.iscomplexobj(values) else float(integral)
 
 
-def _diagnostics(record: StageReportRecord) -> tuple[float | complex, float | complex, float]:
+def _common_intervals(record: StageReportRecord) -> list[tuple[float, float]]:
     quasi = record.inputs.get("quasi")
     if not isinstance(quasi, EnsembleData) or not isinstance(record.output, EnsembleData):
         raise TypeError("matching report requires numerical quasi and matched distributions")
+    x_in = np.asarray(quasi.coords["x"], dtype=float)
     x_out = np.asarray(record.output.coords["x"], dtype=float)
-    intervals = [(float(x_out[i[0]]), float(x_out[i[-1]])) for i in grid_segments(x_out)]
+    intervals = []
+    for output_indices in grid_segments(x_out):
+        for input_indices in grid_segments(x_in):
+            lo = float(max(x_out[output_indices[0]], x_in[input_indices[0]]))
+            hi = float(min(x_out[output_indices[-1]], x_in[input_indices[-1]]))
+            if hi > lo:
+                intervals.append((lo, hi))
+    return intervals
+
+
+def _diagnostics(record: StageReportRecord) -> tuple[float | complex, float | complex, float]:
+    intervals = _common_intervals(record)
+    if not intervals:
+        return float("nan"), float("nan"), float("nan")
+    quasi = record.inputs["quasi"]
     quasi_integral = sum(_integral(quasi, lo=lo, hi=hi) for lo, hi in intervals)
     matched_integral = sum(_integral(record.output, lo=lo, hi=hi) for lo, hi in intervals)
     relative = abs(matched_integral - quasi_integral) / abs(quasi_integral) if quasi_integral else float("nan")
@@ -140,9 +155,10 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
     lines.extend(
         [
             "",
-            "The integrals use the same supported light-cone intervals for both arrays, excluding detected gaps. "
+            "The integrals use the intersection of supported quasi and light-cone intervals for both arrays. "
+            "Coverage outside that intersection and detected gaps in either grid are excluded. "
             "Gaps are spacings greater than twice the median spacing on grids with at least four points. "
-            "Quasi values are linearly interpolated at interval boundaries; isolated points contribute zero area. "
+            "Values are linearly interpolated at interval boundaries; isolated points contribute zero area. "
             "These partial integrals are diagnostics, not a "
             "normalization verdict: the expected normalization is fixed upstream by the coordinate-space matrix "
             "element and its projection convention.",
@@ -204,6 +220,7 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
         scale = float(attrs.get("output_scale", 1.0))
         mirrored = abs(scale - 1.0) > 1e-12 and is_even_about_zero(record.output)
         gap = _has_interior_gap(record.output)
+        intervals = _common_intervals(record)
         lines.extend(
             [
                 "",
@@ -228,6 +245,10 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
                 "",
                 "### Partial Integral Diagnostic",
                 "",
+                "- Common integration intervals: " + (
+                    ", ".join(f"[{format_value(lo)}, {format_value(hi)}]" for lo, hi in intervals)
+                    if intervals else "unavailable: no common interval of positive width."
+                ),
                 f"- Quasi input: {format_value(quasi_integral)}",
                 f"- Matched output: {format_value(matched_integral)}",
                 f"- Relative change: {format_value(100.0 * relative)}%",
