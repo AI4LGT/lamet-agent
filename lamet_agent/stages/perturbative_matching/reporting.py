@@ -15,6 +15,7 @@ from lamet_agent.stages._reporting import (
     describe_grid,
     figure_lines,
     format_value,
+    grid_segments,
     output_attrs,
     stage_overlay_lines,
     write_report,
@@ -42,10 +43,13 @@ def _integral(data: EnsembleData, *, lo: float, hi: float) -> float | complex:
         if np.iscomplexobj(selected.values)
         else np.asarray(selected.mean)
     )
-    mask = (x >= lo) & (x <= hi)
-    if np.count_nonzero(mask) < 2:
-        raise ValueError("matching report integration window has fewer than two points")
-    integral = np.trapezoid(values[mask], x[mask])
+    if lo == hi:
+        return 0.0
+    if lo < x[0] or hi > x[-1]:
+        raise ValueError("matching report integration window exceeds input coverage")
+    interior = (x > lo) & (x < hi)
+    nodes = np.r_[lo, x[interior], hi]
+    integral = np.trapezoid(np.interp(nodes, x, values), nodes)
     return complex(integral) if np.iscomplexobj(values) else float(integral)
 
 
@@ -54,9 +58,9 @@ def _diagnostics(record: StageReportRecord) -> tuple[float | complex, float | co
     if not isinstance(quasi, EnsembleData) or not isinstance(record.output, EnsembleData):
         raise TypeError("matching report requires numerical quasi and matched distributions")
     x_out = np.asarray(record.output.coords["x"], dtype=float)
-    lo, hi = float(np.min(x_out)), float(np.max(x_out))
-    quasi_integral = _integral(quasi, lo=lo, hi=hi)
-    matched_integral = _integral(record.output, lo=lo, hi=hi)
+    intervals = [(float(x_out[i[0]]), float(x_out[i[-1]])) for i in grid_segments(x_out)]
+    quasi_integral = sum(_integral(quasi, lo=lo, hi=hi) for lo, hi in intervals)
+    matched_integral = sum(_integral(record.output, lo=lo, hi=hi) for lo, hi in intervals)
     relative = abs(matched_integral - quasi_integral) / abs(quasi_integral) if quasi_integral else float("nan")
     return quasi_integral, matched_integral, relative
 
@@ -106,12 +110,7 @@ def _kernel_structure(kernel_id: str) -> dict[str, object]:
 
 
 def _has_interior_gap(data: EnsembleData) -> bool:
-    x = np.sort(np.asarray(data.coords["x"], dtype=float))
-    if x.size < 4:
-        return False
-    spacing = np.diff(x)
-    median = float(np.median(spacing))
-    return bool(median > 0 and np.max(spacing) > 2.0 * median)
+    return len(grid_segments(data.coords["x"])) > 1
 
 
 def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_directory: Path) -> Path:
@@ -124,7 +123,7 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
         "",
         "## Job Summary",
         "",
-        r"| job | kernel | scheme | momentum [GeV] | $\mu$ [GeV] | quasi integral | matched integral | "
+        r"| job | kernel | scheme | momentum [GeV] | $\mu$ [GeV] | quasi partial integral | matched partial integral | "
         "relative change |",
         "|---|---|---|---:|---:|---:|---:|---:|",
     ]
@@ -141,7 +140,10 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
     lines.extend(
         [
             "",
-            "The integrals use the light-cone output range for both arrays. They are diagnostics, not a "
+            "The integrals use the same supported light-cone intervals for both arrays, excluding detected gaps. "
+            "Gaps are spacings greater than twice the median spacing on grids with at least four points. "
+            "Quasi values are linearly interpolated at interval boundaries; isolated points contribute zero area. "
+            "These partial integrals are diagnostics, not a "
             "normalization verdict: the expected normalization is fixed upstream by the coordinate-space matrix "
             "element and its projection convention.",
             "",
@@ -174,6 +176,7 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
                 xlabel=r"$x$",
                 ylabel="matched distribution",
                 band=True,
+                split_gaps=True,
             ),
         ]
     )
@@ -223,7 +226,7 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
                 f"| resampling | `{getattr(record.output, 'resample', 'n/a')}` with "
                 f"{format_value(getattr(record.output, 'n_sample', None))} samples |",
                 "",
-                "### Integral Diagnostic",
+                "### Partial Integral Diagnostic",
                 "",
                 f"- Quasi input: {format_value(quasi_integral)}",
                 f"- Matched output: {format_value(matched_integral)}",
@@ -240,8 +243,8 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
                 ),
                 *(
                     [
-                        "- The matched grid contains an interior gap. The trapezoid diagnostic bridges that "
-                        "interval linearly, so part of the integral is interpolation."
+                        "- Partial integrals: the matched grid contains an interior gap, which is excluded "
+                        "from both quasi and matched integrals. These are not full-support normalization integrals."
                     ]
                     if gap
                     else []

@@ -268,6 +268,13 @@ Typical per-job files are:
 | `diagnostics/*`     | Candidate tables and numerical diagnostics.           |
 | `plots/*`           | PDF/SVG result and fit-quality figures.               |
 
+Matching plots split lines and uncertainty bands at detected grid gaps. Matching
+reports give partial quasi and light-cone integrals over the same supported
+output intervals, excluding those gaps rather than interpolating across them.
+A gap is a spacing greater than twice the median spacing on a grid with at least
+four points. Quasi values are interpolated at interval boundaries; isolated
+points contribute zero area. These diagnostics are not full-support sum rules.
+
 Stage directories also receive an aggregate `report.md`; job directories do not
 write report files. Review writes its final `review.md`, `review_bundle.json`,
 and consistency/literature evidence.
