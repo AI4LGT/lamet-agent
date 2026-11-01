@@ -18,7 +18,7 @@ from typing import Any, Mapping
 _SAFE_TOKEN = re.compile(r"[a-z][a-z0-9]*")
 _VALID_GAUGES = frozenset({"gi", "cg"})
 _VALID_SCHEMES = frozenset({"ratio", "hybrid", "msbar"})
-_VALID_RESUMMATIONS = frozenset({"", "rgr", "lrr"})
+_VALID_RESUMMATIONS = frozenset({"", "rgr", "lrr", "rgr_lrr"})
 
 
 def _root(root: str | Path | None) -> Path:
@@ -83,15 +83,19 @@ def matching_kernel_id(
         "hybrid",
     ):
         raise ValueError("NNLO is available only for the GI gamma-t hybrid nonsinglet quark PDF")
-    if order == "nnlo" and resummation not in {"", "rgr"}:
-        raise ValueError("NNLO supports fixed-order or rgr matching only")
+    if order == "nnlo" and resummation not in {"", "rgr", "rgr_lrr"}:
+        raise ValueError("NNLO supports fixed-order, rgr or rgr_lrr matching only")
     if resummation not in _VALID_RESUMMATIONS:
-        raise ValueError(f"resummation must be '', 'rgr', or 'lrr', got {resummation!r}")
+        raise ValueError(f"resummation must be '', 'rgr', 'lrr', or 'rgr_lrr', got {resummation!r}")
+    if resummation == "rgr_lrr" and (parton, observable, gauge, operator, scheme) != (
+        "quark", "pdf", "gi", "gt", "hybrid",
+    ):
+        raise ValueError("Combined RGR+LRR is available only for the GI gamma-t hybrid nonsinglet quark PDF")
     tokens = [parton, observable, gauge, operator, scheme, order]
     if resummation:
         tokens.append(resummation)
     general_nonsinglet = parton == "quark" and observable == "pdf" and operator in {"gt", "gz"}
-    if resummation == "rgr" and general_nonsinglet:
+    if resummation in {"rgr", "rgr_lrr"} and general_nonsinglet:
         component = str(attrs.get("source_component", "")).strip().lower()
         if component not in {"re", "im", "both"}:
             raise ValueError("Nonsinglet RGR requires source_component='re', 'im', or 'both'")

@@ -607,8 +607,71 @@ def _lrr_from_fixed_order(
         raise ValueError("`zspz` is required for the hybrid (LRR) matching kernel.")
     x = np.asarray(lc_x_ls, dtype=float)
     y = x if quasi_y_ls is None else np.asarray(quasi_y_ls, dtype=float)
-    m_fix = fixed_order_builder(x, momentum_gev=momentum_gev, mu=mu, quasi_y_ls=y, eps=eps, zspz=zspz)
-    return _lrr_improve(m_fix, x, y, momentum_gev, mu, float(zspz), eps, restrict_unit_interval=restrict_unit_interval)
+    if x.ndim != 1 or x.size == 0 or not np.isfinite(x).all():
+        raise ValueError("LRR output must be a nonempty finite 1D grid.")
+    if y.ndim != 1 or y.size < 2 or not np.isfinite(y).all():
+        raise ValueError("LRR input must be a finite 1D grid with at least two points.")
+    if np.any(x < np.min(y)) or np.any(x > np.max(y)):
+        raise ValueError("LRR input grid must cover the output grid for interpolation.")
+    m_fix = fixed_order_builder(y, momentum_gev=momentum_gev, mu=mu, quasi_y_ls=y, eps=eps, zspz=zspz)
+    square = _lrr_improve(
+        m_fix, y, y, momentum_gev, mu, float(zspz), eps, restrict_unit_interval=restrict_unit_interval,
+    )
+    if np.array_equal(x, y):
+        return square
+    return _lo_interp_matrix(x, y) @ square
+
+
+def _lrr_shape(y: np.ndarray, momentum_gev: float, zspz: float, eps: float, eps_m: float) -> np.ndarray:
+    if isinstance(eps_m, bool) or not np.isfinite(eps_m) or eps_m <= 0:
+        raise ValueError("eps_m must be finite and positive.")
+    return _plus_prescription_matrix(
+        y, y, lambda x, source: C_z_lrr(x / source, source, momentum_gev, zspz, eps_m, eps) / abs(source), eps,
+    )
+
+
+def _gi_gt_hybrid_nlo_tables(y: np.ndarray, zspz: float, eps: float) -> tuple[np.ndarray, np.ndarray]:
+    from scipy.special import sici
+
+    source = y[None, :]
+    xi = y[:, None] / source
+    excluded = np.abs(y[:, None] - source) <= eps * np.abs(source)
+    xi = np.where(excluded, 2., xi)
+    difference = 1. - xi
+    denominator = difference + np.sign(difference) * eps
+    splitting = (1. + xi**2) / denominator
+    inside = (eps < xi) & (xi < 1. - eps)
+    ratio = np.sign(xi) * (splitting * np.log((np.abs(xi) + eps) / (np.abs(difference) + eps)) + 1.)
+    _, columns = np.nonzero(inside)
+    ratio[inside] = splitting[inside] * (
+        np.log(4. * y[columns]**2) - np.log(4.)
+        + np.log(4. * xi[inside] * difference[inside] + eps) - 1.
+    ) + 1.
+    ratio += 1.5 / (np.abs(difference) + eps)
+    hybrid = 1.5 * (-1. / (np.abs(difference) + eps)
+                    + 2. * sici(difference * np.abs(source) * zspz)[0] / (np.pi * denominator))
+    weight = CF * abs(y[1] - y[0]) / np.abs(source)
+    constant = np.where(excluded, 0., ratio + hybrid) * weight
+    slope = np.where(inside & ~excluded, -splitting, 0.) * weight
+    constant -= np.diag(constant.sum(axis=0))
+    slope -= np.diag(slope.sum(axis=0))
+    return constant, slope
+
+
+def _lrr_resum(
+    fixed: np.ndarray, forward_one: np.ndarray, shape: np.ndarray, mu: float, *, order: str,
+) -> np.ndarray:
+    from scipy.linalg import expm
+
+    loops = 3 if order == "nnlo" else 2
+    coupling = alpha_s(loops, float(mu), "running")
+    r0 = rnasym(0, 1., mu, 3) * coupling
+    pv = dPVasym(1., mu, 3, coupling)
+    prefactor = fixed + r0 * shape
+    if order == "nnlo":
+        r1 = rnasym(1, 1., mu, 3) * coupling**2
+        prefactor = prefactor + r1 * shape - r0 * (forward_one @ shape) + .5 * r0**2 * (shape @ shape)
+    return prefactor @ expm(-pv * shape)
 
 
 _ALPHAS_MZ: Final = 0.1179
