@@ -75,21 +75,27 @@ def matching_kernel_id(
         raise ValueError(f"matching scheme is not supported: {scheme!r}")
     if order not in {"nlo", "nnlo"}:
         raise ValueError(f"matching order is not supported: {order!r}; use 'nlo' or 'nnlo'")
-    if order == "nnlo" and (parton, observable, gauge, operator, scheme, resummation) != (
+    if order == "nnlo" and (parton, observable, gauge, operator, scheme) != (
         "quark",
         "pdf",
         "gi",
         "gt",
         "hybrid",
-        "",
     ):
-        raise ValueError("NNLO is available only for the fixed-order GI gamma-t hybrid nonsinglet quark PDF")
+        raise ValueError("NNLO is available only for the GI gamma-t hybrid nonsinglet quark PDF")
+    if order == "nnlo" and resummation not in {"", "rgr"}:
+        raise ValueError("NNLO supports fixed-order or rgr matching only")
     if resummation not in _VALID_RESUMMATIONS:
         raise ValueError(f"resummation must be '', 'rgr', or 'lrr', got {resummation!r}")
     tokens = [parton, observable, gauge, operator, scheme, order]
     if resummation:
         tokens.append(resummation)
-    if resummation == "rgr":
+    general_nonsinglet = parton == "quark" and observable == "pdf" and operator in {"gt", "gz"}
+    if resummation == "rgr" and general_nonsinglet:
+        component = str(attrs.get("source_component", "")).strip().lower()
+        if component not in {"re", "im", "both"}:
+            raise ValueError("Nonsinglet RGR requires source_component='re', 'im', or 'both'")
+    if resummation == "rgr" and not general_nonsinglet:
         source_component = str(attrs.get("source_component", "")).strip().lower()
         if source_component not in {"re", "im"}:
             raise ValueError(

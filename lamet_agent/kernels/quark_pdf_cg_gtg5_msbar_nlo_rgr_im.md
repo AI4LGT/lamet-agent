@@ -1,26 +1,53 @@
-<!-- lamet-agent formula cache; kernel=quark_pdf_cg_gtg5_msbar_nlo_rgr_im; arxiv=2209.01236; equations=App. 'A Method Solving RG Equation' (Eq. matchingRGI); digest=029196f8f4e063bb; paper_used=true -->
-The matching coefficient for the `gtg5` operator in the `msbar` scheme, as implemented by the kernel, is the NLO+RGR (next-to-leading-order plus renormalization-group-resummed) coefficient. It is not a fixed-order expression; rather, each row $x$ is constructed by evaluating the fixed-order NLO $\overline{\rm MS}$ kernel at the row’s own scale $\mu_0(x) = 2\kappa x P_z$ and then DGLAP-evolving that row from $\mu_0(x)$ to the final scale $\mu$ via a path-ordered matrix exponential of the two-loop (NLL) non-singlet splitting function. Rows whose $\mu_0(x)$ falls below the perturbative cutoff $\mu_{\min}$ are set to zero, implementing the paper’s $x_{\min}$.
+# quark_pdf_cg_gtg5_msbar_nlo_rgr_im
 
-Define $\xi = x/y$ and $L = \ln(4y^2P_z^2/\mu^2)$. The fixed-order NLO $\overline{\rm MS}$ kernel (Eq. 2.14 of the paper) that seeds each row is:
+## Fixed-order input
 
-$$C^{(1)}_{\overline{\rm MS}}(\xi, L) = C_{\rm ratio}(\xi, L) + \frac{1}{2|\xi-1|},$$
+The local `_fixed_order` function builds the NLO inverse matching matrix
+using the existing coefficient and plus-prescription implementation.
+See [quark_pdf_cg_gtg5_msbar_nlo](quark_pdf_cg_gtg5_msbar_nlo.md) for the corresponding fixed-order channel.
+The RGR update does not change those coefficients or their finite-grid subtraction.
+The two-loop evolution coefficient is `_p_nlo_valence`; the shared LO coefficient
+is `_p_qq_lo`.
 
-with the ratio-scheme coefficient (Eq. 2.16):
+## Independent-scale RGR
 
-$$C_{\rm ratio}(\xi, L) = \begin{cases} \frac{1+\xi^2}{1-\xi}\left[L + \ln\frac{\xi}{\xi-1} - 1\right] + \xi - 1 - \frac{3}{2(1-\xi)} + \frac{3\xi-1}{\xi-1}\frac{\arctan\sqrt{1-2\xi}}{\sqrt{1-2\xi}}, & 0<\xi<1, \\[4pt] \frac{1+\xi^2}{1-\xi}\left[\ln\frac{-\xi}{1-\xi} - 1\right] + \xi - 1 - \frac{3}{2(1-\xi)} + \frac{3\xi-1}{\xi-1}\frac{\arctan\sqrt{1-2\xi}}{\sqrt{1-2\xi}}, & \xi<0, \\[4pt] \frac{1+\xi^2}{1-\xi}\left[\ln\frac{\xi}{\xi-1} - 1\right] + \xi - 1 - \frac{3}{2(1-\xi)} + \frac{3\xi-1}{\xi-1}\frac{\operatorname{arctanh}\sqrt{2\xi-1}}{\sqrt{2\xi-1}}, & \xi>1, \end{cases}$$
+For each output point, set $\mu_i=2\kappa x_i P_z$. Build the full
+fixed-order matrix $B(\mu_i)$ independently at that scale, evolve it to
+$\mu$, then select row $i$:
 
-where the arctan/arctanh branch is chosen by the sign of $1-2\xi$, and the $\xi=1/2$ limit is taken analytically. The plus prescription is applied at $\xi=1$ with the paper’s exact notation, splitting the coefficient into two brackets over different domains:
+$$M_{ij}(\mu)=Z_i[U(\mu,\mu_i)B(\mu_i)]_{ij}.$$
 
-$$C^{(1)}_{\overline{\rm MS}}(\xi, L) = \left[ \frac{1+\xi^2}{1-\xi}\left(L + \ln\frac{1-\xi}{\xi} - 1\right) + \xi - 1 + \frac{3}{2(1-\xi)} + \frac{3\xi-1}{\xi-1}\frac{\arctan\sqrt{1-2\xi}}{\sqrt{1-2\xi}} \right]^{[0,1]}_{+(1)} + \left[ \frac{1+\xi^2}{1-\xi}\left(\ln\frac{\xi}{\xi-1} - 1\right) + \xi - 1 - \frac{3}{2(1-\xi)} + \frac{3\xi-1}{\xi-1}\frac{\operatorname{arctanh}\sqrt{2\xi-1}}{\sqrt{2\xi-1}} \right]^{(-\infty,\infty)}_{+(1)},$$
+Here $Z_i$ is `_zpsi_msbar_ratio(mu0)`. Each row is matched independently; higher-$x$
+rows from previous matching steps are not carried into subsequent steps.
+This is the package's chosen prescription, not the recursive construction
+in [arXiv:2209.01236, Appendix D](https://arxiv.org/html/2209.01236v2#A4).
+That paper motivates the intrinsic scale and ordered evolution, but is not
+an exact validation of this Coulomb-gauge channel or its coefficients.
 
-with the paper’s definition $[g(\xi)]^{D}_{+(x_0)} = g(\xi) - \delta(1-\xi)\int_D d\xi'\, g(\xi')$, and the $\delta(1-\xi)$ term is included implicitly through the plus prescription. The scheme-specific finite correction is the $+\frac{1}{2|\xi-1|}$ term, which is restricted to $\xi\in[0,2]$ in the plus-subtraction integrand (the paper’s $-\frac{1}{2}\int_0^2 d\xi'$ counterterm).
+For column-vector PDFs, with $t=\ln\mu^2$ and $a=\alpha_s/(4\pi)$,
 
-The RGR construction then replaces the fixed-order kernel: for each row $x$, the fixed-order matrix is evaluated at $\mu_0(x) = 2\kappa x P_z$ (with $\kappa$ the scale-variation parameter), and the row is evolved to $\mu$ by the operator
+$$\frac{dU}{dt}=[a(t)D_0+a(t)^2D_1]U,\qquad U(t_i,t_i)=I.$$
 
-$$U(\mu_0, \mu) = \mathcal{P}\exp\left[\int_{\ln\mu_0^2}^{\ln\mu^2} \frac{d\ln t^2}{2} \left(\frac{\alpha_s(\sqrt{t})}{4\pi} P_{\rm LO} + \left(\frac{\alpha_s(\sqrt{t})}{4\pi}\right)^2 P_{\rm NLO}\right)\right],$$
+The implementation uses 20 midpoint exponential steps. Each new step
+multiplies on the left, so the result has the correct scale ordering for
+both upward and downward evolution. This is a finite-step approximation.
+The existing uniform-grid column-sum subtraction in $D_0,D_1$ is retained;
+this update does not establish continuum or grid/range convergence.
 
-where $P_{\rm LO}$ is the one-loop non-singlet splitting function and $P_{\rm NLO}$ is the two-loop valence-channel (non-singlet, $q-\bar{q}$) splitting function, which includes the $16C_F(C_F - C_A/2)$ C-parity term. The evolution is discretized as a product of matrix exponentials over $\ln\mu^2$ steps. Rows with $\mu_0(x) < \mu_{\min}$ are zeroed.
+## Domain and controls
 
-#### Consistency check
+`momentum_gev`, `scale_gev`, `kappa`, and `mu_min_gev` must be finite
+and positive. The output grid must be a nonempty finite 1D array,
+increasing and uniformly spaced when it contains more than one point.
+The input grid retains the fixed-order builder's requirements.
 
-The code reproduces the paper’s Eq. (2.14) and (2.16) for the fixed-order NLO $\overline{\rm MS}$ kernel: the regular coefficient, the logarithms (with argument $4y^2P_z^2/\mu^2$), the arctan/arctanh branch, and the $+\frac{1}{2|\xi-1|}$ scheme correction all match the paper’s expressions. The plus prescription is implemented with the paper’s exact bracket notation, including the domain split $[0,1]$ and $(-\infty,\infty)$ and the subtraction point $+(1)$. The RGR construction follows the paper’s App. A method (Eq. matchingRGI): each row is matched at its own scale $2xP_z$ and DGLAP-evolved, with the cutoff implementing $x_{\min}$. No discrepancies were found between the code and the paper for the terms checked.
+Rows with $\mu_i<\mu_{\min}$ are zero. With positive momentum and
+$\kappa$, this also zeros nonpositive-$x$ rows; it is not a prescription
+for independently reconstructed negative-$x$ PDFs. The defaults are
+`kappa=1` and `mu_min_gev=0.6`. The cutoff does not itself certify
+perturbative reliability at every retained scale.
+
+The regression checks compare the evolution and independent matching
+against a high-accuracy ODE solution for the same discrete generators.
+They do not establish agreement with a physical data set or the reference
+notebook's different coupling, subtraction, and matching choices.

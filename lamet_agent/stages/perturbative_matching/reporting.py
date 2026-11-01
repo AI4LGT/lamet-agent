@@ -149,14 +149,14 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
             "",
             "| field | meaning |",
             "|---|---|",
-            "| `order` | Explicit perturbative order: `nlo` or the supported fixed-order `nnlo` channel. "
+            "| `order` | Explicit perturbative order: `nlo` or the supported `nnlo` channel. "
             "Encoded in the kernel filename. |",
             "| `kernel_id` | Runtime-derived public kernel filename stem built from upstream "
             "renormalization and operator provenance, "
             "`order`, and resummation options. |",
-            "| `resummation` | Empty selects fixed-order matching at the requested order; NNLO requires empty. "
-            "`rgr` derives its `re` or `im` kernel suffix "
-            "from upstream `source_component`; `lrr` has no component suffix. |",
+            "| `resummation` | Empty selects fixed-order matching; NNLO GI gamma-t hybrid also supports rgr. "
+            "Unpolarized nonsinglet `rgr` accepts `re`, `im`, or `both` without a suffix. "
+            "Legacy polarized RGR derives its suffix from `source_component`; `lrr` has no suffix. |",
             "| `mu` | MSbar renormalization/matching scale in GeV. |",
             "| `zs_fm` | Wilson-line switching distance inherited from upstream hybrid renormalization. |",
             "| `kernel_parameters` | Kernel-signature parameters not supplied by the stage, such as `kappa` "
