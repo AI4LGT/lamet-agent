@@ -848,3 +848,7 @@ that only fail after installation from a wheel.
 When behavior changes, update the narrowest authoritative source first, then any
 user or developer documentation that describes that behavior. Avoid copying the
 same rule into several prompts and documents.
+
+## Combined RGR and LRR
+
+GI gamma-t hybrid nonsinglet PDF matching accepts `order: "nlo"` or `"nnlo"` with `resummation: "rgr_lrr"`. It preserves independent matching and the signed quark/antiquark convention. Parameters are the existing RGR controls plus `eps_m` (positive, default 0.005 GeV); NNLO retains `quadrature_order`. Input grids must be uniform, nonzero and span [-1,1]. See the paired public kernel documents for subtraction formulas and the need for consistent upstream mass renormalization.

@@ -1,4 +1,5 @@
 from pathlib import Path
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -34,6 +35,20 @@ def test_partial_integrals_exclude_gap_and_share_exact_boundaries(tmp_path, comp
     expected = .72 * (1 + 2j if complex_values else 1)
     np.testing.assert_allclose(result[:2], [expected, expected], atol=1e-14)
     assert result[2] < 1e-14
+
+
+@pytest.mark.parametrize("complex_values", [False, True])
+def test_report_loads_external_quasi_artifact(tmp_path, complex_values):
+    item = record(tmp_path, [-.9, -.8, -.7, .3, .4, .5], complex_values=complex_values)
+    expected = write_stage_report(records=(item,), artifact_directory=tmp_path).read_text(encoding="utf-8")
+    external = tmp_path / "quasi.nc"
+    item.inputs["quasi"].to_netcdf(external)
+    file_item = replace(item, inputs={"quasi": external})
+    actual = write_stage_report(
+        records=(file_item,), artifact_directory=tmp_path / "from_file",
+    ).read_text(encoding="utf-8")
+    assert actual == expected
+    assert file_item.inputs["quasi"] == external
 
 
 def test_contiguous_grid_keeps_full_interval_and_isolated_points_add_no_area(tmp_path):

@@ -34,3 +34,10 @@ convergence checks for production analysis. No finite-grid sum-rule claim is mad
 The fixed-order matching formula and its prescription are documented in
 [quark_pdf_gi_gt_hybrid_nlo](quark_pdf_gi_gt_hybrid_nlo.md).
 Legacy suffixed RGR kernels remain available for reproducibility.
+
+NLO preparation constructs the constant and log(mu^2/Pz^2) coefficient
+matrices once, using vectorized evaluations of the existing regulated GI
+gamma-t hybrid expression. The square-grid column-plus subtraction is formed
+from these same entries. Both tables are reused at every intrinsic scale;
+the fixed-order scalar builder remains available for numerical cross-checks.
+No change to precision, independent matching, LRR or evolution is introduced.

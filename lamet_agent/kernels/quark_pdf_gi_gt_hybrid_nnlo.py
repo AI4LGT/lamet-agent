@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from types import FunctionType
 
 import mpmath as mp
 import numpy as np
@@ -1325,12 +1326,93 @@ def hybrid_two_loop(xi: float, log_scale: float, y: float, zspz: float, *, eps: 
     return _msbar(float(xi), float(ell)) + analytic + checked
 
 
+@lru_cache(maxsize=1)
+def _machine_coefficient_functions():
+    namespace = dict(globals(), mp=mp.fp)
+    for name in ("_MS_CF", "_MS_CA", "_MS_TF", "_MS_BETA0"):
+        namespace[name] = float(namespace[name])
+    names = ("Gamma2", "Gamma1a1", "Gamma1", "Pqq", "Pqqbar",
+             "C1CF", "C2CF", "C3CF", "C1CA", "C2CA", "C3CA", "C1TF", "C2TF", "C3TF")
+    for name in names:
+        namespace[name] = FunctionType(globals()[name].__code__, namespace, name)
+    return namespace
+
+
+@lru_cache(maxsize=65536)
+def _msbar_log_parts(xi: float) -> tuple[float, float, float]:
+    if xi == -1.0:
+        return tuple((a + b) / 2 for a, b in zip(_msbar_log_parts(xi - 1e-9), _msbar_log_parts(xi + 1e-9)))
+    machine = .01 < abs(xi) < 10 and abs(xi - 1) > .01 and abs(xi + 1) > .01
+    namespace = _machine_coefficient_functions() if machine else globals()
+    with mp.workdps(40):
+        y = xi if machine else mp.mpf(xi)
+        cf, ca, tf = (namespace[k] for k in ("_MS_CF", "_MS_CA", "_MS_TF"))
+        region = 1 if y > 1 or y < -1 else 2 if y > 0 else 3
+        sign = -1 if y < -1 else 1
+        finite = sign * cf * (cf * namespace[f"C{region}CF"](y) + ca * namespace[f"C{region}CA"](y)
+                              + 2 * tf * _MS_NF * namespace[f"C{region}TF"](y))
+        single = namespace["Gamma1"](y)
+        if 0 < y < 1:
+            single -= namespace["Pqq"](y)
+        elif -1 < y < 0:
+            single -= namespace["Pqqbar"](-y)
+        return tuple(float(mp.re(value)) for value in (finite, single, namespace["Gamma2"](y)))
+
+
+def _hybrid_log_parts(xi: float, y: float, zspz: float, *, eps: float, order: int) -> np.ndarray:
+    if abs(xi) < eps:
+        xi = eps if xi >= 0 else -eps
+    d, b = 1 - xi, abs(y * zspz)
+    offset = np.log(b**2) + 2 * np.euler_gamma - np.log(4.)
+    a = 11 * CA * CF / 8 - CF * NF * TF / 2 + 9 * CF**2 / 8
+    c = (53 / 8 - np.pi**2 / 6) * CA * CF + (25 / 8 + 2 * np.pi**2 / 3) * CF**2 - 5 * CF * NF * TF / 2
+    sine = 2 * sici(d * b)[0] / (np.pi * d)
+    with mp.workdps(30):
+        hyper = float(mp.re(mp.hyper([1, 1, 1], [2, 2, 2], 1j * d * b)))
+    regular0 = C_hybrid_gi(xi, np.log(4.), y, zspz, eps)
+    regular1 = C_hybrid_gi(xi, np.log(4.) - 1, y, zspz, eps) - regular0
+    parts = np.array(_msbar_log_parts(float(xi)))
+    parts += np.array([a * (2 * offset * sine - 8 * b / np.pi * hyper) + c * sine, 2 * a * sine, 0.])
+    parts -= CF**2 * np.array([(1.5 * offset + 2.5) * regular0,
+                              1.5 * regular0 + (1.5 * offset + 2.5) * regular1, 1.5 * regular1])
+
+    def smooth_parts(n):
+        constant = smooth_conversion(xi, b, 0., n)
+        return np.array([constant, smooth_conversion(xi, b, 1., n) - constant])
+
+    ls = offset + np.array([-1., 0., 1.]) - 2 * np.log(abs(y))
+    smooth = smooth_parts(order)
+    check_order = min(256, order + 32) if order < 256 else 224
+    checked = smooth_parts(check_order)
+    while not np.allclose(smooth[0] + ls * smooth[1], checked[0] + ls * checked[1], rtol=1e-8, atol=1e-10):
+        if check_order >= 256 or order == 256:
+            raise ValueError("NNLO hybrid conversion quadrature did not converge; reduce the grid or Fourier phase.")
+        smooth = checked
+        check_order = min(256, check_order + 32)
+        checked = smooth_parts(check_order)
+    parts[:2] += [checked[0] + offset * checked[1], checked[1]]
+    return parts
+
+
 def _prepare_nnlo_rgr_matching(
     x: np.ndarray, y: np.ndarray, *, momentum_gev: float, zs_fm: float,
-    eps: float, quadrature_order: int,
+    eps: float, quadrature_order: int, lrr: bool = False, eps_m: float = 0.005,
 ):
+    from lamet_agent.kernels.implementation import _lrr_resum, _lrr_shape
+
     zspz = zs_fm * momentum_gev / GEV_FM
+    shape = _lrr_shape(y, momentum_gev, zspz, eps, eps_m) if lrr else None
     identity = _lo_interp_matrix(x, y)
+    parts_cache = {}
+
+    def prepared_two_loop(xi, log_scale, source):
+        key = (xi, source)
+        if key not in parts_cache:
+            parts_cache[key] = _hybrid_log_parts(xi, source, zspz, eps=eps, order=quadrature_order)
+        c0, c1, c2 = parts_cache[key]
+        ell = np.log(4.) - log_scale
+        return c0 + ell * (c1 + ell * c2)
+
     first, second = [], []
     for logarithm in (-1.0, 0.0, 1.0):
         scale = momentum_gev * np.exp(logarithm / 2)
@@ -1340,12 +1422,7 @@ def _prepare_nnlo_rgr_matching(
         )
         c1 = CF * _plus_prescription_matrix(x, y, density_one, eps)
         c1_input = CF * _plus_prescription_matrix(y, y, density_one, eps)
-        density_two = _pdf_density(
-            lambda xi, log_scale, yy: hybrid_two_loop(
-                xi, log_scale, yy, zspz, eps=eps, order=quadrature_order,
-            ),
-            momentum_gev, scale,
-        )
+        density_two = _pdf_density(prepared_two_loop, momentum_gev, scale)
         c2 = _plus_prescription_matrix(x, y, density_two, eps)
         first.append(c1)
         second.append(c1 @ c1_input - c2)
@@ -1357,7 +1434,11 @@ def _prepare_nnlo_rgr_matching(
     def at_scale(scale_gev: float) -> np.ndarray:
         logarithm = 2 * np.log(scale_gev / momentum_gev)
         a = alpha_s(3, scale_gev, "running") / (2 * np.pi)
-        return identity - a * (c10 + logarithm * c11) + a*a * (c20 + logarithm*c21 + logarithm**2*c22)
+        forward_one = a * (c10 + logarithm * c11)
+        fixed = identity - forward_one + a*a * (c20 + logarithm*c21 + logarithm**2*c22)
+        if lrr:
+            return _lrr_resum(fixed, forward_one, shape, scale_gev, order="nnlo")
+        return fixed
 
     return at_scale
 

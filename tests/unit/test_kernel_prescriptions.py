@@ -92,6 +92,8 @@ GENERAL_RGR = frozenset(
         "quark_pdf_gi_gz_hybrid_nlo_rgr",
         "quark_pdf_gi_gz_ratio_nlo_rgr",
         "quark_pdf_gi_gt_hybrid_nnlo_rgr",
+        "quark_pdf_gi_gt_hybrid_nlo_rgr_lrr",
+        "quark_pdf_gi_gt_hybrid_nnlo_rgr_lrr",
     ]
 )
 

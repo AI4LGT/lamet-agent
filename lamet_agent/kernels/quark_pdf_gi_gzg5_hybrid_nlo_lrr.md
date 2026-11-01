@@ -1,24 +1,55 @@
-<!-- lamet-agent formula cache; kernel=quark_pdf_gi_gzg5_hybrid_nlo_lrr; arxiv=2305.05212; equations=Eqs. (12)-(17); digest=a588104a073109ef; paper_used=true -->
-$$C_{g_5}^{(1)}(\xi,L,\mu,P_z,z_s) = \frac{\alpha_s C_F}{2\pi} \left[ \frac{1+\xi^2}{1-\xi} \left( L - \ln 4 + \ln(4\xi(1-\xi)) - 1 \right) + 1 + \frac{3}{2}\frac{1}{|1-\xi|} + \frac{3}{2}\left( -\frac{1}{|1-\xi|} + \frac{2\,\mathrm{Si}((1-\xi)|y|z_s P_z)}{\pi(1-\xi)} \right) \right]^{(-\infty,\infty)}_{+(1)}$$
+# NLO hybrid matching with LRR
 
-with $\xi = x/y$, $L = \ln(4y^2P_z^2/\mu^2)$, and the plus-prescription defined as in the paper:
+Kernel: `quark_pdf_gi_gzg5_hybrid_nlo_lrr`.
 
-$$[g(\xi)]^{D}_{+(x_0)} = g(\xi) - \delta(1-\xi)\int_D g(\nu)\,d\nu$$
+This kernel maps a quasi-distribution column vector to its matched distribution.
+The fixed-order operator is defined in `quark_pdf_gi_gzg5_hybrid_nlo.md`.
 
-The kernel is not fixed-order: it resums the leading Wilson-line renormalon to all orders via
+Let Y be the uniform nonzero input grid and P(X,Y) its linear interpolation
+matrix. Assemble all factors on Y before transferring to output points X:
 
-$$M_{\mathrm{LRR}} = \left(M_{\mathrm{fix}} + r_0 M_{C_z}\right) \exp\left(-M_{C_z}\, r_{\mathrm{sumPV}}\right)$$
+$$M_{\rm LRR}(X,Y)=P(X,Y)\,[M_{\rm NLO}(Y,Y)+r_0 S(Y,Y)]
+\exp[-R_{\rm PV}S(Y,Y)].$$
 
-where $M_{C_z}$ is the plus-prescribed matrix of the renormalon shape
+For identical input/output grids the original square matrix is returned directly.
+The input grid must cover every output point; extrapolation is rejected. Finite,
+nonempty one-dimensional grids are required. The existing fixed-order builder
+also checks uniform spacing and excludes input zero.
 
-$$C_z(\xi) = \frac{e^{-\epsilon_m z_s} p_z(1+\epsilon_m z_s+\epsilon_m^2 z_s^2)}{\epsilon_m^2\pi} + \frac{1}{\pi}\left( \frac{e^{-\epsilon_m z_s} z_s \sin[(1-\xi)p_z z_s]}{1-\xi} + \frac{e^{-\epsilon_m z_s} p_z}{(\epsilon_m^2+p_z^2(1-\xi)^2)^2} \left[ (\epsilon_m^2 - (1-\xi)^2 p_z^2 + \epsilon_m^3 z_s + \epsilon_m p_z^2(1-\xi)^2 z_s)\cos[(1-\xi)p_z z_s] - (1-\xi)p_z(2\epsilon_m + (1-\xi)^2 p_z^2 z_s + \epsilon_m^2 z_s)\sin[(1-\xi)p_z z_s] \right] \right)$$
+The shape has no factor of $N_m\mu$ inside it. For $p_z=|y|P_z$ and
+$z_s=\mathtt{zs\_fm}/(\hbar c)$, its off-diagonal expression is the Abel-regulated
+Fourier integral
 
-with $p_z = |y|P_z$, $z_s = z_s$, $\epsilon_m = 0.005$ GeV, and the scalar coefficients
+$$C_z(\xi)={p_z\over\pi}\operatorname{Re}\int_{z_s}^{\infty} dz\,
+ e^{i(\xi-1)p_z z}[z e^{-\epsilon_m z}-z_s e^{-\epsilon_m z_s}].$$
 
-$$r_0 = N_m \frac{\Gamma(1+b)}{\Gamma(1+b)} \left(\frac{\beta_0}{2\pi}\right)^0 \alpha_s = N_m \alpha_s, \qquad r_{\mathrm{sumPV}} = N_m |z\mu| e^w \left(-\frac{2\pi}{\beta_0}\right) \mathrm{Re}\left[ E_{1+b}(w) + c_1 E_b(w) + c_2 E_{-1+b}(w) \right]$$
+Here $\epsilon_m=0.005$ GeV. The square discretization is
+$S_{ij}=\Delta y\,C_z(y_i/y_j)/|y_j|$ for $i\ne j$, with
+$S_{jj}=-\sum_{i\ne j}S_{ij}$. This is a finite-domain column-plus prescription;
+continuum and regulator convergence must be assessed separately.
 
-with $w = -2\pi/(\alpha_s\beta_0)$, $N_m = 0.575$ for $n_f=3$, and $b, c_1, c_2$ from the QCD beta-function coefficients.
+The scalar factors use $n_f=3$ and the existing two-loop running coupling:
 
-#### Consistency check
+$$r_0=r_{\rm asym}(0,1,\mu,n_f)\alpha_s
+=N_m\mu(1+c_1+c_2)\alpha_s,$$
 
-The code reproduces Eqs. (12)–(17) of arXiv:2305.05212 with the following observations: (i) the fixed-order part matches Eq. (C7) of the companion paper (arXiv:2604.00143) with the $\ln 4$ constant removed from the log, consistent with the paper's notation; (ii) the hybrid correction matches Eq. (C8) with strength $3/2$; (iii) the renormalon shape $C_z$ matches Eq. (17) exactly, including the $\epsilon_m$ regularization; (iv) the PV Borel sum $r_{\mathrm{sumPV}}$ matches Eq. (13) with the real-part prescription; (v) the matrix-exponential assembly matches the paper's LRR prescription. No discrepancies found.
+$$R_{\rm PV}=N_m\mu e^w{-2\pi\over\beta_0}\operatorname{Re}
+ [E_{1+b}(w)+c_1E_b(w)+c_2E_{b-1}(w)],\qquad
+ w={-2\pi\over\beta_0\alpha_s},\quad b={\beta_1\over2\beta_0^2}.$$
+
+The $c_1,c_2$ terms and $N_m=0.5749687262865643$ are retained from the existing
+implementation. The $r_0$ term cancels the order-alpha_s contribution of the
+exponential, preserving NLO matching. The ordering of these generally
+noncommuting matrix factors is unchanged.
+
+[Zhang et al., arXiv:2305.05212](https://arxiv.org/abs/2305.05212), Eqs. (12)-(17),
+provides the renormalon coefficients, PV prescription and regulated hybrid
+correction. The finite-grid matrix exponential is the package's existing
+resummation choice; it is not a claim of an exact continuum or notebook
+reproduction. Consistent mass renormalization is needed for a physical LRR
+prediction. NNLO LRR and combined RGR+LRR are not provided by this kernel.
+
+The grid-transfer regressions independently assemble the square plus matrix;
+separate tests check the shape via its complex Fourier integral and the PV sum
+via integration-by-parts Borel quadrature. These checks do not constitute a full
+physical-data or continuum-convergence validation.
