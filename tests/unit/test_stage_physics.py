@@ -4060,6 +4060,16 @@ def test_migrated_kernel_code_has_no_legacy_imports_or_embedded_documentation() 
                 assert node.module == "lamet_agent.kernels.implementation" or (
                     path.stem == "quark_pdf_gi_gt_hybrid_nnlo_rgr"
                     and node.module == "lamet_agent.kernels.quark_pdf_gi_gt_hybrid_nnlo"
+                ) or (
+                    path.stem in {"quark_pdf_gi_gt_hybrid_nnlo_rgr_tr", "quark_pdf_gi_gt_hybrid_nlo_rgr_lrr_tr"}
+                    and node.module in {
+                        "lamet_agent.kernels.quark_pdf_gi_gt_hybrid_nnlo",
+                        "lamet_agent.kernels.quark_pdf_gi_gt_hybrid_nlo_rgr_tr",
+                        "lamet_agent.kernels.quark_pdf_gi_gt_hybrid_nnlo_rgr_tr",
+                    }
+                ) or (
+                    path.stem == "quark_pdf_gi_gt_hybrid_nnlo_rgr_lrr_tr"
+                    and node.module == "lamet_agent.kernels.quark_pdf_gi_gt_hybrid_nlo_rgr_lrr_tr"
                 )
             if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
                 assert ast.get_docstring(node, clean=False) is None

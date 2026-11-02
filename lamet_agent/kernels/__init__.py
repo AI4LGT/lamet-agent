@@ -18,7 +18,7 @@ from typing import Any, Mapping
 _SAFE_TOKEN = re.compile(r"[a-z][a-z0-9]*")
 _VALID_GAUGES = frozenset({"gi", "cg"})
 _VALID_SCHEMES = frozenset({"ratio", "hybrid", "msbar"})
-_VALID_RESUMMATIONS = frozenset({"", "rgr", "lrr", "rgr_lrr"})
+_VALID_RESUMMATIONS = frozenset({"", "rgr", "lrr", "rgr_lrr", "rgr_tr", "rgr_lrr_tr"})
 
 
 def _root(root: str | Path | None) -> Path:
@@ -83,10 +83,16 @@ def matching_kernel_id(
         "hybrid",
     ):
         raise ValueError("NNLO is available only for the GI gamma-t hybrid nonsinglet quark PDF")
-    if order == "nnlo" and resummation not in {"", "rgr", "rgr_lrr"}:
-        raise ValueError("NNLO supports fixed-order, rgr or rgr_lrr matching only")
+    if order == "nnlo" and resummation not in {"", "rgr", "rgr_lrr", "rgr_tr", "rgr_lrr_tr"}:
+        raise ValueError("NNLO supports fixed-order, rgr, rgr_lrr, rgr_tr or rgr_lrr_tr matching only")
     if resummation not in _VALID_RESUMMATIONS:
-        raise ValueError(f"resummation must be '', 'rgr', 'lrr', or 'rgr_lrr', got {resummation!r}")
+        raise ValueError(
+            f"resummation must be '', 'rgr', 'lrr', 'rgr_lrr', 'rgr_tr', or 'rgr_lrr_tr', got {resummation!r}"
+        )
+    if resummation in {"rgr_tr", "rgr_lrr_tr"} and (parton, observable, gauge, operator, scheme) != (
+        "quark", "pdf", "gi", "gt", "hybrid",
+    ):
+        raise ValueError("RGR+TR is available only for the GI gamma-t hybrid nonsinglet quark PDF")
     if resummation == "rgr_lrr" and (parton, observable, gauge, operator, scheme) != (
         "quark", "pdf", "gi", "gt", "hybrid",
     ):
@@ -95,7 +101,7 @@ def matching_kernel_id(
     if resummation:
         tokens.append(resummation)
     general_nonsinglet = parton == "quark" and observable == "pdf" and operator in {"gt", "gz"}
-    if resummation in {"rgr", "rgr_lrr"} and general_nonsinglet:
+    if resummation in {"rgr", "rgr_lrr", "rgr_tr", "rgr_lrr_tr"} and general_nonsinglet:
         component = str(attrs.get("source_component", "")).strip().lower()
         if component not in {"re", "im", "both"}:
             raise ValueError("Nonsinglet RGR requires source_component='re', 'im', or 'both'")

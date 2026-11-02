@@ -852,3 +852,38 @@ same rule into several prompts and documents.
 ## Combined RGR and LRR
 
 GI gamma-t hybrid nonsinglet PDF matching accepts `order: "nlo"` or `"nnlo"` with `resummation: "rgr_lrr"`. It preserves independent matching and the signed quark/antiquark convention. Parameters are the existing RGR controls plus `eps_m` (positive, default 0.005 GeV); NNLO retains `quadrature_order`. Input grids must be uniform, nonzero and span [-1,1]. See the paired public kernel documents for subtraction formulas and the need for consistent upstream mass renormalization.
+
+
+## NLO threshold resummation
+
+GI gamma-t hybrid nonsinglet matching supports `resummation: "rgr_tr"` at
+NLO only. The implementation follows the supplied To_Jinxin notebook hard/soft
+factorization and cut-factor product subtraction; independent matching and
+DGLAP evolution are unchanged. The soft boundary is evaluated analytically at
+eta0=0 instead of finite differences at eta0=0.01. Tests cover independent
+high-precision star distributions, soft derivatives, NLO double-counting,
+signed reflection, switch continuity, rectangular transfer, domain rejection,
+and stage publication. See the companion kernel document for controls and
+scientific scope. Never infer production-grid convergence from these tests.
+
+
+## NNLO notebook threshold prescription
+
+`quark_pdf_gi_gt_hybrid_nnlo_rgr_tr` extends the public `rgr_tr` selector to NNLO.
+Analytic fourth-order eta derivatives replace notebook finite differences;
+fractional-cell cut weights are the NNLO default, with pointwise comparison
+available. All existing NLO numerical code is unchanged. Fresh Mathematica
+fixtures cover hard/soft functions, evolution, and both full cut compositions.
+Tests also pin the observed finite-cut O(alpha_s^2) residual rather than
+incorrectly asserting cubic onset. Resolving that matching limitation would
+require a separate subtraction prescription decision, not just grid refinement.
+
+
+### Combined LRR and threshold resummation
+
+GI gamma-t hybrid nonsinglet PDFs support `order: "nlo"` or `"nnlo"` with
+`resummation: "rgr_lrr_tr"`. This includes notebook LRR in fixed matching,
+hard modulus/phase, and soft matrices before the cut product and signed DGLAP.
+Both new modes default to fractional sharp-cut cell integration; `point` is
+available for reference comparisons. See the companion kernel documents for
+regulator defaults, scale guards, and the finite-cut matching limitation.
