@@ -118,7 +118,7 @@ def _kernel_structure(kernel_id: str) -> dict[str, object]:
         "scheme": scheme_tokens[0],
         "order": next((token.upper() for token in reversed(tokens) if token in {"lo", "nlo", "nnlo"}), "not encoded"),
         "component": next((token for token in tokens if token in {"re", "im"}), "full"),
-        "resummation": "+".join(token.upper() for token in ("rgr", "lrr") if token in tokens) or "none",
+        "resummation": "+".join(token.upper() for token in ("rgr", "lrr", "tr") if token in tokens) or "none",
     }
 
 
@@ -180,7 +180,8 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
             "| `kernel_id` | Runtime-derived public kernel filename stem built from upstream "
             "renormalization and operator provenance, "
             "`order`, and resummation options. |",
-            "| `resummation` | Empty selects fixed order; GI gamma-t hybrid supports rgr_lrr at NLO/NNLO. "
+            "| `resummation` | Empty selects fixed order; GI gamma-t hybrid supports "
+            "rgr_lrr at NLO/NNLO and rgr_tr/rgr_lrr_tr at NLO/NNLO. "
             "Unpolarized nonsinglet `rgr` accepts `re`, `im`, or `both` without a suffix. "
             "Legacy polarized RGR derives its suffix from `source_component`; `lrr` has no suffix. |",
             "| `mu` | MSbar renormalization/matching scale in GeV. |",
