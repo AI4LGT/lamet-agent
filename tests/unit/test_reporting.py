@@ -1057,3 +1057,93 @@ def test_extrapolation_stage_report_contains_model_and_budget(tmp_path: Path) ->
     assert "FillBetweenPolyCollection" in overview_svg
     assert "Errorbar" not in overview_svg
     assert r"$x$" in overview_svg
+
+
+def test_correlator_stage_report_uses_one_legend_for_q2_vector(tmp_path: Path) -> None:
+    from lamet_agent.stages.correlator_analysis.reporting import write_stage_report
+
+    stage = tmp_path / "01_correlator_analysis"
+    output = EnsembleData(
+        _TEST_ENSEMBLE,
+        "bootstrap",
+        [[0.8, 0.7, 0.6], [0.82, 0.72, 0.62]],
+        ["Q2"],
+        {"Q2": [0.1, 0.2, 0.3]},
+        attrs={"sample_error_mode": "covariance"},
+    )
+    params = _correlator_lsqfit_params()
+    summary = {
+        "result": "bare_matrix_element",
+        "decisions": {"method": "scan"},
+        "diagnostics": {},
+        "artifacts": ["output.nc"],
+    }
+    record = _record(stage, "ff_scan", params=params, output=output, summary=summary)
+
+    text = write_stage_report(records=(record,), artifact_directory=stage).read_text(encoding="utf-8")
+    svg = (stage / "plots" / "local_observable.svg").read_text(encoding="utf-8")
+
+    assert "local_observable.svg" in text
+    assert "Q^2" in svg
+    assert svg.count("ff_scan") == 1
+
+
+def test_correlator_stage_report_uses_one_legend_for_pz_vector(tmp_path: Path) -> None:
+    from lamet_agent.stages.correlator_analysis.reporting import write_stage_report
+
+    stage = tmp_path / "01_correlator_analysis"
+    output = EnsembleData(
+        _TEST_ENSEMBLE,
+        "bootstrap",
+        [[0.2, 0.4], [0.22, 0.42]],
+        ["Pz"],
+        {"Pz": [1.0, 2.0]},
+        attrs={"sample_error_mode": "covariance"},
+    )
+    params = _correlator_lsqfit_params()
+    summary = {
+        "result": "bare_matrix_element",
+        "decisions": {"method": "scan"},
+        "diagnostics": {},
+        "artifacts": ["output.nc"],
+    }
+    record = _record(stage, "mom_scan", params=params, output=output, summary=summary)
+
+    text = write_stage_report(records=(record,), artifact_directory=stage).read_text(encoding="utf-8")
+    svg = (stage / "plots" / "local_observable.svg").read_text(encoding="utf-8")
+
+    assert "local_observable.svg" in text
+    assert "P_z" in svg
+    assert svg.count("mom_scan") == 1
+
+
+def test_pdf_stage_report_keeps_one_series_per_pz_job(tmp_path: Path) -> None:
+    from lamet_agent.stages.correlator_analysis.reporting import write_stage_report
+
+    stage = tmp_path / "01_correlator_analysis"
+    params = _correlator_lsqfit_params()
+    records = []
+    for job_id, scale in (("pdf_pz4", 0.8), ("pdf_pz5", 1.0)):
+        output = EnsembleData(
+            _TEST_ENSEMBLE,
+            "bootstrap",
+            [[scale, scale * 0.9, scale * 0.8], [scale * 1.01, scale * 0.91, scale * 0.81]],
+            ["z"],
+            {"z": [0, 1, 2]},
+            attrs={"sample_error_mode": "covariance"},
+        )
+        summary = {
+            "result": "bare_matrix_element",
+            "decisions": {"method": "lsqfit"},
+            "diagnostics": {},
+            "artifacts": ["output.nc"],
+        }
+        records.append(_record(stage, job_id, params=params, output=output, summary=summary))
+
+    text = write_stage_report(records=tuple(records), artifact_directory=stage).read_text(encoding="utf-8")
+    svg = (stage / "plots" / "correlator_overview.svg").read_text(encoding="utf-8")
+
+    assert "correlator_overview.svg" in text
+    assert "local_observable.svg" not in text
+    assert svg.count("pdf_pz4") == 1
+    assert svg.count("pdf_pz5") == 1

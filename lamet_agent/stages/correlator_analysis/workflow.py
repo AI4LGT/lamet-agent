@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import copy
+import json
 from typing import Any
 
+import numpy as np
+
 from lamet_agent.agent import LlmSession, ToolContext
+from lamet_agent.data import EnsembleData
 from lamet_agent.parallel import FitNumericalError
 from lamet_agent.ui import warning
 from lamet_agent.stages.correlator_analysis._fit_matrix import run as fit_matrix
@@ -17,6 +21,7 @@ from lamet_agent.stages.correlator_analysis._lanczos_inspection import run as in
 from lamet_agent.stages.correlator_analysis._publish import run as publish
 from lamet_agent.stages.correlator_analysis._selection import select_spectrum_candidate, select_tuned_candidate
 from lamet_agent.stages.correlator_analysis._scope import parse_fit_scope
+from lamet_agent.stages.correlator_analysis.physics import fit_matrix_element_samples
 from lamet_agent.stages.correlator_analysis.ask import initial, revise
 
 
@@ -103,6 +108,99 @@ def run(context: ToolContext, session: LlmSession) -> None:
         return
 
     inspect(context)
+    correlators = context.state.get("correlators", {})
+    three_points = [
+        value for value in correlators.values() if value.attrs.get("correlator_type") == "three_point"
+    ]
+    target = str(context.manifest.get("metadata", {}).get("target_observable", "")).lower()
+    if context.params["analysis_method"] == "lsqfit" and target in {"ff", "moment"}:
+        two_points = [
+            value for value in correlators.values() if value.attrs.get("correlator_type") == "two_point"
+        ]
+        pt2 = context.params["pt2_windows"][0]
+        pt3 = context.params["pt3_windows"][0]
+        fit_scope = list(context.params["fit_scope"])
+        n_states = {atom: int(counts[0]) for atom, counts in context.params["nstate"].items()}
+        component = {"re": "real", "im": "imag", "both": "both"}[context.params["component"]]
+        points = []
+        for three_point in three_points:
+            attrs = three_point.attrs
+            source = json.loads(attrs["source_momentum"])
+            sink = json.loads(attrs["sink_momentum"])
+            initial_2pt = next(
+                value for value in two_points
+                if json.loads(value.attrs["sink_momentum"]) == source
+            )
+            final_2pt = next(
+                value for value in two_points
+                if json.loads(value.attrs["sink_momentum"]) == sink
+            )
+            selected = {"initial": initial_2pt, "three": three_point}
+            if final_2pt is not initial_2pt:
+                selected["final"] = final_2pt
+            fitted, diagnostics = fit_matrix_element_samples(
+                selected,
+                fitting_form="Breit" if source == sink else "NonBreit",
+                fit_scope=fit_scope,
+                components=component,
+                tmin=int(pt2["tmin"]),
+                tmax=int(pt2["tmax"]),
+                tsep_values=[int(value) for value in pt3["tsep_ls"]],
+                tau_min=int(pt3["tau_cut"]),
+                n_states=n_states,
+                prior_width=float(context.params["prior_width"][0]),
+                correlator_rescale=float(context.state["correlator_rescale"]),
+                svdcut=float(context.params["svdcut"]),
+                posterior_prior_error_scale=float(context.params["posterior_prior_error_scale"]),
+                sample_error_mode=str(context.manifest["metadata"]["sample_error_mode"]),
+                workers=context.workers,
+                fit_samples=True,
+                _parallel=context._parallel,
+            )
+            k_s = fitted.ensemble.k_s
+            p_i = k_s * np.asarray(source, dtype=float)
+            p_f = k_s * np.asarray(sink, dtype=float)
+            if target == "ff":
+                m_pi = fitted.ensemble.m_pi
+                e_i = np.sqrt(m_pi**2 + p_i @ p_i)
+                e_f = np.sqrt(m_pi**2 + p_f @ p_f)
+                x = max(float((p_f - p_i) @ (p_f - p_i) - (e_f - e_i) ** 2), 0.0)
+            else:
+                x = float(p_f[2])
+            points.append((x, fitted, diagnostics))
+        axis = "Q2" if target == "ff" else "Pz"
+        points.sort(key=lambda item: item[0])
+        values = np.column_stack(
+            [np.asarray(point[1].real.values)[:, 0] for point in points]
+        )
+        output = EnsembleData(
+            points[0][1].ensemble,
+            points[0][1].resample,
+            [row for row in values],
+            [axis],
+            {axis: [float(point[0]) for point in points]},
+            attrs=dict(points[0][1].attrs),
+            name="bare_matrix_element",
+        )
+        output.to_netcdf(context.artifact_directory / "output.nc")
+        context.state["correlator_result"] = output
+        context.finish(
+            output,
+            {
+                "stage_id": context.stage_id,
+                "job_id": context.job_id,
+                "result": "bare_matrix_element",
+                "decisions": {"method": "scan", "fit_scope": fit_scope},
+                "diagnostics": {
+                    "points": [
+                        {"x": float(x), "Q": _diagnostics.get("min_Q"), "chi2_dof": _diagnostics.get("max_chi2_dof")}
+                        for x, item, _diagnostics in points
+                    ],
+                },
+                "artifacts": ["output.nc"],
+            },
+        )
+        return
     scope = parse_fit_scope(context.params["fit_scope"])
     suggestion = initial(context, session)
     if scope.is_spectrum:
