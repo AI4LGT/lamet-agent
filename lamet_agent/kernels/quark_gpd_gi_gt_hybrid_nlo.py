@@ -1,11 +1,3 @@
-"""Current-contract wrapper for the GI gamma^t quark GPD hybrid-NLO kernel.
-
-The coefficient is the two-variable ``GI_gt_quark_GPD_hybrid_NLO`` kernel from
-the project GPD matching implementation.  The public ``kernel`` callable uses
-the lamet-agent contract and returns a matrix acting as ``lightcone = matrix @
-quasi``.
-"""
-
 from __future__ import annotations
 
 from typing import Final
@@ -26,7 +18,6 @@ def _beta(order: int, nf: int = 3) -> float:
 
 
 def _alphas_nloop(mu: float, order: int = 1, nf: int = 3) -> float:
-    """Use the coupling convention of the original GPD implementation."""
     a_s_ref = 0.293 / (4.0 * np.pi)
     b0 = _beta(0, nf)
     temp = 1.0 + a_s_ref * b0 * np.log((mu / 2.0) ** 2)
@@ -89,7 +80,6 @@ def _c_gpd_gt_hybrid(
     zspz: float,
     eps: float,
 ) -> float:
-    """Regular off-diagonal coefficient from ``GI_gt_quark_GPD_hybrid_NLO``."""
     delta = x - y
     x1 = skewness + x
     x2 = skewness - x
@@ -173,7 +163,6 @@ def kernel(
     skewness: float,
     eps: float = 1e-12,
 ) -> np.ndarray:
-    """Return the inverse-matching matrix on the supplied x grids."""
     zspz = float(zs_fm) * float(momentum_gev) / GEV_FM
     return _build_matrix(
         x_out,
