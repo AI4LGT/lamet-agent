@@ -237,6 +237,25 @@ it reports `manifest has no jobs`.
 Architecture, file ownership, and contributor workflows are documented in
 [`DEVELOPMENT.md`](DEVELOPMENT.md).
 
+Unpolarized nonsinglet RGR matches independently at mu0=2*kappa*abs(x)*Pz
+and evolves coupled quark and antiquark components to the requested scale.
+Set `resummation: "rgr"` with `order: "nlo"` for GI/CG gamma-t or gamma-z
+(GI hybrid/ratio; CG hybrid/ratio/MSbar), or `order: "nnlo"` for GI gamma-t
+hybrid. Upstream `source_component` may be `re`, `im`, or `both`.
+These are flavor differences such as u-d and ubar-dbar; singlet/gluon mixing
+and total flavor-summed valence evolution are not included.
+
+The signed convention is f(-x)=-antiquark(x). Input x must be uniform,
+increasing, nonzero and cover [-1,1]. Output x may be nonuniform within [-1,1].
+`kernel_parameters` accepts `kappa`, `mu_min_gev`, `evolution_points` (default
+100), `evolution_steps` (40), and `y_max` (100); NNLO also accepts
+`quadrature_order` (64). Rows below the cutoff are zero on both sides;
+active points below 1/evolution_points are rejected. Splitting functions use
+nf=3 with the supplied package's prescription and the existing running-coupling
+threshold policy. Check numerical convergence for a production analysis.
+Legacy suffixed RGR kernels remain available directly. See each kernel's
+companion Markdown for its formula and numerical prescription.
+
 ## Intermediate Data (NetCDF)
 
 Stage-to-stage numerical artifacts are stored as NetCDF files. Every array has:
@@ -259,6 +278,15 @@ Typical per-job files are:
 | `llm_transcript.md` | Recorded LLM requests and responses, when applicable. |
 | `diagnostics/*`     | Candidate tables and numerical diagnostics.           |
 | `plots/*`           | PDF/SVG result and fit-quality figures.               |
+
+Matching plots split lines and uncertainty bands at detected grid gaps. Matching
+reports give partial quasi and light-cone integrals over the same supported
+intervals shared by the input and output grids, excluding gaps in either grid
+and coverage outside their intersection rather than extrapolating.
+A gap is a spacing greater than twice the median spacing on a grid with at least
+four points. Values are interpolated at interval boundaries; isolated points
+contribute zero area. With no common interval of positive width, integral
+diagnostics are unavailable. These diagnostics are not full-support sum rules.
 
 Stage directories also receive an aggregate `report.md`; job directories do not
 write report files. Review writes its final `review.md`, `review_bundle.json`,

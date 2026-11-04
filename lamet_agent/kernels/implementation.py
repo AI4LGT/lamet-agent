@@ -693,7 +693,7 @@ def _p_qq_lo(nu: np.ndarray) -> np.ndarray:
     return np.where(inside, value, 0.0)
 
 
-def _p_nlo_full_unpolarized(nu: np.ndarray) -> np.ndarray:
+def _p_nlo_full_unpolarized(nu: np.ndarray, nf: float = _SPLIT_NF) -> np.ndarray:
     nu = np.asarray(nu, dtype=float)
     inside = (nu >= 0.0) & (nu < 1.0)
     v = np.where(inside, np.clip(nu, 1e-300, None), 0.5)
@@ -701,7 +701,7 @@ def _p_nlo_full_unpolarized(nu: np.ndarray) -> np.ndarray:
     z2 = np.pi**2 / 6.0
     a = (1.0 + v**2) / (1.0 - v)
     b = (1.0 + v**2) / (1.0 + v)
-    cf, ca, nf = (_SPLIT_CF, _SPLIT_CA, _SPLIT_NF)
+    cf, ca = (_SPLIT_CF, _SPLIT_CA)
     value = (
         4.0
         * ca
@@ -725,6 +725,60 @@ def _p_nlo_full_unpolarized(nu: np.ndarray) -> np.ndarray:
     return np.where(inside, value, 0.0)
 
 
+def _p_nnlo_ns_minus(nu: np.ndarray, nf: float = _SPLIT_NF) -> np.ndarray:
+    if not np.isfinite(nf) or nf < 0 or nf != int(nf) or nf > 6:
+        raise ValueError("nf must be an integer between 0 and 6.")
+    nu = np.asarray(nu, dtype=float)
+    inside = (nu > 0.0) & (nu < 1.0)
+    x = np.where(inside, nu, 0.5)
+    l0, l1 = np.log(x), np.log1p(-x)
+    d0 = 1.0 / (1.0 - x)
+    value = (
+        1174.898 * d0 + 714.1 * l1 + 1860.2 - 3505.0 * x
+        + 297.0 * x**2 - 433.2 * x**3
+        + l0 * l1 * (251.2 * l0 + 684.0) + 1465.2 * l0 + 399.2 * l0**2
+        + 320.0 / 9.0 * l0**3 + 116.0 / 81.0 * l0**4
+        + nf * (
+            -183.187 * d0 - 5120.0 / 81.0 * l1 - 216.62 + 406.5 * x
+            + 77.89 * x**2 + 34.76 * x**3 - 1.136 * x * l0**3
+            - 65.43 * l0 * l1 - 172.69 * l0 - 1072.0 / 27.0 * l0**2
+            - 256.0 / 81.0 * l0**3
+        )
+        + nf**2 * 64.0 / 81.0 * (
+            -d0 + x * d0 * l0 * (5.0 + 1.5 * l0) + 1.0
+            + (6.0 + 5.5 * l0 + 0.75 * l0**2) * (1.0 - x)
+        )
+    )
+    return np.where(inside, value, 0.0)
+
+
+def _p_nnlo_ns_plus(nu: np.ndarray, nf: float = _SPLIT_NF) -> np.ndarray:
+    if not np.isfinite(nf) or nf < 0 or nf != int(nf) or nf > 6:
+        raise ValueError("nf must be an integer between 0 and 6.")
+    nu = np.asarray(nu, dtype=float)
+    inside = (nu > 0.0) & (nu < 1.0)
+    x = np.where(inside, nu, 0.5)
+    l0, l1 = np.log(x), np.log1p(-x)
+    d0 = 1.0 / (1.0 - x)
+    value = (
+        1174.898 * d0 + 714.1 * l1 + 1641.1 - 3135.0 * x
+        + 243.6 * x**2 - 522.1 * x**3
+        + l0 * l1 * (256.8 * l0 + 563.9) + 1258.0 * l0 + 294.9 * l0**2
+        + 800.0 / 27.0 * l0**3 + 128.0 / 81.0 * l0**4
+        + nf * (
+            -183.187 * d0 - 5120.0 / 81.0 * l1 - 197.0 + 381.1 * x
+            + 72.94 * x**2 + 44.79 * x**3 - 1.497 * x * l0**3
+            - 56.66 * l0 * l1 - 152.6 * l0 - 2608.0 / 81.0 * l0**2
+            - 64.0 / 27.0 * l0**3
+        )
+        + nf**2 * 64.0 / 81.0 * (
+            -d0 + x * d0 * l0 * (5.0 + 1.5 * l0) + 1.0
+            + (6.0 + 5.5 * l0 + 0.75 * l0**2) * (1.0 - x)
+        )
+    )
+    return np.where(inside, value, 0.0)
+
+
 def _c_parity_term(nu: np.ndarray) -> np.ndarray:
     nu = np.asarray(nu, dtype=float)
     inside = (nu >= 0.0) & (nu < 1.0)
@@ -742,8 +796,8 @@ def _c_parity_term(nu: np.ndarray) -> np.ndarray:
     return np.where(inside, value, 0.0)
 
 
-def _p_nlo_valence(nu: np.ndarray) -> np.ndarray:
-    return _p_nlo_full_unpolarized(nu) + _c_parity_term(nu)
+def _p_nlo_valence(nu: np.ndarray, nf: float = _SPLIT_NF) -> np.ndarray:
+    return _p_nlo_full_unpolarized(nu, nf) + _c_parity_term(nu)
 
 
 def _p_nlo_full_helicity(nu: np.ndarray) -> np.ndarray:
@@ -786,30 +840,100 @@ def _zpsi_msbar_ratio(mu: float, mu_ref: float = _ZPSI_REF_GEV, nf: float = 3.0)
 
 
 def _dglap_evolution_matrices(
-    x_grid: np.ndarray, p_nlo: Callable[[np.ndarray], np.ndarray]
-) -> tuple[np.ndarray, np.ndarray]:
+    x_grid: np.ndarray, p_nlo: Callable[[np.ndarray], np.ndarray],
+    *, p_nnlo: Callable[[np.ndarray], np.ndarray] | None = None,
+) -> tuple[np.ndarray, ...]:
     x = np.asarray(x_grid, dtype=float)
+    if x.ndim != 1 or x.size == 0 or not np.isfinite(x).all():
+        raise ValueError("RGR output grid must be a nonempty finite 1D array.")
+    if x.size > 1 and (
+        np.any(np.diff(x) <= 0) or not np.allclose(np.diff(x), np.diff(x)[0], rtol=0.0, atol=1e-12)
+    ):
+        raise ValueError("RGR output grid must be increasing and uniformly spaced.")
     dx = float(np.mean(np.diff(x))) if x.size > 1 else 1.0
     with np.errstate(divide="ignore", invalid="ignore"):
         ratio = x[:, None] / np.where(np.abs(x[None, :]) > 0, x[None, :], np.nan)
         weight = 1.0 / np.abs(np.where(np.abs(x[None, :]) > 0, x[None, :], np.nan))
     lo = np.nan_to_num(_p_qq_lo(ratio) * weight)
     nlo = np.nan_to_num(p_nlo(ratio) * weight)
-    return (dx * (lo - np.diag(lo.sum(axis=0))), dx * (nlo - np.diag(nlo.sum(axis=0))))
+    matrices = (dx * (lo - np.diag(lo.sum(axis=0))), dx * (nlo - np.diag(nlo.sum(axis=0))))
+    if p_nnlo is not None:
+        nnlo = np.nan_to_num(p_nnlo(ratio) * weight)
+        matrices += (dx * (nnlo - np.diag(nnlo.sum(axis=0))),)
+    return matrices
+
+
+def _dglap_nnlo_isovector_matrices(
+    x_grid: np.ndarray, *, nf: int = 3, y_max: float = 100.0,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    x = np.asarray(x_grid, dtype=float)
+    if (
+        x.ndim != 1 or x.size < 2 or not np.isfinite(x).all()
+        or np.any(x <= 0) or np.any(x > 1) or not np.isclose(x[-1], 1, rtol=0, atol=1e-12)
+    ):
+        raise ValueError("Isovector grid must be positive, finite, 1D, and end at 1, with at least two points.")
+    dx = x[1] - x[0]
+    if dx <= 0 or not np.allclose(np.diff(x), dx, rtol=0, atol=1e-12):
+        raise ValueError("Isovector grid must be increasing and uniformly spaced.")
+    if not np.isfinite(y_max) or y_max < 1:
+        raise ValueError("y_max must be finite and at least 1.")
+    _p_nnlo_ns_plus(0.5, nf)
+
+    def densities(z: np.ndarray) -> tuple[np.ndarray, ...]:
+        p1 = _p_nlo_full_unpolarized(z, nf)
+        m1 = _p_nlo_valence(z, nf)
+        p2 = _p_nnlo_ns_plus(z, nf)
+        m2 = _p_nnlo_ns_minus(z, nf)
+        return _p_qq_lo(z), (p1 + m1) / 2, (p1 - m1) / 2, (p2 + m2) / 2, (p2 - m2) / 2
+
+    upper = np.triu(np.ones((x.size, x.size), dtype=bool), 1)
+    ratio = np.where(upper, x[:, None] / x[None, :], 0.5)
+    matrices = [np.where(upper, d * dx / x[None, :], 0.0) for d in densities(ratio)]
+    count = int(np.floor((y_max - 1) / dx + 1e-10))
+    tail = 1 + dx * np.arange(1, count + 1)
+    for i, xi in enumerate(x):
+        y = np.concatenate((x[i + 1:], tail))
+        for matrix, density in zip(matrices, densities(xi / y)):
+            matrix[i, i] = -np.sum(density * xi * dx / y**2)
+    return tuple(matrices)
+
+
+def _dglap_nnlo_isovector_blocks(
+    x_grid: np.ndarray, *, nf: int = 3, y_max: float = 100.0,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    d0, d1qq, d1qb, d2qq, d2qb = _dglap_nnlo_isovector_matrices(x_grid, nf=nf, y_max=y_max)
+    zero = np.zeros_like(d0)
+    return (
+        np.block([[d0, zero], [zero, d0]]),
+        np.block([[d1qq, d1qb], [d1qb, d1qq]]),
+        np.block([[d2qq, d2qb], [d2qb, d2qq]]),
+    )
 
 
 def _evolution_operator(
-    mu_initial: float, mu_final: float, evo_lo: np.ndarray, evo_nlo: np.ndarray, steps: int
+    mu_initial: float, mu_final: float, evo_lo: np.ndarray, evo_nlo: np.ndarray, steps: int,
+    *, evo_nnlo: np.ndarray | None = None,
 ) -> np.ndarray:
     from scipy.linalg import expm
 
+    if not np.isfinite([mu_initial, mu_final]).all() or min(mu_initial, mu_final) <= 0:
+        raise ValueError("RGR evolution scales must be finite and positive.")
+    if isinstance(steps, bool) or not isinstance(steps, (int, np.integer)) or steps <= 0:
+        raise ValueError("RGR evolution steps must be a positive integer.")
+    if evo_nnlo is not None and (
+        evo_nnlo.shape != evo_lo.shape or not np.isfinite(evo_nnlo).all()
+    ):
+        raise ValueError("NNLO evolution matrix must be finite and have the LO matrix shape.")
     t0, t1 = (np.log(mu_initial**2), np.log(mu_final**2))
     dt = (t1 - t0) / steps
     operator = np.eye(evo_lo.shape[0])
     for index in range(steps):
         mu_mid = float(np.exp((t0 + dt * (index + 0.5)) / 2.0))
-        a = alpha_s(ALPHAS_N_LOOP, mu_mid, "running") / (4.0 * np.pi)
-        operator = operator @ expm((a * evo_lo + a**2 * evo_nlo) * dt)
+        a = alpha_s(ALPHAS_N_LOOP if evo_nnlo is None else 3, mu_mid, "running") / (4.0 * np.pi)
+        generator = a * evo_lo + a**2 * evo_nlo
+        if evo_nnlo is not None:
+            generator = generator + a**3 * evo_nnlo
+        operator = expm(generator * dt) @ operator
     return operator
 
 
@@ -829,12 +953,18 @@ def _rgr_from_fixed_order(
     kappa: float = 1.0,
     mu_min: float = 0.6,
     steps: int = 20,
+    p_nnlo: Callable[[np.ndarray], np.ndarray] | None = None,
 ) -> np.ndarray:
     if needs_zspz and zspz is None:
         raise ValueError("`zspz` is required for the hybrid (RGR) matching kernel.")
+    controls = [momentum_gev, mu, kappa, mu_min]
+    if not np.isfinite(controls).all() or min(controls) <= 0:
+        raise ValueError("RGR momentum, scale, kappa, and mu_min must be finite and positive.")
     x = np.asarray(lc_x_ls, dtype=float)
     y = x if quasi_y_ls is None else np.asarray(quasi_y_ls, dtype=float)
-    evo_lo, evo_nlo = _dglap_evolution_matrices(x, p_nlo)
+    matrices = _dglap_evolution_matrices(x, p_nlo, p_nnlo=p_nnlo)
+    evo_lo, evo_nlo = matrices[:2]
+    evolution_extra = {} if p_nnlo is None else {"evo_nnlo": matrices[2]}
     matrix = np.zeros((x.size, y.size), dtype=float)
     for x_value in range(x.size):
         mu0 = 2.0 * kappa * float(x[x_value]) * float(momentum_gev)
@@ -842,7 +972,65 @@ def _rgr_from_fixed_order(
             continue
         extra = {"zspz": zspz} if takes_zspz else {}
         fixed = fixed_order_builder(x, momentum_gev=momentum_gev, mu=mu0, quasi_y_ls=y, eps=eps, **extra)
-        evolution = _evolution_operator(mu0, mu, evo_lo, evo_nlo, steps)
+        evolution = _evolution_operator(mu0, mu, evo_lo, evo_nlo, steps, **evolution_extra)
         row = (evolution @ fixed)[x_value, :]
         matrix[x_value, :] = row * _zpsi_msbar_ratio(mu0) if needs_zpsi else row
     return matrix
+
+
+def _rgr_nonsinglet(
+    x_out: np.ndarray, x_in: np.ndarray, *,
+    prepare_matching: Callable, order: str,
+    momentum_gev: float, scale_gev: float, kappa: float,
+    mu_min_gev: float, evolution_points: int, evolution_steps: int,
+    y_max: float, eps: float,
+) -> np.ndarray:
+    if order not in {"nlo", "nnlo"}:
+        raise ValueError("Nonsinglet RGR order must be nlo or nnlo.")
+    for name, value in (
+        ("momentum_gev", momentum_gev), ("scale_gev", scale_gev),
+        ("kappa", kappa), ("mu_min_gev", mu_min_gev), ("eps", eps),
+    ):
+        if isinstance(value, bool) or not np.isfinite(value) or value <= 0:
+            raise ValueError(f"`{name}` must be finite and positive.")
+    for name, value, minimum in (("evolution_points", evolution_points, 2), ("evolution_steps", evolution_steps, 1)):
+        if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+            raise ValueError(f"`{name}` must be an integer at least {minimum}.")
+    if not np.isfinite(y_max) or y_max < 1:
+        raise ValueError("`y_max` must be finite and at least 1.")
+    x, y = np.asarray(x_out, dtype=float), np.asarray(x_in, dtype=float)
+    if x.ndim != 1 or x.size == 0 or not np.isfinite(x).all() or np.any(np.abs(x) > 1):
+        raise ValueError("Nonsinglet RGR x_out must be a nonempty finite 1D grid within [-1, 1].")
+    if y.ndim != 1 or y.size < 2 or not np.isfinite(y).all() or np.any(np.abs(y) <= eps):
+        raise ValueError("Nonsinglet RGR x_in must be a finite 1D grid with at least two nonzero points.")
+    dy = np.diff(y)
+    if dy[0] <= eps or not np.allclose(dy, dy[0], rtol=0, atol=eps):
+        raise ValueError("Nonsinglet RGR x_in must be increasing and uniformly spaced.")
+    if y[0] > -1 or y[-1] < 1:
+        raise ValueError("Nonsinglet RGR x_in must cover [-1, 1].")
+    grid = np.arange(1, evolution_points + 1, dtype=float) / evolution_points
+    magnitude = np.abs(x)
+    active = (magnitude > 0) & (2 * kappa * momentum_gev * magnitude >= mu_min_gev)
+    if np.any(magnitude[active] < grid[0] - eps):
+        raise ValueError("Active output points are below the evolution grid; increase evolution_points.")
+    result = np.zeros((x.size, y.size))
+    if not active.any():
+        return result
+    signed_grid = np.concatenate((-grid[::-1], grid))
+    fixed = prepare_matching(y, y)
+    transfer = _lo_interp_matrix(signed_grid, y)
+    d0, d1, d2 = _dglap_nnlo_isovector_blocks(grid, nf=3, y_max=y_max)
+    for radius in np.unique(magnitude[active]):
+        mu0 = 2 * kappa * momentum_gev * radius
+        matched = transfer @ fixed(mu0)
+        state = np.concatenate((matched[evolution_points:], -matched[:evolution_points][::-1]))
+        evolution = _evolution_operator(
+            mu0, scale_gev, d0, d1, evolution_steps, evo_nnlo=d2 if order == "nnlo" else None,
+        )
+        evolved = evolution @ state
+        interpolation = _lo_interp_matrix(np.array([radius]), grid)[0]
+        selected = active & (magnitude == radius)
+        for index in np.flatnonzero(selected):
+            sector = evolved[:evolution_points] if x[index] > 0 else -evolved[evolution_points:]
+            result[index] = interpolation @ sector
+    return result
