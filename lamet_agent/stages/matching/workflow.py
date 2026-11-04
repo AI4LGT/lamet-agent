@@ -1,10 +1,10 @@
-"""Deterministic perturbative-matching job workflow."""
+"""Deterministic matching job workflow."""
 
 from __future__ import annotations
 
 from lamet_agent.agent import LlmSession, ToolContext
-from lamet_agent.stages.perturbative_matching._apply import run as apply
-from lamet_agent.stages.perturbative_matching._inspection import run as inspect
+from lamet_agent.stages.matching._apply import run as apply
+from lamet_agent.stages.matching._inspection import run as inspect
 
 
 def run(context: ToolContext, _session: LlmSession) -> None:

@@ -152,8 +152,8 @@ def test_invalid_controls(kwargs):
 def test_nnlo_matching_stage_publishes_samples_and_provenance(tmp_path, complex_samples):
     from lamet_agent.agent import ToolContext
     from lamet_agent.data import EnsembleData
-    from lamet_agent.stages.perturbative_matching._apply import run
-    from lamet_agent.stages.perturbative_matching._inspection import run as inspect_kernel
+    from lamet_agent.stages.matching._apply import run
+    from lamet_agent.stages.matching._inspection import run as inspect_kernel
 
     grid = np.array([-0.75, -0.25, 0.25, 0.75])
     samples = [np.exp(-(grid**2)), 1.01 * np.exp(-(grid**2))]
@@ -182,7 +182,7 @@ def test_nnlo_matching_stage_publishes_samples_and_provenance(tmp_path, complex_
     context = ToolContext(
         {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
         tmp_path / "manifest.json",
-        "perturbative_matching",
+        "matching",
         "match",
         {
             "order": "nnlo",

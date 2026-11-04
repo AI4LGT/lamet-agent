@@ -353,6 +353,18 @@ sequence is:
 The ordered keys under `manifest.stages` define execution order. No central
 stage registry owns that order, and a stage must not depend on a later job.
 
+Matching is owned by `stages/matching/` and uses `matching` consistently in
+manifests, systematics, provenance, and literature stage tags. The former
+`perturbative_matching` package and stage identifier have no compatibility alias.
+
+`soft_analysis` is a contract-only placeholder, not an executable numerical
+stage. Its local contract adapts the shared job envelope to allow `jobs: []`
+and rejects actual jobs through `CHECKS` with a not-implemented explanation.
+It is not registered in `_WORKFLOW_STAGES` and has no workflow, reporter, or
+numerical input/output contract. Empty stages create no jobs or stage artifacts;
+subsequent artifact numbering still follows the authored stage-key positions.
+Keep the shared `stage_job_rules()` nonempty-list requirement for other stages.
+
 ## LLM extension points
 
 The three LLM surfaces intentionally use different interfaces:

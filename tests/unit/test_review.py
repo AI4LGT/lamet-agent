@@ -95,6 +95,7 @@ def test_review_builtin_index_is_ranked_from_run_topics(tmp_path: Path) -> None:
         "metadata": {"run_id": "review", "target_observable": "pdf", "parton": "quark"},
         "stages": {
             "fourier_transform": {"jobs": [{"id": "ft", "inputs": {}, "sector": "valence"}]},
+            "matching": {"jobs": [{"id": "mt", "inputs": {"quasi": "ft"}}]},
             "review": {"jobs": [{"id": "review", "inputs": {"results": []}}]},
         },
     }
@@ -131,6 +132,14 @@ def test_review_builtin_index_is_ranked_from_run_topics(tmp_path: Path) -> None:
     assert all("target_observable=pdf" in candidate["matched_topics"] for candidate in observation["candidates"][:4])
     assert not {"2310.10579", "2407.03516", "2412.19988"} & {candidate["id"] for candidate in observation["candidates"]}
 
+    matching = list_literature(context, stages=["matching"])
+    assert matching["candidates"]
+    assert "stage=matching" in matching["query_topics"]
+    assert all("stage=matching" in candidate["matched_topics"] for candidate in matching["candidates"])
+    assert all(
+        "matching" in candidate["tags"]["workflow_stages"] for candidate in context.state["literature_candidates"]
+    )
+
 
 def test_review_literature_filters_structured_metadata_and_accepts_explicit_tags(tmp_path: Path) -> None:
     common = {
@@ -149,7 +158,7 @@ def test_review_literature_filters_structured_metadata_and_accepts_explicit_tags
                 "hadrons": ["pion"],
                 "polarizations": ["unpolarized"],
                 "kinematic_dependence": ["collinear"],
-                "stages": ["fourier_transform"],
+                "workflow_stages": ["fourier_transform"],
             },
         },
         {
@@ -162,7 +171,7 @@ def test_review_literature_filters_structured_metadata_and_accepts_explicit_tags
                 "hadrons": ["pion"],
                 "polarizations": ["unpolarized"],
                 "kinematic_dependence": ["off_forward"],
-                "stages": ["fourier_transform"],
+                "workflow_stages": ["fourier_transform"],
             },
         },
         {
@@ -175,7 +184,7 @@ def test_review_literature_filters_structured_metadata_and_accepts_explicit_tags
                 "hadrons": ["pion"],
                 "polarizations": ["unpolarized"],
                 "kinematic_dependence": ["tmd"],
-                "stages": ["fourier_transform"],
+                "workflow_stages": ["fourier_transform"],
             },
         },
     ]
@@ -296,7 +305,7 @@ def test_review_consistency_follows_distribution_edges(tmp_path: Path) -> None:
                 },
                 {
                     "job_id": "mt",
-                    "stage_id": "perturbative_matching",
+                    "stage_id": "matching",
                     "dims": ["x"],
                     "coords": {"x": [0.0, 1.0]},
                     "attrs": {"parton": "quark", "polarization": "unpolarized"},
@@ -305,7 +314,7 @@ def test_review_consistency_follows_distribution_edges(tmp_path: Path) -> None:
             "review_bundle": {
                 "jobs": {
                     "ft": {"stage_id": "fourier_transform", "inputs": {}},
-                    "mt": {"stage_id": "perturbative_matching", "inputs": {"quasi": "ft"}},
+                    "mt": {"stage_id": "matching", "inputs": {"quasi": "ft"}},
                 }
             },
         },

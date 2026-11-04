@@ -65,7 +65,7 @@ def run(context: ToolContext) -> dict[str, object]:
                 "kinematics": ("momentum_gev", "initial_momentum_gev", "final_momentum_gev", "t_gev2", "ensemble"),
                 "schemes": (
                     ("renormalization_scheme", "kernel_id")
-                    if source_stage == "perturbative_matching"
+                    if source_stage == "matching"
                     else ("renormalization_scheme",)
                 ),
                 "resampling": ("resample_id", "resample", "n_sample"),
@@ -135,8 +135,8 @@ def run(context: ToolContext) -> dict[str, object]:
                         }
                     )
             if "grids" in checks and (source_stage, consumer_stage) in {
-                ("fourier_transform", "perturbative_matching"),
-                ("perturbative_matching", "extrapolation"),
+                ("fourier_transform", "matching"),
+                ("matching", "extrapolation"),
             }:
                 if source.get("dims") is None or consumer.get("dims") is None:
                     findings.append(

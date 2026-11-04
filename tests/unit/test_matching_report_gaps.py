@@ -5,7 +5,7 @@ import pytest
 
 from lamet_agent.data import EnsembleData
 from lamet_agent.stages._reporting import StageReportRecord, grid_segments, stage_overlay_lines
-from lamet_agent.stages.perturbative_matching.reporting import _diagnostics, write_stage_report
+from lamet_agent.stages.matching.reporting import _diagnostics, write_stage_report
 
 
 def data(x, values):

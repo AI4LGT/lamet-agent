@@ -216,12 +216,23 @@ Implemented stage families, normally authored in this order, are:
 1. `correlator_analysis`
 2. `renormalization`
 3. `fourier_transform`
-4. `perturbative_matching`
+4. `matching`
 5. `extrapolation`
 6. `review`
 
 A partial workflow may omit unneeded stages. The order of keys under `stages`
 is the execution order; there is no separate `metadata.stages` list.
+
+Matching uses `matching` for its Python package, manifest and systematics keys,
+and new artifact directories. Existing manifests must rename
+`perturbative_matching` to `matching`; the old identifier is no longer supported.
+
+Soft Analysis is an optional placeholder. Add `"soft_analysis": {"jobs": []}`
+under `stages` to reserve a position without executing jobs, calling a model, or
+writing stage artifacts. Its numerical implementation is pending, so nonempty
+job lists are rejected during validation. Other stages still require nonempty
+job lists. A manifest containing only this placeholder validates, but running
+it reports `manifest has no jobs`.
 
 Architecture, file ownership, and contributor workflows are documented in
 [`DEVELOPMENT.md`](DEVELOPMENT.md).
