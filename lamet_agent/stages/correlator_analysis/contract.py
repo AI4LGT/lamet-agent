@@ -81,6 +81,12 @@ def _valid_nstate_map(value: object) -> bool:
 PARAM_RULES = (
     Recommends("", "analysis_method", physics="Selects whether the job extracts the result with direct nonlinear least-squares or the Lanczos algorithm.", default="lsqfit"),
     Value("analysis_method", Literal["lsqfit", "lanczos"], physics="'lsqfit' fits authored correlator models with sample-wise nonlinear least-squares; 'lanczos' extracts the spectrum or matrix element through the Lanczos algorithm."),
+    Recommends("lsqfit", "priors", physics="Optional scalar Gaussian overrides use each model's named parameters before numerical conditioning.", default={}),
+    Recommends("lsqfit", "sample_prior_mode", physics="Every correlator fit selects original priors or broadened center-posterior priors for replica fits.", default="center_posterior"),
+    Recommends("lsqfit", "chained_prior_error_scale", physics="Independent width factor for transferring a preceding fit-stage posterior; omitted retains the legacy posterior_prior_error_scale fallback.", default=None),
+    Value("lsqfit.priors", dict, physics="Partial parameter-name overrides, each exactly {mean: finite scalar, sdev: positive finite scalar}, in raw fit-parameter units. log(...) keys use logarithmic means and widths; direct spectrum uses lattice-unit E0,E1,... and raw overlaps z0,z1,... before energy transformation."),
+    Value("lsqfit.sample_prior_mode", Literal["original", "center_posterior"], physics="original reuses the base/authored priors on every replica; center_posterior centers replica priors on the ensemble-center posterior and scales its widths by posterior_prior_error_scale. The covariance and paired resampling remain unchanged."),
+    Value("lsqfit.chained_prior_error_scale", (int, float), physics="Scale applied only when transferring a preceding fit-stage posterior. Omitted uses posterior_prior_error_scale for backward compatibility.", validator=_positive),
     Provides("", "lsqfit", "analysis_method", physics="The least-squares branch owns spectral and matrix-element candidate fitting."),
     Provides("", "lanczos", "analysis_method", physics="The Lanczos algorithm owns Krylov analysis and nested resampling."),
     Depends("", "component", physics="The fit needs an explicit real, imaginary, or complex channel selection."),
@@ -95,7 +101,7 @@ PARAM_RULES = (
     Depends("lsqfit", "pt2_windows", physics="Two-point spectrum information needs candidate time windows chosen from the observed signal and uncertainty.", null_hook=recommend_pt2_windows),
     Depends("lsqfit", "pt3_windows", physics="Three-point, self-ratio, and Feynman-Hellmann observables need candidate source-sink and insertion-time windows.", null_hook=recommend_pt3_windows),
     Recommends("lsqfit", "svdcut", physics="Correlated fits need a relative covariance singular-value cutoff to suppress numerically unresolved directions.", default=1e-12),
-    Depends("lsqfit", "posterior_prior_error_scale", physics="The fit needs a scale for propagating prior uncertainty; chained fits also use it to widen the preceding spectrum posterior."),
+    Recommends("lsqfit", "posterior_prior_error_scale", physics="Width factor for center_posterior replica priors, independent of prior_width. Chained transfers use this only when chained_prior_error_scale is omitted.", default=10.0),
     Depends("lsqfit", "q_min", physics="Candidate comparison needs a preferred fit-quality probability; after recommendation retries are exhausted, selection falls back across all retained numerical candidates."),
     Value("lsqfit.nstate", dict, physics="A mapping from each correlator atom in fit_scope to the positive state counts scanned for that correlator. Keys must be atoms such as 2pt, 3pt_over_2pt, or 3pt_over_3pt, never a joint '+' stage string.", validator=_valid_nstate_map),
     List("lanczos.nstate", "state_count", physics="Lanczos exports one authored Ritz-state count.", validator=_nonempty),
@@ -117,11 +123,11 @@ PARAM_RULES = (
     Recommends("lanczos", "final_iteration", physics="The published three-point matrix uses the final Lanczos iteration; omitted values follow korr_dev and select the second-to-last usable iteration.", default=None),
     Value("component", Literal["re", "im", "both"], physics="'re' selects the real channel, 'im' the imaginary channel, and 'both' fits both channels."),
     Value("lanczos.nstate.state_count", int, physics="The number of exported Ritz states; it must be a positive integer.", validator=_positive),
-    Value("lsqfit.prior_width.width", float, physics="The scale of Gaussian prior uncertainties for a fit candidate; it must be a positive floating-point value. It scales every authored prior: matrix elements and self-ratio denominators at 10x, spectral overlaps at 10x/3^state, log energy splittings at 1x, and log ground energies at 3x. It also multiplies the per-sample prior scale, so tightening it both raises the centre fit's cost on underconstrained directions and pins the resample fits closer to the centre posterior.", validator=_positive),
+    Value("lsqfit.prior_width.width", (int, float), physics="Positive factor applied exactly once to the sdev of every base or authored prior. It changes no means and does not additionally scale posterior-derived replica or chained priors.", validator=_positive),
     Value("lsqfit.model_average", bool, physics="false publishes the window-selected nstate/prior-width model; true forms per-resample, per-z normalized exp(logGBF-max(logGBF)) means over nstate and prior_width at that frozen window, strategy, and scope, without Q filtering. Between-model spread of center values is recorded separately and is not mixed into the resampled samples."),
     Value("lsqfit.fitting_form", Literal["Breit", "NonBreit"], physics="'Breit' is the equal-momentum forward decomposition; 'NonBreit' is the distinct source/sink momentum decomposition."),
     Value("lsqfit.svdcut", (int, float), physics="The relative covariance singular-value cutoff used to stabilize correlated fits; it must be finite and positive.", validator=_positive),
-    Value("lsqfit.posterior_prior_error_scale", (int, float), physics="The factor used to widen propagated posterior or prior uncertainties; it must be finite and positive.", validator=_positive),
+    Value("lsqfit.posterior_prior_error_scale", (int, float), physics="Finite positive factor for center_posterior replica prior widths. Also the legacy fallback when chained_prior_error_scale is omitted; prior_width never multiplies this factor.", validator=_positive),
     Value("lsqfit.q_min", (int, float), physics="The preferred fit-quality probability Q for acceptance; after recommendation retries are exhausted, a finite-Q candidate may be selected below it from all retained attempts.", validator=_unit_interval),
     Value("lanczos.scope", Literal["2pt_spectrum", "3pt_matrix"], physics="'2pt_spectrum' extracts a two-point spectrum; '3pt_matrix' extracts a three-point matrix element with the Lanczos algorithm."),
     Value("lanczos.inner_samples", int, physics="The number of inner bootstrap replicas used for each outer sample; it must be a positive integer.", validator=_positive),
@@ -248,6 +254,29 @@ def check_lanczos_branch(context: CheckContext) -> Issue | None:
     return None
 
 
+def check_prior_controls(context: CheckContext) -> Issue | None:
+    """Reject malformed or unknown overrides before fitting any candidate."""
+    if context.params.get("analysis_method") != "lsqfit":
+        return None
+    from lamet_agent.stages.correlator_analysis._priors import declared_prior_names, validate_prior_overrides
+
+    try:
+        validate_prior_overrides(context.params.get("priors"))
+    except ValueError as exc:
+        return Issue("priors", str(exc), "Each model parameter needs a finite scalar mean and positive scalar width.")
+    try:
+        allowed_names = declared_prior_names(context.params)
+    except (KeyError, TypeError, ValueError):
+        # Other checks resolve incomplete model declarations before this check
+        # can establish their allowed parameter names.
+        return None
+    try:
+        validate_prior_overrides(context.params.get("priors"), allowed_names=allowed_names)
+    except ValueError as exc:
+        return Issue("priors", str(exc), "Overrides must name parameters present in the declared model/state union.")
+    return None
+
+
 JOB_RULES = stage_job_rules(PARAM_RULES, INPUT_RULES)
 
-CHECKS = (check_method_family, check_lanczos_branch, check_lsqfit_windows, check_qda_scope)
+CHECKS = (check_method_family, check_lanczos_branch, check_lsqfit_windows, check_qda_scope, check_prior_controls)
