@@ -10,6 +10,7 @@ from lamet_agent.agent import ToolContext
 from lamet_agent.data import EnsembleData
 from lamet_agent.kernels.implementation import HBAR_C_GEV_FM
 from lamet_agent.stages.correlator_analysis.physics import fit_spectrum_samples
+from lamet_agent.stages.correlator_analysis._priors import declared_prior_names
 
 
 def run(
@@ -20,6 +21,7 @@ def run(
     n_states: int,
     prior_means: dict[str, float],
     prior_widths: dict[str, float],
+    prior_width: float = 1.0,
 ) -> dict[str, object]:
     """Fit a positive two-point correlator and append a candidate."""
     lsqfit = context.params
@@ -58,6 +60,11 @@ def run(
         resample=source.resample,
         prior_means=prior_means,
         prior_widths=prior_widths,
+        priors=lsqfit.get("priors"),
+        prior_width=prior_width,
+        sample_prior_mode=lsqfit.get("sample_prior_mode", "center_posterior"),
+        posterior_prior_error_scale=float(lsqfit.get("posterior_prior_error_scale", 10.0)),
+        prior_allowed_names=declared_prior_names(lsqfit),
         sample_error_mode=str(context.manifest["metadata"]["sample_error_mode"]),
         workers=context.workers,
         _parallel=context._parallel,
@@ -71,6 +78,8 @@ def run(
             "fit_scope": json.dumps(["2pt"]),
             "fit_energy_unit": "lattice",
             "sample_error_mode": context.manifest["metadata"]["sample_error_mode"],
+            "sample_prior_mode": lsqfit.get("sample_prior_mode", "center_posterior"),
+            "prior_width": prior_width,
             "units": '{"values":"GeV","state":"index"}',
         }
     )
@@ -91,6 +100,7 @@ def run(
             "method": "direct_fit",
             "fit_scope": ["2pt"],
             "observable": "spectrum",
+            "nstate": {"2pt": n_states},
             "window": {"tmin": tmin, "tmax": tmax},
             "data": candidate,
             "prior_means": dict(prior_means),

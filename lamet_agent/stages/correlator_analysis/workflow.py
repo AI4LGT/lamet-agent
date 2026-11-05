@@ -64,27 +64,31 @@ def _candidate_attempts(context: ToolContext) -> dict[str, dict[str, Any]]:
     return attempts
 
 
-def _spectrum_attempt(
-    suggestion: dict[str, Any], *, metrics: dict[str, Any] | None = None, error: str | None = None
-) -> dict[str, dict[str, Any]]:
-    attempt = {"parameters": suggestion}
-    if metrics is not None:
-        attempt.update({name: metrics[name] for name in ("Q", "chi2", "dof", "chi2_dof", "logGBF") if name in metrics})
-    if error is not None:
-        attempt.update({"numerical_failure": True, "error": error})
-    return {"spectrum_001": attempt}
-
-
 def _spectrum_parameters(suggestion: dict[str, Any]) -> dict[str, Any]:
-    return {name: suggestion[name] for name in ("tmin", "tmax", "n_states", "prior_means", "prior_widths")}
+    return {
+        name: suggestion[name]
+        for name in ("tmin", "tmax", "n_states", "prior_means", "prior_widths", "prior_width")
+        if name in suggestion
+    }
 
 
 def _apply_spectrum_suggestion(context: ToolContext, suggestion: dict[str, Any]) -> None:
-    context.params["pt2_windows"] = [{"tmin": int(suggestion["tmin"]), "tmax": int(suggestion["tmax"])}]
+    context.params["pt2_windows"] = (
+        list(suggestion["pt2_windows"])
+        if "candidates" in suggestion
+        else [{"tmin": int(suggestion["tmin"]), "tmax": int(suggestion["tmax"])}]
+    )
 
 
-def _can_revise(session: LlmSession) -> bool:
-    return session.recommendation_calls < session.max_recommendation_calls
+def _can_revise(session: LlmSession, context: ToolContext) -> bool:
+    authored_initial = any(
+        item.get("attempt") == "initial" and item.get("source") == "manifest"
+        for item in context.state.get("fit_parameter_provenance", [])
+    )
+    # An authored initial choice consumes the initial-attempt slot, without
+    # pretending that an LLM call was made. Only the explicit retry budget remains.
+    budget = session.max_recommendation_calls - int(authored_initial)
+    return session.recommendation_calls < budget
 
 
 def _apply_matrix_suggestion(context: ToolContext, *, qda: bool, suggestion: dict[str, Any]) -> list[Any]:
@@ -110,23 +114,37 @@ def run(context: ToolContext, session: LlmSession) -> None:
         q_min = float(context.params["q_min"])
         last_error: Exception | None = None
         while True:
-            try:
-                observation = fit_spectrum(context, **_spectrum_parameters(suggestion))
-            except (FitNumericalError, ValueError) as exc:
-                last_error = exc
-                previous = _spectrum_attempt(suggestion, error=f"{type(exc).__name__}: {exc}")
-            else:
-                last_error = None
-                previous = _spectrum_attempt(suggestion, metrics=dict(observation["metrics"]))
+            authored = "candidates" in suggestion
+            candidates = (
+                suggestion["candidates"]
+                if authored
+                else [{**suggestion, "prior_width": width} for width in context.params.get("prior_width", [1.0])]
+            )
+            previous = {}
+            for index, candidate in enumerate(candidates):
                 try:
-                    _selected, fallback = select_spectrum_candidate(
-                        list(context.state.get("spectrum_candidates", [])), q_min=q_min
-                    )
-                except ValueError:
-                    fallback = True
-                if not fallback:
-                    break
-            if not _can_revise(session):
+                    observation = fit_spectrum(context, **_spectrum_parameters(candidate))
+                except (FitNumericalError, ValueError) as exc:
+                    if authored and not isinstance(exc, FitNumericalError):
+                        raise
+                    last_error = exc
+                    previous[f"spectrum_{index + 1:03d}"] = {
+                        "parameters": candidate,
+                        "numerical_failure": True,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                else:
+                    previous[f"spectrum_{index + 1:03d}"] = {
+                        "parameters": candidate,
+                        **dict(observation["metrics"]),
+                    }
+            try:
+                _selected, fallback = select_spectrum_candidate(
+                    list(context.state.get("spectrum_candidates", [])), q_min=q_min
+                )
+            except ValueError:
+                fallback = True
+            if not fallback or not _can_revise(session, context):
                 break
             suggestion = revise(context, session, previous)
             _apply_spectrum_suggestion(context, suggestion)
@@ -157,9 +175,7 @@ def run(context: ToolContext, session: LlmSession) -> None:
             else:
                 candidates = list(context.state.get("matrix_element_candidates", []))
                 try:
-                    selected, fallback = select_tuned_candidate(
-                        candidates, q_min=q_min
-                    )
+                    selected, fallback = select_tuned_candidate(candidates, q_min=q_min)
                 except ValueError as exc:
                     last_error = exc
                 else:
@@ -176,7 +192,7 @@ def run(context: ToolContext, session: LlmSession) -> None:
                         final_low_quality = False
                         chosen = attempts[-1]
                         break
-            if not _can_revise(session):
+            if not _can_revise(session, context):
                 if not attempts:
                     raise FitNumericalError(
                         "no correlator fit produced a publishable finite-Q result after the allowed attempts"
@@ -187,9 +203,7 @@ def run(context: ToolContext, session: LlmSession) -> None:
                         if len(attempts) > 1:
                             candidate["id"] = f"attempt_{attempt_number:03d}_{candidate['id']}"
                         retained_candidates.append(candidate)
-                selected, _fallback = select_tuned_candidate(
-                    retained_candidates, q_min=q_min
-                )
+                selected, _fallback = select_tuned_candidate(retained_candidates, q_min=q_min)
                 parameters = next(
                     parameters
                     for _representative, candidates, parameters in attempts

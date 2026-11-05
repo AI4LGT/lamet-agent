@@ -6,6 +6,9 @@ extension protocols, and ends with the expected change and verification
 workflow. Installation, command-line use, manifests, and data formats are
 documented in [`README.md`](README.md).
 
+The correlator prior controls and configuration examples are documented in
+[Correlator fit priors](docs/correlator-priors.md).
+
 ## Contents
 
 - Understand the system: [Architecture](#architecture),

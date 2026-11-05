@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from itertools import product
 
 import numpy as np
 
@@ -10,6 +11,7 @@ from lamet_agent.agent import LlmSession, ToolContext
 from lamet_agent.data import format_gvar
 from lamet_agent.stages.correlator_analysis._input import ensure_correlators
 from lamet_agent.stages.correlator_analysis._scope import parse_fit_scope
+from lamet_agent.stages.correlator_analysis._priors import declared_prior_names, validate_prior_overrides
 
 
 _CONTEXT_KEY = "correlator_fit_data"
@@ -62,6 +64,30 @@ def initial(context: ToolContext, session: LlmSession) -> dict[str, Any]:
         return cached
     scope = _scope(context)
     pt2 = context.params.get("pt2_windows")
+    if scope.is_spectrum and pt2 and context.params.get("priors"):
+        names = declared_prior_names(context.params)
+        priors = validate_prior_overrides(context.params["priors"], allowed_names=names)
+        if names.issubset(priors):
+            candidates = []
+            for window, count, width in product(
+                pt2, context.params["nstate"]["2pt"], context.params.get("prior_width", [1.0])
+            ):
+                active = [f"{prefix}{state}" for prefix in ("E", "z") for state in range(count)]
+                candidates.append(
+                    {
+                        **window,
+                        "n_states": count,
+                        "prior_width": width,
+                        "prior_means": {key: priors[key]["mean"] for key in active},
+                        "prior_widths": {key: priors[key]["sdev"] for key in active},
+                    }
+                )
+            result = {"candidates": candidates, "pt2_windows": list(pt2)}
+            context.state[_CACHE_KEY] = result
+            context.state.setdefault("fit_parameter_provenance", []).append(
+                {"attempt": "initial", "fixed": dict(result), "suggested": {}, "source": "manifest"}
+            )
+            return result
     if scope.is_spectrum:
         from .ask_for_spectrum_fit import recommend
 

@@ -280,6 +280,8 @@ loader 接受 JSON 和 JSONC 注释。当前 manifest envelope 为：
 
 对于使用 descriptor JSON record 的关联函数输入，请参阅[标准关联函数 HDF5 格式](#标准关联函数-hdf5-格式)中的输入文件约定。
 
+显式高斯先验、重采样先验模式和完整手写两点拟合参数的示例，见[关联函数拟合先验](docs/correlator-priors.md)。
+
 未知字段、无效选项、损坏的 input roles、重复 id、向前 job 引用、缺失路径以及跨参数不一致都会被拒绝。
 
 全局运行 metadata 字段包括：

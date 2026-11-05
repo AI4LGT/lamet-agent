@@ -448,6 +448,57 @@ def _selection_policy_lines(records: tuple[StageReportRecord, ...]) -> list[str]
     return lines
 
 
+def _prior_control_lines(record: StageReportRecord) -> list[str]:
+    """Expose authored priors and distinguish their scales from posterior transfers."""
+    params = record.params
+    mode = params.get("sample_prior_mode", "center_posterior")
+    posterior_scale = params.get("posterior_prior_error_scale", 10.0)
+    chain_scale = params.get("chained_prior_error_scale")
+    if chain_scale is None:
+        chain_scale = posterior_scale
+    lines = [
+        "",
+        "### Prior Controls",
+        "",
+        f"- Candidate prior widths: {format_value(params.get('prior_width', [1.0]))}; "
+        "each factor multiplies base/authored Gaussian standard deviations once.",
+        f"- Replica prior mode: `{mode}`.",
+    ]
+    if mode == "center_posterior":
+        lines.append(f"- Center-posterior replica width factor: {format_value(posterior_scale)}.")
+    else:
+        lines.append("- Replica fits reuse the base/authored priors; posterior replica widening is inactive.")
+    scope = params.get("fit_scope", [])
+    if len(scope) > 1:
+        lines.append(
+            f"- Chained posterior width factor: {format_value(chain_scale)}; "
+            "preceding-stage posteriors replace shared parameters separately in each replica."
+        )
+    overrides = params.get("priors", {})
+    if overrides:
+        lines.extend([
+            "",
+            "Authored overrides before width scaling and numerical conditioning. "
+            "`log(...)` keys use logarithmic means and widths; direct spectrum `E` keys use lattice energies "
+            "and `z` keys use raw overlap amplitudes.",
+            "",
+            "| parameter | mean | sdev |",
+            "|---|---:|---:|",
+            *[
+                f"| `{name}` | {format_value(value['mean'])} | {format_value(value['sdev'])} |"
+                for name, value in sorted(overrides.items())
+            ],
+        ])
+    else:
+        lines.append("- No per-parameter overrides; the model's default priors are used.")
+    lines.extend([
+        "",
+        "Fit diagnostics record the effective priors after conditioning and chained transfers, "
+        "including overrides inactive in lower-state candidates.",
+    ])
+    return lines
+
+
 def _application_summary_lines(record: StageReportRecord) -> list[str]:
     diagnostics = record.summary.get("diagnostics", {})
     application = diagnostics.get("selected_application_fit", {}) if isinstance(diagnostics, Mapping) else {}
@@ -767,6 +818,7 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
             ]
         )
         if params.get("analysis_method") == "lsqfit":
+            lines.extend(_prior_control_lines(record))
             lines.extend(
                 [
                     "",
