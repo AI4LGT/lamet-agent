@@ -8,7 +8,6 @@ import numpy as np
 from lamet_agent.agent import ToolContext
 from lamet_agent.data import EnsembleData
 from lamet_agent.parallel import FitNumericalError
-from lamet_agent.stages.correlator_analysis._priors import declared_prior_names
 from lamet_agent.plotting import configure_plot, errorline, save_figure, start_plot
 from lamet_agent.ui import log
 from lamet_agent.stages.correlator_analysis._diagnostics import write_fit_artifacts
@@ -57,7 +56,6 @@ def _apply_qda_candidate(
         posterior_prior_error_scale=float(settings["posterior_prior_error_scale"]),
         priors=settings.get("priors"),
         sample_prior_mode=settings.get("sample_prior_mode", "center_posterior"),
-        prior_allowed_names=declared_prior_names(settings),
         chained_prior_error_scale=settings.get("chained_prior_error_scale"),
         sample_error_mode=str(context.manifest["metadata"]["sample_error_mode"]),
         workers=context.workers,
@@ -100,7 +98,6 @@ def _apply_ordinary_candidate(
         "chained_prior_error_scale": settings.get("chained_prior_error_scale"),
         "priors": settings.get("priors"),
         "sample_prior_mode": settings.get("sample_prior_mode", "center_posterior"),
-        "prior_allowed_names": declared_prior_names(settings),
         "sample_error_mode": str(context.manifest["metadata"]["sample_error_mode"]),
         "workers": context.workers,
         "show_progress": bool(context.state.get("show_job_progress", False)),

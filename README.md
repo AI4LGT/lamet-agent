@@ -371,8 +371,11 @@ For correlator inputs that use a descriptor JSON record, see
 [Standard Correlator HDF5 Format](#standard-correlator-hdf5-format) for the
 input-file conventions.
 
-For explicit Gaussian priors, replica-prior choices, and fully authored
-two-point fits, see [Correlator fit priors](docs/correlator-priors.md).
+All fitting stages accept partial named Gaussian overrides as gvar strings
+(e.g. `"priors": {"E0": "0.3(0.1)"}`); missing parameters
+keep their existing defaults and unused names are ignored. See
+[Configurable fit priors](docs/fit-priors.md) for stage-specific names and units,
+replica-prior choices, and fully authored two-point fit examples.
 
 Unknown fields, invalid choices, broken input roles, duplicate ids, forward job
 references, missing paths, and cross-parameter inconsistencies are rejected.

@@ -18,6 +18,8 @@ from lamet_agent.contract import (
     stage_job_rules,
 )
 
+from lamet_agent.stages._priors import valid_prior_overrides
+
 
 def _positive(value: int | float) -> bool:
     return math.isfinite(value) and value > 0
@@ -39,17 +41,10 @@ def _pair(value: list[object]) -> bool:
     return len(value) == 2
 
 
-def _valid_priors(value: dict[object, object]) -> bool:
-    return (
-        set(value) == {"mean", "sdev"}
-        and isinstance(value["mean"], (int, float))
-        and not isinstance(value["mean"], bool)
-        and math.isfinite(value["mean"])
-        and isinstance(value["sdev"], (int, float))
-        and not isinstance(value["sdev"], bool)
-        and math.isfinite(value["sdev"])
-        and value["sdev"] > 0
-    )
+def _valid_priors(value: dict[object, object] | str) -> bool:
+    if isinstance(value, str):
+        return valid_prior_overrides({"common": value})
+    return valid_prior_overrides(value)
 
 
 def _valid_systematics_groups(value: dict[object, object]) -> bool:
@@ -91,7 +86,7 @@ PARAM_RULES = (
     Provides("", "systematics_budget", "operation", physics="For operation=systematics_budget, enables the input-index grouping and envelope rule that convert a main result and authored variants into pointwise uncertainties."),
     Recommends("fit", "x_independent_terms", physics="Bases B_t entering h=h0(x)+sum_t c_t B_t with one coefficient c_t shared across all x; h0 remains pointwise, so only the magnitude of each named correction is assumed x independent.", default=[]),
     Recommends("fit", "x_dependent_terms", physics="Bases entering h=h0(x)+sum_t c_t(x) B_t with an independent coefficient at every x, allowing cutoff, momentum, pion-mass, or finite-volume corrections to distort the distribution shape.", default=[]),
-    Recommends("fit", "priors", physics="Common numerical Gaussian mean and width for h0(x) and every correction coefficient in each parameter's native units during the sample-average fit; N(0,3^2) regularizes and can materially affect weakly constrained directions depending on basis scale.", default={"mean": 0.0, "sdev": 3.0}),
+    Recommends("fit", "priors", physics="Named Gaussian overrides for h0 and correction coefficients; omitted parameters keep N(0,3^2). A common gvar string applies to every coefficient. Pointwise coefficients use the same mean and width independently at each x.", default="0.0(3.0)"),
     Recommends("fit", "x_covariance", physics="false retains fixed-x covariance only among inputs with the same ensemble id and nonempty resample_id; true also retains cross-x covariance within those groups, while missing ids isolate inputs and distinct groups remain block diagonal.", default=False),
     Depends("fit", "pdep_gev", physics="Positive momenta used only for post-fit curves h0+c_inv_p2/P^2+c_inv_p4/P^4 when those terms exist; they add no observations and do not alter the P->infinity result."),
     Recommends("fit", "physical_pion_mass_gev", physics="Physical pion mass defining the chiral target: mpi2=m_pi^2-(m_pi^phys)^2 and mpi4_log_mpi2 is analogously physical-subtracted, so both bases vanish at this mass.", default=0.135),
@@ -100,7 +95,7 @@ PARAM_RULES = (
     List("fit.x_dependent_terms", "term", physics="Ordered unique bases with pointwise coefficients c_t(x); together with x_independent_terms it must select at least one correction."),
     Value("fit.x_independent_terms.term", Literal["a", "a2", "a4", "ap2", "ap4", "exp_mpi_L", "exp_sqrt2_mpi_L", "mpi2", "mpi4_log_mpi2", "inv_p2", "inv_p4"], physics="Supported shared bases use a_s and L=L_s a_s in fm and P,m_pi in GeV: a_s, a_s^2, a_s^4; raw (a_s P)^2,(a_s P)^4 without hbar-c conversion; exp[-m_pi L/(hbar c)], exp[-sqrt(2)m_pi L/(hbar c)]; m_pi^2-m_phys^2; m_pi^4 log(m_pi^2)-m_phys^4 log(m_phys^2) using numerical GeV values; and P^-2,P^-4. Coefficients carry inverse basis units when h is dimensionless."),
     Value("fit.x_dependent_terms.term", Literal["a", "a2", "a4", "ap2", "ap4", "exp_mpi_L", "exp_sqrt2_mpi_L", "mpi2", "mpi4_log_mpi2", "inv_p2", "inv_p4"], physics="Uses the same implemented bases as the shared class, but fits c_t(x) independently at each x so the correction may change the distribution shape."),
-    Value("fit.priors", dict, physics="Exactly one finite common numerical mean and positive width applied in each parameter's native units to initial priors for h0 and all correction coefficients; the same number therefore need not imply equal physical prior strength.", validator=_valid_priors),
+    Value("fit.priors", (dict, str), physics="Named {parameter: gvar-string} overrides, or one common gvar string such as 0.0(3.0); unused names are ignored. Parsed means and positive widths must be finite scalars in each parameter's native units.", validator=_valid_priors),
     Value("fit.x_covariance", bool, physics="Whether to retain cross-x covariance inside groups sharing ensemble id and nonempty resample_id; fixed-x covariance remains when false, and x-independent coefficients still couple x points."),
     List("fit.pdep_gev", "momentum", physics="Nonempty ordered momenta for finite-P diagnostic curves only; fitted input momenta still come from the matched-distribution metadata.", validator=_nonempty),
     Value("fit.pdep_gev.momentum", (int, float), physics="Finite positive diagnostic momentum P in GeV as required by the contract; positivity also avoids the P=0 singularity when inv_p2 or inv_p4 is selected.", validator=_positive),

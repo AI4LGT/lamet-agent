@@ -2174,7 +2174,7 @@ def test_extrapolation_supports_block_and_full_x_covariance() -> None:
             )
         )
     result, diagnostics = fit_candidate(
-        data, ["a"], 0.135, {"mean": 0.0, "sdev": 1.0}, x_range=(-0.2, 0.2), pdep_gev=[1.5, 2.0]
+        data, ["a"], 0.135, "0.0(1.0)", x_range=(-0.2, 0.2), pdep_gev=[1.5, 2.0]
     )
     assert result.dims == ["x"]
     assert np.allclose(np.asarray(result.mean), physical, atol=0.05)
@@ -2190,7 +2190,7 @@ def test_extrapolation_supports_block_and_full_x_covariance() -> None:
         data,
         ["a"],
         0.135,
-        {"mean": 0.0, "sdev": 1.0},
+        "0.0(1.0)",
         x_range=(-0.2, 0.2),
         x_independent_terms=["a"],
         x_covariance=True,
@@ -4106,7 +4106,7 @@ def test_extrapolation_fit_uses_reference_median_covariance(monkeypatch) -> None
         data,
         ["a"],
         0.135,
-        {"mean": 0.0, "sdev": 2.0},
+        "0.0(2.0)",
         x_range=(-0.2, 0.2),
         x_independent_terms=["a"],
     )

@@ -85,7 +85,7 @@ def _settings(qda=False):
         "svdcut": 1e-8,
         "q_min": 0.0,
         "model_average": False,
-        "priors": {"z0": {"mean": 1.2, "sdev": 0.2}, "O00_re": {"mean": 0.7, "sdev": 0.3}},
+        "priors": {"z0": "1.2(0.2)", "O00_re": "0.7(0.3)"},
     }
 
 
@@ -152,7 +152,7 @@ def test_chained_transfer_and_replica_widths_are_independent_of_prior_width(monk
         chained_prior_error_scale=chain_scale,
         workers=1,
         sample_error_mode="variance",
-        priors={"z0": {"mean": 1.2, "sdev": 0.2}},
+        priors={"z0": "1.2(0.2)"},
     )
     assert len(calls) == 2
     assert calls[0][1]["sample_prior_scale"] == 4.0  # never multiplied by prior_width again
@@ -174,9 +174,9 @@ def test_nonbreit_overlap_conditioning_keeps_physical_matrix_prior():
         components=("re",),
         width_scale=2.0,
         priors={
-            "z0_i": {"mean": 0.8, "sdev": 0.2},
-            "z0_f": {"mean": 0.9, "sdev": 0.1},
-            "O00_re": {"mean": 0.6, "sdev": 0.3},
+            "z0_i": "0.8(0.2)",
+            "z0_f": "0.9(0.1)",
+            "O00_re": "0.6(0.3)",
         },
         conditioning={"z0_i": 10.0, "z0_f": 10.0},
     )
@@ -229,7 +229,7 @@ def _spectrum_settings():
         "prior_width": [2.0],
         "sample_prior_mode": "center_posterior",
         "posterior_prior_error_scale": 4.0,
-        "priors": {"E0": {"mean": 0.3, "sdev": 0.05}},
+        "priors": {"E0": "0.3(0.05)"},
         "model_average": False,
     }
 
@@ -276,7 +276,8 @@ def test_complete_spectrum_priors_bypass_model_for_full_authored_grid(tmp_path):
     params.update(
         nstate={"2pt": [1, 2]}, prior_width=[1.0, 2.0], pt2_windows=[{"tmin": 2, "tmax": 7}, {"tmin": 3, "tmax": 8}]
     )
-    params["priors"].update(z0={"mean": 1.2, "sdev": 0.2}, E1={"mean": 0.7, "sdev": 0.1}, z1={"mean": 0.4, "sdev": 0.2})
+    params["priors"].update(z0="1.2(0.2)", E1="0.7(0.1)", z1="0.4(0.2)")
+    params["priors"]["unused"] = "5.0(2.0)"
     context = _context(tmp_path, params, {})
     suggestion = initial(context, object())  # has no model methods: any model call fails
     assert len(suggestion["candidates"]) == 8
@@ -323,19 +324,17 @@ def test_spectrum_recommendations_and_retries_scan_authored_widths(tmp_path, mon
     monkeypatch.setattr(workflow, "publish", lambda *args, **kwargs: None)
     workflow.run(context, session)
     assert [(time, width) for time, width, _ in calls] == [(2, 1.0), (2, 2.0), (3, 1.0), (3, 2.0)]
-    assert all(prior == {"mean": 0.3, "sdev": 0.05} for _, _, prior in calls)
+    assert all(prior == "0.3(0.05)" for _, _, prior in calls)
 
 
 @pytest.mark.parametrize(
     "override",
     [
-        {"E1": {"mean": 0.7, "sdev": 0.1}},
-        {"typo": {"mean": 0.3, "sdev": 0.1}},
         {"E0": {"mean": 0.3, "sdev": float("nan")}},
-        {"E0": {"mean": 0.3, "sdev": 0}},
+        {"E0": "0.3(0)"},
     ],
 )
-def test_direct_spectrum_rejects_wrong_state_unknown_and_invalid_width(override):
+def test_direct_spectrum_rejects_invalid_width(override):
     source = _correlators()["c2"]
     with pytest.raises(ValueError):
         physics.fit_spectrum_samples(
@@ -357,28 +356,30 @@ def test_log_conditioning_preserves_default_prior_and_transforms_authored_mean()
     assert gv.mean(conditioned["log(E0)"]) == pytest.approx(gv.mean(baseline["log(E0)"]))
     assert gv.sdev(conditioned["log(E0)"]) == pytest.approx(gv.sdev(baseline["log(E0)"]))
     authored = physics.matrix_element_prior(
-        **kwargs, conditioning={"log(E0)": 2.0}, priors={"log(E0)": {"mean": -1.0, "sdev": 0.2}}
+        **kwargs, conditioning={"log(E0)": 2.0}, priors={"log(E0)": "-1.0(0.2)"}
     )
     assert gv.mean(authored["log(E0)"]) == pytest.approx(-1.0 + np.log(2.0))
     assert gv.sdev(authored["log(E0)"]) == pytest.approx(0.2)
 
 
-def test_qda_rejects_local_denominator_priors_with_explicit_two_point_data():
+def test_public_qda_ignores_extra_priors_and_preserves_defaults():
     records = {key: value for key, value in _correlators().items() if key != "c3"}
-    with pytest.raises(ValueError, match="unknown prior parameter 'zprime0'"):
-        physics.fit_qda_samples(
-            records,
-            fit_scope=["2pt+qda"],
-            components="real",
-            tmin=2,
-            tmax=7,
-            n_states=1,
-            prior_width=1.0,
-            svdcut=1e-8,
-            posterior_prior_error_scale=4.0,
-            priors={"zprime0": {"mean": 1.2, "sdev": 0.1}},
-            prior_allowed_names={"log(E0)", "z0", "zprime0", "O00_re", "O00_im"},
-        )
+    settings = _settings(True)
+    settings["priors"] = {}
+    kwargs = dict(
+        method="qda", tmin=2, tmax=7, tau_min=None, lsqfit=settings,
+        fit_scope=["2pt+qda"], n_states=1, tune_z=1, fit_samples=False, sample_error_mode="variance",
+    )
+    _, _, baseline = physics.matrix_element_samples(records, **kwargs)
+    settings["priors"] = {
+        "zprime0": "1.2(0.1)",
+        "O01_re": "0.2(0.1)",
+    }
+    _, _, actual = physics.matrix_element_samples(records, **kwargs)
+    stage = actual["fits"][0]["stages"][0]
+    assert stage["inactive_prior_overrides"] == ["O01_re", "zprime0"]
+    assert stage["effective_priors"] == baseline["fits"][0]["stages"][0]["effective_priors"]
+    assert actual["Q"] == baseline["Q"]
 
 
 def test_direct_python_spectrum_api_preserves_original_prior_default(monkeypatch):
@@ -402,3 +403,17 @@ def test_direct_python_spectrum_api_preserves_original_prior_default(monkeypatch
     )
     assert calls == [None]
     assert diagnostics["sample_prior_mode"] == "original"
+
+
+def test_direct_spectrum_extra_parameters_leave_samples_and_default_priors_unchanged():
+    source = _correlators()["c2"]
+    kwargs = dict(extent=32, resample="bootstrap", prior_means={"E0": 0.3, "z0": 1.2},
+                  prior_widths={"E0": 0.1, "z0": 0.2})
+    baseline, base_fit = physics.fit_spectrum_samples(source.values[:, 2:7], np.arange(2, 7), 1, **kwargs)
+    values, fit = physics.fit_spectrum_samples(
+        source.values[:, 2:7], np.arange(2, 7), 1,
+        priors={"E1": "0.7(0.1)", "unused": "9(1)"}, **kwargs,
+    )
+    np.testing.assert_array_equal(values, baseline)
+    assert fit["effective_priors"] == base_fit["effective_priors"]
+    assert fit["inactive_prior_overrides"] == ["E1", "unused"]

@@ -10,7 +10,6 @@ from lamet_agent.agent import ToolContext
 from lamet_agent.data import EnsembleData
 from lamet_agent.kernels.implementation import HBAR_C_GEV_FM
 from lamet_agent.stages.correlator_analysis.physics import fit_spectrum_samples
-from lamet_agent.stages.correlator_analysis._priors import declared_prior_names
 
 
 def run(
@@ -64,7 +63,6 @@ def run(
         prior_width=prior_width,
         sample_prior_mode=lsqfit.get("sample_prior_mode", "center_posterior"),
         posterior_prior_error_scale=float(lsqfit.get("posterior_prior_error_scale", 10.0)),
-        prior_allowed_names=declared_prior_names(lsqfit),
         sample_error_mode=str(context.manifest["metadata"]["sample_error_mode"]),
         workers=context.workers,
         _parallel=context._parallel,

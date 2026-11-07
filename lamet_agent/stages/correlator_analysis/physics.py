@@ -10,13 +10,12 @@ import numpy as np
 
 from lamet_agent.data import EnsembleData
 from lamet_agent.parallel import FitNumericalError, nonlinear_fit
+from lamet_agent.stages._priors import prior_diagnostics, validate_prior_overrides
 from lamet_agent.parallel._pool import _ParallelPool
 from lamet_agent.ui import track
 from lamet_agent.stages.correlator_analysis._priors import (
     build_priors,
-    prior_diagnostics,
     sample_prior_scale,
-    validate_prior_overrides,
 )
 from lamet_agent.stages.correlator_analysis._scope import (
     atom_state_count,
@@ -262,7 +261,6 @@ def matrix_element_prior(
     denominator_kind: str = "external_2pt",
     priors: Mapping[str, Any] | None = None,
     conditioning: Mapping[str, float] | None = None,
-    prior_allowed_names: set[str] | None = None,
 ) -> gv.BufferDict:
     """Build the explicit spectral and matrix-element prior for one fit model."""
     if not np.isfinite(width_scale) or width_scale <= 0:
@@ -321,7 +319,7 @@ def matrix_element_prior(
         key: value for key, value in (conditioning or {}).items() if key in (priors or {}) and key in prior.keys()
     }
     return build_priors(
-        prior, priors, prior_width=requested_width, conditioning=factors, allowed_names=prior_allowed_names
+        prior, priors, prior_width=requested_width, conditioning=factors
     )
 
 
@@ -565,7 +563,6 @@ def fit_matrix_element_samples(
     chained_prior_error_scale: float | None = None,
     priors: Mapping[str, Any] | None = None,
     sample_prior_mode: str = "center_posterior",
-    prior_allowed_names: set[str] | None = None,
     sample_error_mode: str = "covariance",
     workers: int,
     tune_z: int | float | None = None,
@@ -585,8 +582,7 @@ def fit_matrix_element_samples(
             atom_counts, form=fitting_form, scope=pipeline.atoms, components=("re", "im"), width_scale=1.0
         ).keys()
     )
-    allowed_prior_names = model_prior_names if prior_allowed_names is None else prior_allowed_names
-    validate_prior_overrides(priors, allowed_names=allowed_prior_names)
+    validate_prior_overrides(priors)
     conditioning = {key: np.sqrt(correlator_rescale) for key in model_prior_names if key.startswith("z")}
     if pipeline.is_qda or pipeline.is_spectrum or not pipeline.needs_pt3_data:
         raise ValueError("ordinary matrix-element fitting requires a three-point or FH fit_scope")
@@ -802,7 +798,6 @@ def fit_matrix_element_samples(
                     width_scale=prior_width,
                     priors=priors,
                     conditioning=conditioning,
-                    prior_allowed_names=allowed_prior_names,
                 )
                 fit_prior = (
                     authored_prior
@@ -1105,7 +1100,6 @@ def fit_spectrum_samples(
     prior_width: float = 1.0,
     sample_prior_mode: str = "original",
     posterior_prior_error_scale: float = 10.0,
-    prior_allowed_names: set[str] | None = None,
     sample_error_mode: str = "covariance",
     workers: int = 1,
     _parallel: _ParallelPool | None = None,
@@ -1136,7 +1130,6 @@ def fit_spectrum_samples(
         {name: gv.gvar(prior_means[name], prior_widths[name]) for name in names},
         priors,
         prior_width=prior_width,
-        allowed_names=prior_allowed_names,
     )
     mean = np.asarray([float(gv.mean(physical_prior[name])) for name in names])
     widths = np.asarray([float(gv.sdev(physical_prior[name])) for name in names])
@@ -1225,7 +1218,6 @@ def fit_qda_samples(
     posterior_prior_error_scale: float,
     priors: Mapping[str, Any] | None = None,
     sample_prior_mode: str = "center_posterior",
-    prior_allowed_names: set[str] | None = None,
     chained_prior_error_scale: float | None = None,
     sample_error_mode: str = "covariance",
     workers: int = 1,
@@ -1296,10 +1288,7 @@ def fit_qda_samples(
             denominator_kind=denominator_kind,
         ).keys()
     )
-    allowed_prior_names = model_prior_names if prior_allowed_names is None else prior_allowed_names
-    if denominator_kind == "external_2pt":
-        allowed_prior_names = {key for key in allowed_prior_names if not key.startswith("zprime")}
-    validate_prior_overrides(priors, allowed_names=allowed_prior_names)
+    validate_prior_overrides(priors)
     conditioning = {key: np.sqrt(raw_scale) for key in model_prior_names if key.startswith(("z", "O"))}
     plot_upper = float(extent) / 2.0
     plot_selected = np.flatnonzero((t >= 0.0) & (t <= plot_upper))
@@ -1372,7 +1361,6 @@ def fit_qda_samples(
                     denominator_kind=denominator_kind,
                     priors=priors,
                     conditioning=conditioning,
-                    prior_allowed_names=allowed_prior_names,
                 )
                 fit_prior = (
                     authored_prior

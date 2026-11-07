@@ -84,7 +84,7 @@ PARAM_RULES = (
     Recommends("lsqfit", "priors", physics="Optional scalar Gaussian overrides use each model's named parameters before numerical conditioning.", default={}),
     Recommends("lsqfit", "sample_prior_mode", physics="Every correlator fit selects original priors or broadened center-posterior priors for replica fits.", default="center_posterior"),
     Recommends("lsqfit", "chained_prior_error_scale", physics="Independent width factor for transferring a preceding fit-stage posterior; omitted retains the legacy posterior_prior_error_scale fallback.", default=None),
-    Value("lsqfit.priors", dict, physics="Partial parameter-name overrides, each exactly {mean: finite scalar, sdev: positive finite scalar}, in raw fit-parameter units. log(...) keys use logarithmic means and widths; direct spectrum uses lattice-unit E0,E1,... and raw overlaps z0,z1,... before energy transformation."),
+    Value("lsqfit.priors", dict, physics="Partial parameter-name overrides, each a gvar string such as 1.0(0.3) with finite mean and positive finite sdev, in raw fit-parameter units. log(...) keys use logarithmic means and widths; direct spectrum uses lattice-unit E0,E1,... and raw overlaps z0,z1,... before energy transformation."),
     Value("lsqfit.sample_prior_mode", Literal["original", "center_posterior"], physics="original reuses the base/authored priors on every replica; center_posterior centers replica priors on the ensemble-center posterior and scales its widths by posterior_prior_error_scale. The covariance and paired resampling remain unchanged."),
     Value("lsqfit.chained_prior_error_scale", (int, float), physics="Scale applied only when transferring a preceding fit-stage posterior. Omitted uses posterior_prior_error_scale for backward compatibility.", validator=_positive),
     Provides("", "lsqfit", "analysis_method", physics="The least-squares branch owns spectral and matrix-element candidate fitting."),
@@ -255,25 +255,15 @@ def check_lanczos_branch(context: CheckContext) -> Issue | None:
 
 
 def check_prior_controls(context: CheckContext) -> Issue | None:
-    """Reject malformed or unknown overrides before fitting any candidate."""
+    """Validate Gaussian definitions while allowing parameters unused by a candidate."""
     if context.params.get("analysis_method") != "lsqfit":
         return None
-    from lamet_agent.stages.correlator_analysis._priors import declared_prior_names, validate_prior_overrides
+    from lamet_agent.stages._priors import validate_prior_overrides
 
     try:
         validate_prior_overrides(context.params.get("priors"))
     except ValueError as exc:
         return Issue("priors", str(exc), "Each model parameter needs a finite scalar mean and positive scalar width.")
-    try:
-        allowed_names = declared_prior_names(context.params)
-    except (KeyError, TypeError, ValueError):
-        # Other checks resolve incomplete model declarations before this check
-        # can establish their allowed parameter names.
-        return None
-    try:
-        validate_prior_overrides(context.params.get("priors"), allowed_names=allowed_names)
-    except ValueError as exc:
-        return Issue("priors", str(exc), "Overrides must name parameters present in the declared model/state union.")
     return None
 
 

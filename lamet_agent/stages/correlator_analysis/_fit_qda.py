@@ -6,7 +6,6 @@ from itertools import product
 
 from lamet_agent.agent import ToolContext
 from lamet_agent.parallel import FitNumericalError
-from lamet_agent.stages.correlator_analysis._priors import declared_prior_names
 from lamet_agent.stages.correlator_analysis.physics import (
     fit_qda_samples,
 )
@@ -79,7 +78,6 @@ def run(context: ToolContext, *, tune_z_values: list[float]) -> dict[str, object
                     posterior_prior_error_scale=float(settings["posterior_prior_error_scale"]),
                     priors=settings.get("priors"),
                     sample_prior_mode=settings.get("sample_prior_mode", "center_posterior"),
-                    prior_allowed_names=declared_prior_names(settings),
                     chained_prior_error_scale=settings.get("chained_prior_error_scale"),
                     sample_error_mode=str(context.manifest["metadata"]["sample_error_mode"]),
                     workers=context.workers,
