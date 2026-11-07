@@ -18,6 +18,7 @@ from lamet_agent.contract import (
     Value,
     stage_job_rules,
 )
+from lamet_agent.stages._priors import valid_prior_overrides
 from lamet_agent.stages.fourier_transform.ask import zmax_fm as recommend_zmax_fm
 from lamet_agent.stages.fourier_transform.ask import zmin_fm as recommend_zmin_fm
 
@@ -77,6 +78,8 @@ def _nonzero(value: int) -> bool:
 # ruff: disable[E501]
 # fmt: off
 PARAM_RULES = (
+    Recommends("", "priors", physics="Optional named tail-prior overrides shared by all ranges and LA/NLA models; missing parameters retain the fixed defaults and unused names are ignored.", default={}),
+    Value("priors", dict, physics="Each override is a gvar string such as 1.0(0.3), with a physical-parameter mean and a positive sdev in the bounded internal coordinate, preserving the existing tail-prior convention. Names include A2, phi2, Lambda and n, not positional u indices.", validator=valid_prior_overrides),
     Depends("", "quasi_y_ls", physics="Dimensionless quasi momentum-fraction grid y for P_z/(2 pi hbar c) sum_z w_z exp(+i y P_z z/(hbar c)) h(z), with z and w_z in fm and full endpoint weights on a uniform grid; it becomes the downstream matching input grid, so its range and spacing set numerical coverage but add no lattice information."),
     Depends("", "zmin_fm", physics="Candidate lower separations for the long-distance tail fit in fm; positive-z data with zmin <= z <= zmax constrain the tail, and one common range is selected from the sample-average data before resample fits.", null_hook=recommend_zmin_fm),
     Depends("", "zmax_fm", physics="Candidate upper separations of measured data entering the tail fit in fm; varying zmax tests the balance between large-|z| asymptotic validity and deteriorating lattice signal, independently of the later extension endpoint.", null_hook=recommend_zmax_fm),

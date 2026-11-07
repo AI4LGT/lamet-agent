@@ -177,6 +177,34 @@ def test_correlator_stage_report_contains_method_candidates_and_artifacts(tmp_pa
     assert "[output.nc](ca/output.nc)" in text
 
 
+@pytest.mark.parametrize("mode", ["original", "center_posterior"])
+def test_correlator_report_distinguishes_authored_replica_and_chain_priors(tmp_path: Path, mode: str) -> None:
+    from lamet_agent.stages.correlator_analysis.reporting import _prior_control_lines
+
+    record = _record(
+        tmp_path, "ca", output=_data(), summary={"artifacts": []},
+        params={
+            "fit_scope": ["2pt", "3pt_over_2pt"],
+            "prior_width": [0.5, 1.0],
+            "sample_prior_mode": mode,
+            "posterior_prior_error_scale": 7.0,
+            "chained_prior_error_scale": 1.0,
+            "priors": {"log(E0)": "-0.9(0.3)"},
+        },
+    )
+    text = "\n".join(_prior_control_lines(record))
+    assert "| `log(E0)` | -0.9 | 0.3 |" in text
+    assert "Chained posterior width factor: 1" in text
+    assert "before width scaling and numerical conditioning" in text
+    if mode == "original":
+        assert "posterior replica widening is inactive" in text
+        assert "Center-posterior replica width factor" not in text
+    else:
+        assert "Center-posterior replica width factor: 7" in text
+    record.params.pop("chained_prior_error_scale")
+    assert "Chained posterior width factor: 7" in "\n".join(_prior_control_lines(record))
+
+
 def test_lanczos_report_uses_configuration_language_and_readable_provenance(tmp_path: Path) -> None:
     from lamet_agent.stages.correlator_analysis.reporting import write_stage_report
 
@@ -598,6 +626,46 @@ def test_correlator_dispersion_fit_requires_more_momenta_than_parameters(tmp_pat
     assert all(width < 1.0 for width in band_widths)
 
 
+@pytest.mark.parametrize("conflict", [False, True])
+def test_dispersion_priors_are_combined_across_jobs_and_conflicts_are_reported(tmp_path, monkeypatch, conflict):
+    import lsqfit
+
+    from lamet_agent.stages._priors import prior_diagnostics
+    from lamet_agent.stages.correlator_analysis.reporting import _dispersion_lines
+
+    ensemble = EnsembleInfo("HISQ", "HISQa060_X", 0.06, 0.06, 48, 64, 0.3)
+    records = [
+        _correlator_dispersion_record(tmp_path, f"p{index}", ensemble, momentum, samples)
+        for index, (momentum, samples) in enumerate([
+            (0.0, [0.090, 0.092, 0.089, 0.091]),
+            (0.86, [0.280, 0.285, 0.275, 0.282]),
+            (1.72, [0.530, 0.540, 0.520, 0.535]),
+            (2.15, [0.690, 0.700, 0.680, 0.695]),
+        ])
+    ]
+    records[0].params["priors"] = {"k2": "1.1(0.1)", "unused": "9(1)"}
+    records[1].params["priors"] = {"k2": "0.9(0.1)" if conflict else "1.10(10)"}
+    calls = []
+    actual = lsqfit.nonlinear_fit
+
+    class CaptureFit(actual):
+        def __init__(self, *args, **kwargs):
+            calls.append(prior_diagnostics(kwargs["prior"])["effective_priors"])
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(lsqfit, "nonlinear_fit", CaptureFit)
+    text = "\n".join(_dispersion_lines(tuple(records), tmp_path))
+    if conflict:
+        assert not calls
+        assert "conflicting dispersion prior" in text
+    else:
+        assert len(calls) == 1
+        assert set(calls[0]) == {"m2", "k2", "k3"}
+        assert calls[0]["k2"] == {"mean": 1.1, "sdev": 0.1}
+        assert calls[0]["k3"] == {"mean": 0.0, "sdev": 10.0}
+        assert "dispersion effective priors" in text
+
+
 @pytest.mark.parametrize("second_spacing", [0.06, 0.06000000000001, 0.09])
 def test_renormalization_discrete_effect_requires_distinct_spacings(tmp_path: Path, second_spacing: float) -> None:
     from lamet_agent.stages.renormalization.reporting import _grouped_overlay_lines
@@ -961,7 +1029,8 @@ def test_matching_stage_report_embeds_shipped_kernel_document(tmp_path: Path) ->
     assert r"$x$" in overview_svg
 
 
-def test_extrapolation_stage_report_contains_model_and_budget(tmp_path: Path) -> None:
+@pytest.mark.parametrize("named_priors", [False, True])
+def test_extrapolation_stage_report_contains_model_and_budget(tmp_path: Path, named_priors: bool) -> None:
     from lamet_agent.stages.extrapolation.reporting import write_stage_report
 
     stage = tmp_path / "05_extrapolation"
@@ -981,7 +1050,7 @@ def test_extrapolation_stage_report_contains_model_and_budget(tmp_path: Path) ->
         "x_independent_terms": ["a"],
         "x_dependent_terms": ["inv_p2"],
         "x_covariance": False,
-        "priors": {"mean": 0.0, "sdev": 3.0},
+        "priors": {"h0": "0.8(0.2)"} if named_priors else "0.0(3.0)",
         "posterior_prior_error_scale": 3.0,
         "pdep_gev": [1.5, 2.0, 2.5],
     }

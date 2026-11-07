@@ -40,6 +40,8 @@ def select_single_candidate(candidates: Sequence[Mapping[str, Any]]) -> tuple[An
                 "parameter_mean": candidate["parameter_mean"],
                 "parameter_sdev": candidate["parameter_sdev"],
                 "momentum_dependence": candidate["momentum_dependence"],
+                "effective_priors": candidate.get("effective_priors", {}),
+                "inactive_prior_overrides": candidate.get("inactive_prior_overrides", []),
                 "weight": 1.0,
             }
         ],

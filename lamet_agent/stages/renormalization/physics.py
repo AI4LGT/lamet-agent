@@ -15,13 +15,14 @@ import numpy as np
 from lamet_agent.data import EnsembleData
 from lamet_agent.kernels.implementation import HBAR_C_GEV_FM
 from lamet_agent.parallel import nonlinear_fit
+from lamet_agent.stages._priors import merge_priors, prior_diagnostics
 
 
 @dataclass(frozen=True)
 class _FactorFitResult:
     factor: EnsembleData
     plot_data: dict[str, Any]
-    fit_quality: dict[str, dict[str, float]]
+    fit_quality: dict[str, dict[str, Any]]
 
 
 def load_data(value: Any) -> EnsembleData:
@@ -252,6 +253,7 @@ def _fit_factor_result(
     zms_kernel: Callable[..., Any],
     kernel_id: str,
     svdcut: float,
+    priors: Mapping[str, Any] | None = None,
     kernel_parameters: Mapping[str, Any] | None = None,
     short_distance_min_fm: float = 0.0,
     lattice_spacing_range_fm: tuple[float, float] | None = None,
@@ -295,6 +297,7 @@ def _fit_factor_result(
     for coordinate in z:
         prior[f"g{coordinate}"] = gv.gvar(0.0, 20.0)
         prior[f"f1{coordinate}"] = gv.gvar(0.0, 5.0)
+    prior = merge_priors(prior, priors)
     fit_x = {"z": [], "a": []}
     for spacing in spacings:
         for coordinate in z:
@@ -353,6 +356,7 @@ def _fit_factor_result(
     m0_prior = gv.BufferDict()
     m0_prior["m0"] = gv.gvar(0.0, 20.0)
     m0_prior["b"] = gv.gvar(0.0, 100.0)
+    m0_prior = merge_priors(m0_prior, priors)
     m0_fit = nonlinear_fit(
         data=(short_z, short_g_data),
         prior=m0_prior,
@@ -468,6 +472,7 @@ def _fit_factor_result(
     }
     fit_quality = {
         "reference": {
+            **prior_diagnostics(prior, priors),
             "chi2": float(fit.chi2),
             "dof": float(fit.dof),
             "chi2_dof": float(fit.chi2 / fit.dof) if fit.dof else float("nan"),
@@ -475,6 +480,7 @@ def _fit_factor_result(
             "logGBF": float(fit.logGBF),
         },
         "m0_matching": {
+            **prior_diagnostics(m0_prior, priors),
             "chi2": float(m0_fit.chi2),
             "dof": float(m0_fit.dof),
             "chi2_dof": float(m0_fit.chi2 / m0_fit.dof) if m0_fit.dof else float("nan"),
@@ -497,6 +503,7 @@ def fit_factor(
     zms_kernel: Callable[..., Any],
     kernel_id: str,
     svdcut: float,
+    priors: Mapping[str, Any] | None = None,
     short_distance_min_fm: float = 0.0,
     lattice_spacing_range_fm: tuple[float, float] | None = None,
     sample_error_mode: str = "covariance",
@@ -513,6 +520,7 @@ def fit_factor(
         zms_kernel=zms_kernel,
         kernel_id=kernel_id,
         svdcut=svdcut,
+        priors=priors,
         short_distance_min_fm=short_distance_min_fm,
         lattice_spacing_range_fm=lattice_spacing_range_fm,
         sample_error_mode=sample_error_mode,

@@ -280,6 +280,8 @@ loader 接受 JSON 和 JSONC 注释。当前 manifest envelope 为：
 
 对于使用 descriptor JSON record 的关联函数输入，请参阅[标准关联函数 HDF5 格式](#标准关联函数-hdf5-格式)中的输入文件约定。
 
+各拟合步骤均支持按参数名配置 gvar 字符串先验（如 `"priors": {"E0": "0.3(0.1)"}`）：缺项沿用原有默认值，多余项忽略。各模型的参数名、单位、重采样先验模式和完整两点拟合示例统一见[可配置拟合先验](docs/fit-priors.md)。
+
 未知字段、无效选项、损坏的 input roles、重复 id、向前 job 引用、缺失路径以及跨参数不一致都会被拒绝。
 
 全局运行 metadata 字段包括：

@@ -12,6 +12,7 @@ import numpy as np
 from lamet_agent.contract import CheckContext, Depends, Issue, Provides, Recommends, Source, Value, stage_job_rules
 from lamet_agent.kernels import load_renormalization_kernel
 from lamet_agent.ui import warning
+from lamet_agent.stages._priors import valid_prior_overrides
 
 
 def _annotation_accepts(annotation: Any, value: Any) -> bool:
@@ -144,6 +145,8 @@ PARAM_RULES = (
     Depends("self_renormalization", "LambdaQCD_gev", physics="Fit and apply use one QCD scale so the UV running and self-renormalization remapping share the same prescription."),
     Recommends("self_renormalization", "svdcut", physics="The covariance singular-value cutoff regularizes ill-conditioned directions in the correlated self-renormalization fit; the default is 1e-12.", default=1e-12),
     Recommends("self_renormalization", "z_coverage_policy", physics="Target coverage relative to the fitted factor is either required in full, restricted to the intersection, or extended only at the long-distance upper end.", default="extrapolate"),
+    Recommends("self_renormalization.fit", "priors", physics="Optional named Gaussian overrides for g{z}, f1{z}, m0 and b; omitted parameters keep their existing defaults and unused names are ignored.", default={}),
+    Value("self_renormalization.fit.priors", dict, physics="Each named prior is a gvar string such as 1.0(0.3), with a finite scalar mean and positive finite scalar sdev in the existing fit-parameter units.", validator=valid_prior_overrides),
     Depends("self_renormalization.fit", "d", physics="The reference fit uses the finite perturbative correction associated with the reference operator."),
     Depends("self_renormalization.apply", "d", physics="Application remaps the fitted factor with the target operator's finite perturbative correction, which may differ from the fit value."),
     Depends("self_renormalization.apply", "m0_gev", physics="Application remaps the fitted factor with the target operator's renormalon-related mass contribution."),

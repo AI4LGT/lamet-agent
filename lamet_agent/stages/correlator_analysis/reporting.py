@@ -6,6 +6,7 @@ import re
 from collections.abc import Mapping
 from pathlib import Path
 
+from lamet_agent.stages._priors import validate_prior_overrides
 from lamet_agent.stages._reporting import (
     StageReportRecord,
     artifact_rows,
@@ -448,6 +449,57 @@ def _selection_policy_lines(records: tuple[StageReportRecord, ...]) -> list[str]
     return lines
 
 
+def _prior_control_lines(record: StageReportRecord) -> list[str]:
+    """Expose authored priors and distinguish their scales from posterior transfers."""
+    params = record.params
+    mode = params.get("sample_prior_mode", "center_posterior")
+    posterior_scale = params.get("posterior_prior_error_scale", 10.0)
+    chain_scale = params.get("chained_prior_error_scale")
+    if chain_scale is None:
+        chain_scale = posterior_scale
+    lines = [
+        "",
+        "### Prior Controls",
+        "",
+        f"- Candidate prior widths: {format_value(params.get('prior_width', [1.0]))}; "
+        "each factor multiplies base/authored Gaussian standard deviations once.",
+        f"- Replica prior mode: `{mode}`.",
+    ]
+    if mode == "center_posterior":
+        lines.append(f"- Center-posterior replica width factor: {format_value(posterior_scale)}.")
+    else:
+        lines.append("- Replica fits reuse the base/authored priors; posterior replica widening is inactive.")
+    scope = params.get("fit_scope", [])
+    if len(scope) > 1:
+        lines.append(
+            f"- Chained posterior width factor: {format_value(chain_scale)}; "
+            "preceding-stage posteriors replace shared parameters separately in each replica."
+        )
+    overrides = validate_prior_overrides(params.get("priors"))
+    if overrides:
+        lines.extend([
+            "",
+            "Authored overrides before width scaling and numerical conditioning. "
+            "`log(...)` keys use logarithmic means and widths; direct spectrum `E` keys use lattice energies "
+            "and `z` keys use raw overlap amplitudes.",
+            "",
+            "| parameter | mean | sdev |",
+            "|---|---:|---:|",
+            *[
+                f"| `{name}` | {format_value(value['mean'])} | {format_value(value['sdev'])} |"
+                for name, value in sorted(overrides.items())
+            ],
+        ])
+    else:
+        lines.append("- No per-parameter overrides; the model's default priors are used.")
+    lines.extend([
+        "",
+        "Fit diagnostics record the effective priors after conditioning and chained transfers, "
+        "including overrides inactive in lower-state candidates.",
+    ])
+    return lines
+
+
 def _application_summary_lines(record: StageReportRecord) -> list[str]:
     diagnostics = record.summary.get("diagnostics", {})
     application = diagnostics.get("selected_application_fit", {}) if isinstance(diagnostics, Mapping) else {}
@@ -534,6 +586,7 @@ def _dispersion_lines(records: tuple[StageReportRecord, ...], artifact_directory
 
     from lamet_agent.data import EnsembleData
     from lamet_agent.kernels.implementation import HBAR_C_GEV_FM
+    from lamet_agent.stages._priors import merge_priors, prior_diagnostics
     from lamet_agent.plotting import configure_plot, errorband, errorline, line, save_figure, series_color, start_plot
 
     points = []
@@ -569,6 +622,7 @@ def _dispersion_lines(records: tuple[StageReportRecord, ...], artifact_directory
                 "mode": mode,
                 "resample": str(record.output.resample),
                 "resample_id": attrs.get("resample_id"),
+                "priors": record.params.get("priors") or {},
             }
         )
     if len(points) < 2:
@@ -623,10 +677,31 @@ def _dispersion_lines(records: tuple[StageReportRecord, ...], artifact_directory
             }
         )
         try:
+            overrides = {}
+            definitions = {}
+            for point in group:
+                for name, value in validate_prior_overrides(point["priors"]).items():
+                    if name not in prior:
+                        continue
+                    if name in definitions and not np.allclose(
+                        list(definitions[name].values()), list(value.values()), rtol=1e-12, atol=0.0
+                    ):
+                        raise ValueError(f"conflicting dispersion prior for {name!r} across jobs")
+                    definitions[name] = value
+                    overrides[name] = point["priors"][name]
+            prior = merge_priors(prior, overrides)
             fit = lsqfit.nonlinear_fit(data=(design, values), fcn=_dispersion_model, prior=prior, maxit=2000)
         except (FloatingPointError, OverflowError, RuntimeError, ValueError) as exc:
             notes.append(f"`{label}` dispersion fit failed: {type(exc).__name__}: {exc}")
             continue
+        notes.append(
+            f"`{label}` dispersion effective priors: "
+            + "; ".join(
+                f"`{name}` = {value['mean']:g} ± {value['sdev']:g}"
+                for name, value in prior_diagnostics(prior)["effective_priors"].items()
+            )
+            + "."
+        )
         line_design = np.column_stack([p2_line, p2_line**2 * np.full_like(p2_line, float(np.mean(a2)))])
         errorband(p2_line, _dispersion_model(line_design, fit.p), color=color)
     line(p2_line, p2_line, color="0.65", label=r"$E^2=p^2$", linestyle="dashed")
@@ -767,6 +842,7 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
             ]
         )
         if params.get("analysis_method") == "lsqfit":
+            lines.extend(_prior_control_lines(record))
             lines.extend(
                 [
                     "",

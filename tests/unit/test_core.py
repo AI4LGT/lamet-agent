@@ -1936,7 +1936,7 @@ def test_da_examples_expand_the_reference_systematics_branches(stem: str) -> Non
     assert '"job"' not in json.dumps(resolved.document)
     extrapolation_jobs = [job for job in resolved._resolved_jobs() if job.stage_id == "extrapolation"]
     assert all(
-        job.params["priors"] == {"mean": 0.0, "sdev": 3.0}
+        job.params["priors"] == "0.0(3.0)"
         for job in extrapolation_jobs
         if job.params["operation"] == "fit"
     )
@@ -1997,7 +1997,7 @@ def test_da_examples_expand_the_reference_systematics_branches(stem: str) -> Non
     assert "systematics" not in parsed.document
     assert parsed.document["stages"]["extrapolation"]["defaults"]["x_independent_terms"] == independent
     assert parsed.document["stages"]["extrapolation"]["defaults"]["x_dependent_terms"] == dependent
-    assert parsed.document["stages"]["extrapolation"]["jobs"][0]["priors"] == {"mean": 0.0, "sdev": 3.0}
+    assert parsed.document["stages"]["extrapolation"]["jobs"][0]["priors"] == "0.0(3.0)"
     assert parsed.document["stages"]["extrapolation"]["jobs"][0]["x_covariance"] is False
 
 
