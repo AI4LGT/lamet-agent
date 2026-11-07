@@ -1991,7 +1991,8 @@ def test_native_nonbreit_fit_uses_distinct_source_and_sink_spectra(fit_scope, ov
             assert plot["plateau_mean"] == pytest.approx(expected, abs=0.005)
 
 
-def test_chained_matrix_fit_transfers_posteriors_sample_by_sample(monkeypatch) -> None:
+@pytest.mark.parametrize("transfer_scale", [None, 1.0])
+def test_chained_matrix_fit_transfers_posteriors_sample_by_sample(monkeypatch, transfer_scale) -> None:
     import gvar as gv
     import lamet_agent.stages.correlator_analysis.physics as physics
 
@@ -2046,6 +2047,7 @@ def test_chained_matrix_fit_transfers_posteriors_sample_by_sample(monkeypatch) -
                 "sample_prior_scale": kwargs.get("sample_prior_scale"),
                 "sample_priors": kwargs.get("sample_priors"),
                 "e0": [None if parameters is None else float(parameters["E0"]) for parameters in result.samples],
+                "sample_sdevs": result.sample_sdevs,
             }
         )
         return result
@@ -2065,6 +2067,7 @@ def test_chained_matrix_fit_transfers_posteriors_sample_by_sample(monkeypatch) -
         correlator_rescale=1.0,
         svdcut=1e-8,
         posterior_prior_error_scale=3.0,
+        chained_prior_error_scale=transfer_scale,
         workers=1,
     )
     assert [call["atoms"] for call in calls] == [("2pt",), ("3pt_over_2pt",)]
@@ -2074,11 +2077,14 @@ def test_chained_matrix_fit_transfers_posteriors_sample_by_sample(monkeypatch) -
     sample_priors = calls[1]["sample_priors"]
     assert sample_priors is not None
     assert len(sample_priors) == len(calls[0]["e0"])
-    for prior, energy in zip(sample_priors, calls[0]["e0"], strict=True):
+    for prior, energy, uncertainties in zip(sample_priors, calls[0]["e0"], calls[0]["sample_sdevs"], strict=True):
         assert prior is not None
         assert energy is not None
         assert np.isclose(gv.mean(prior["E0"]), energy)
         assert gv.sdev(prior["E0"]) > 0
+        assert gv.sdev(prior["log(E0)"]) == pytest.approx(
+            uncertainties["log(E0)"] * (3.0 if transfer_scale is None else transfer_scale)
+        )
 
 
 def test_qda_ratio_samples_use_the_center_posterior_prior(monkeypatch) -> None:

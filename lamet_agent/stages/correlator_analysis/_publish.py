@@ -57,6 +57,10 @@ def _apply_qda_candidate(
         priors=settings.get("priors"),
         sample_prior_mode=settings.get("sample_prior_mode", "center_posterior"),
         chained_prior_error_scale=settings.get("chained_prior_error_scale"),
+        qda_window=settings.get("qda_window"),
+        qda_windows_by_z=settings.get("qda_windows_by_z"),
+        qda_output=settings.get("qda_output", "ratio"),
+        tmd_phase_rotation=settings.get("tmd_phase_rotation", False),
         sample_error_mode=str(context.manifest["metadata"]["sample_error_mode"]),
         workers=context.workers,
         fit_samples=True,
@@ -67,7 +71,7 @@ def _apply_qda_candidate(
         raise RuntimeError("full qDA fitting produced no sample values")
     data.array.attrs.update(
         {
-            "observable": "matrix_element",
+            "observable": data.attrs.get("observable", "matrix_element"),
             "prior_width": float(candidate["prior_width"]),
             "units": '{"values":"dimensionless","z":"lattice"}',
         }
@@ -297,6 +301,9 @@ def run(context: ToolContext, *, candidate_id: str) -> dict[str, object]:
             if primary_quality.get(key) is not None:
                 selected[key] = primary_quality[key]
     context.state["correlator_result"] = data
+    if context.manifest["metadata"].get("target_observable") == "tmd":
+        data.array.attrs["target_observable"] = "tmd"
+        data.array.attrs["output_component"] = str(context.params["component"])
     data.to_netcdf(context.artifact_directory / "output.nc")
     candidate_table = [
         {

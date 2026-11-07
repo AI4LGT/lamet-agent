@@ -16,6 +16,7 @@ from lamet_agent.contract import (
     Source,
     Suggests,
     Value,
+    _scope_rules,
     stage_job_rules,
 )
 from lamet_agent.stages._priors import valid_prior_overrides
@@ -179,9 +180,57 @@ def check_observable_sector(context: CheckContext) -> Issue | None:
     return None
 
 
+PARAM_RULES = (
+    Recommends(
+        "", "strategy", physics="Select fitted collinear tails or the measured TMD transform.", default="tail_fit"
+    ),
+    Value("strategy", Literal["tail_fit", "tmd"], physics="TMD uses direct or tapered measured data."),
+    Provides("", "tail_fit", "strategy", physics="Existing fitted-tail Fourier workflow."),
+    Provides("", "tmd", "strategy", physics="TMD wave functions and beam functions have explicit geometry."),
+    *_scope_rules("tail_fit", PARAM_RULES),
+    Depends("tmd", "observable", physics="Select the centered WF or valence PDF Fourier convention."),
+    Value("tmd.observable", Literal["tmdwf", "tmdpdf"], physics="The job observable determines the Fourier shift."),
+    Recommends(
+        "tmd",
+        "quasi_y_ls",
+        physics="Momentum-fraction grid for the measured Fourier sum.",
+        default={"start": -1.0, "stop": 2.0, "num": 301},
+    ),
+    Value("tmd.quasi_y_ls", (list, dict), physics="Increasing finite momentum-fraction grid.", validator=_valid_grid),
+    Recommends("tmd", "projection", default="real_even",
+               physics="real_even retains the centered WF or valence PDF; hermitian keeps both fitted PDF channels."),
+    Value("tmd.projection", Literal["real_even", "hermitian"],
+          physics="Hermitian PDF reflection gives Re(h) cos + Im(h) sin and requires both input components."),
+    Recommends("tmd", "taper_start", physics="PDF longitudinal site at which the linear taper starts.", default=13),
+    Recommends(
+        "tmd", "taper_stop", physics="PDF longitudinal site at which the linear taper reaches zero.", default=20
+    ),
+    Value(
+        "tmd.taper_start",
+        int,
+        physics="Nonnegative site index, independent of physical lattice spacing.",
+        validator=_nonnegative,
+    ),
+    Value("tmd.taper_stop", int, physics="Positive site index delimiting the Fourier signal.", validator=_positive),
+)
+
+
+def check_tmd(context: CheckContext) -> Issue | None:
+    if context.params.get("strategy") != "tmd":
+        return None
+    if context.params.get("projection", "real_even") == "hermitian" and context.params["observable"] != "tmdpdf":
+        return Issue("projection", "hermitian requires observable='tmdpdf'",
+                     "The centered WF keeps its real projection.")
+    if context.params["taper_start"] >= context.params["taper_stop"]:
+        return Issue("taper_stop", "must exceed taper_start", "The taper must have a positive extent.")
+    if context.manifest["metadata"]["target_observable"] != "tmd":
+        return Issue("observable", "TMD Fourier jobs require target_observable='tmd'", "Explicit observable routing.")
+    return None
+
+
 JOB_RULES = stage_job_rules(PARAM_RULES, INPUT_RULES)
 
-CHECKS = (check_tail_ranges, check_observable_sector)
+CHECKS = (check_tail_ranges, check_observable_sector, check_tmd)
 
 
 def check_systematics(context: CheckContext) -> list[Issue]:

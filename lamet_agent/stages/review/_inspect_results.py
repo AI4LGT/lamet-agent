@@ -4,11 +4,81 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
+from numbers import Real
 from pathlib import Path
 
 from lamet_agent.agent import ToolContext
 from lamet_agent.data import EnsembleData
+
+
+_QUALITY_JOB_LIMIT = 20
+
+
+def _fit_quality_aggregate(job_ids, summaries):
+    """Expose all-job fit evidence without duplicating selected numerical grids."""
+    counts = {"center_fit_count": 0, "Q_below_0_05": 0, "application_fit_job_count": 0,
+              "selected_fit_only_job_count": 0, "jobs_without_center_fit_Q": 0}
+    poor, failures, missing_failures = [], [], []
+    minimum, minimum_job = None, None
+    reported_failures = 0
+    failure_jobs_counted = 0
+    for job_id in job_ids:
+        summary = summaries.get(job_id, {})
+        application = summary.get("tmd_diagnostics", {})
+        quality = summary.get("fit_quality", {})
+        if application.get("center_fit_count", 0):
+            count = application["center_fit_count"]
+            low = application["Q_below_0_05"]
+            q = application["minimum_Q"]
+            failed = application.get("n_failed_samples")
+            counts["application_fit_job_count"] += 1
+        else:
+            q = quality.get("Q")
+            count = 1
+            low = int(isinstance(q, Real) and q < 0.05)
+            failed = summary.get("diagnostics", {}).get("n_failed_samples")
+            if isinstance(q, Real) and math.isfinite(q):
+                counts["selected_fit_only_job_count"] += 1
+        if failed is not None:
+            failure_jobs_counted += 1
+            reported_failures += failed
+            if failed:
+                failures.append((failed, job_id))
+        if not isinstance(q, Real) or not math.isfinite(q):
+            counts["jobs_without_center_fit_Q"] += 1
+            continue
+        counts["center_fit_count"] += count
+        counts["Q_below_0_05"] += low
+        if minimum is None or q < minimum:
+            minimum, minimum_job = q, job_id
+        if low:
+            poor.append((q, job_id))
+        if failed is None:
+            missing_failures.append(job_id)
+    poor_ids = [job_id for _, job_id in sorted(poor)]
+    failure_ids = [job_id for _, job_id in sorted(failures, key=lambda item: (-item[0], item[1]))]
+    return {
+        "scope": "All jobs in this stage, including jobs outside the representative curve selection. "
+                 "Application counts cover all reported final center fits; generic jobs with only a selected-fit Q "
+                 "contribute one fit. Candidate scans are not counted. Missing Q or failure counts are not zeroes.",
+        "job_count": len(job_ids),
+        "jobs_with_review_summary": sum(job_id in summaries for job_id in job_ids),
+        **counts,
+        "minimum_Q": minimum,
+        "minimum_Q_job_id": minimum_job,
+        "poor_Q_job_count": len(poor_ids),
+        "poor_Q_job_ids": poor_ids[:_QUALITY_JOB_LIMIT],
+        "poor_Q_job_ids_omitted": max(len(poor_ids) - _QUALITY_JOB_LIMIT, 0),
+        "n_failed_samples": reported_failures if failure_jobs_counted else None,
+        "sample_failure_count_scope": "Reported sample-fit failures summed across jobs; not unique replicas.",
+        "jobs_with_failure_count": failure_jobs_counted,
+        "jobs_missing_failure_count": len(missing_failures),
+        "sample_failure_job_count": len(failure_ids),
+        "sample_failure_job_ids": failure_ids[:_QUALITY_JOB_LIMIT],
+        "sample_failure_job_ids_omitted": max(len(failure_ids) - _QUALITY_JOB_LIMIT, 0),
+    }
 
 
 def _summary(value):
@@ -28,6 +98,9 @@ def _summary(value):
             },
             "n_sample": value.n_sample,
             "resample": value.resample,
+            "replica_order_digest": hashlib.sha256(
+                json.dumps(value.array.coords["resample"].values.tolist()).encode()
+            ).hexdigest(),
             "ensemble": None if value.ensemble is None else value.ensemble._asdict(),
             "attrs": json.loads(
                 json.dumps(
@@ -49,6 +122,7 @@ def run(context: ToolContext) -> dict[str, object]:
     jobs: dict[str, dict[str, object]] = {}
     stage_reports = []
     review_summaries = {}
+    provenance_summaries = {}
     runtime_records = context.runtime_records
 
     for stage_index, (stage_id, block) in enumerate(stages.items(), start=1):
@@ -91,6 +165,24 @@ def run(context: ToolContext) -> dict[str, object]:
             }
             if review_summary is not None:
                 review_summaries[job_id] = review_summary
+            if runtime is not None and isinstance(runtime.get("output"), EnsembleData):
+                provenance = _summary(runtime["output"])
+                provenance.update({"job_id": job_id, "stage_id": stage_id})
+                # Audit upstream edges without sending every numerical grid to the model.
+                provenance["attrs"] = {
+                    key: value for key, value in provenance["attrs"].items()
+                    if key in {
+                        "hadron", "kernel_operator", "parton", "target_observable", "observable",
+                        "polarization", "gfix", "coord_unit", "momentum_gev", "initial_momentum_gev",
+                        "final_momentum_gev", "t_gev2", "renormalization_scheme", "kernel_id",
+                        "resample_id", "resample_lineage", "replica_frame_id", "bT_fm", "units",
+                        "jackknife_groups", "jackknife_layout", "central_estimator",
+                    }
+                }
+                provenance_summaries[job_id] = provenance
+        stage_reports[-1]["fit_quality"] = _fit_quality_aggregate(
+            [job["id"] for job in block["jobs"]], review_summaries
+        )
 
     summaries = []
     for index, value in enumerate(results):
@@ -109,6 +201,7 @@ def run(context: ToolContext) -> dict[str, object]:
         "manifest_path": str(context.manifest_path),
         "stage_reports": stage_reports,
         "review_summaries": review_summaries,
+        "provenance_summaries": provenance_summaries,
         "results": summaries,
         "jobs": jobs,
     }
@@ -129,7 +222,8 @@ def run(context: ToolContext) -> dict[str, object]:
             "missing_stage_reports": [item["stage_id"] for item in stage_reports if not item["available"]],
         },
         "reports": [
-            {"stage_id": item["stage_id"], "path": item["path"], "available": item["available"]}
+            {"stage_id": item["stage_id"], "path": item["path"], "available": item["available"],
+             "fit_quality": item["fit_quality"]}
             for item in stage_reports
         ],
         "results": response_summaries,

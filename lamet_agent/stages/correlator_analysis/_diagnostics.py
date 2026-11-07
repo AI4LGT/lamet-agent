@@ -74,6 +74,8 @@ def _sample0_plot_labels(kind: str, component: str) -> tuple[str, str]:
         ("fh", "im"): (TSEP_LABEL, FH_IMAG_LABEL),
         ("qda_ratio", "re"): (QDA_TIME_LABEL, QDA_RATIO_REAL_LABEL),
         ("qda_ratio", "im"): (QDA_TIME_LABEL, QDA_RATIO_IMAG_LABEL),
+        ("tmdwf_amplitude", "re"): (QDA_TIME_LABEL, r"$\Re[\Phi]$"),
+        ("tmdwf_amplitude", "im"): (QDA_TIME_LABEL, r"$\Im[\Phi]$"),
     }
     try:
         return labels[(kind, component)]

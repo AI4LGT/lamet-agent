@@ -8,6 +8,7 @@ than changing this numerical base.
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, NamedTuple, Optional, Sequence, Union, get_args
 
@@ -32,6 +33,242 @@ _RESAMPLE_DIM = "resample"
 def format_gvar(values: Any) -> str:
     """Format every gvar element compactly without NumPy ellipsis truncation."""
     return numpy.array2string(numpy.asarray(values, dtype=object), threshold=numpy.inf, separator=" ")
+
+
+def _jackknife_counts(attrs: dict[str, Any], key: str) -> dict[str, int]:
+    """Read a canonical, explicitly counted group layout; never infer groups."""
+    try:
+        counts = json.loads(attrs[key])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"{key} must encode a group-to-count mapping") from exc
+    if not isinstance(counts, dict) or not counts or any(
+        not isinstance(group, str) or not group or not isinstance(count, int)
+        or isinstance(count, bool) or count < 2 for group, count in counts.items()
+    ):
+        raise ValueError(f"{key} requires nonempty groups with at least two jackknife samples")
+    return dict(sorted(counts.items()))
+
+
+def _jackknife_blocks(values: Any, attrs: dict[str, Any]):
+    """Yield independent delete-one blocks; the final row is the central value."""
+    counts = _jackknife_counts(attrs, "jackknife_layout")
+    if len(values) != sum(counts.values()) + 1:
+        raise ValueError("jackknife_layout does not match sample count including its central row")
+    if "jackknife_groups" in attrs and _jackknife_counts(attrs, "jackknife_groups") != counts:
+        raise ValueError("jackknife_groups and jackknife_layout disagree")
+    offset = 0
+    for count in counts.values():
+        yield values[offset:offset + count]
+        offset += count
+
+
+def sample_mean(values: Any, resample: str, attrs: dict[str, Any] | None = None):
+    """Central estimate for native replicas or a combined independent-group jackknife.
+
+    Native jackknife uses its sample mean, as the reference analysis does. At a
+    group merge this estimate becomes an explicit last row, evaluated through
+    every subsequent nonlinear operation. No jackknife bias correction is made.
+    """
+    values = numpy.asarray(values)
+    if resample == "jackknife" and attrs and attrs.get("jackknife_layout"):
+        # Exhaust validation even though the block values are not needed here.
+        tuple(_jackknife_blocks(values, attrs))
+        return values[-1]
+    return numpy.mean(values, axis=0)
+
+
+def sample_covariance(values: Any, resample: str, attrs: dict[str, Any] | None = None):
+    """Covariance with flattened physical axes and the correct group weights.
+
+    For superjackknife, each independent group contributes (N_g-1)/N_g
+    times the sum of outer products about its own delete-one block mean.
+    The central row is never counted as a statistical replica.
+    """
+    values = numpy.asarray(values)
+    if numpy.iscomplexobj(values):
+        raise TypeError("covariance requires real data; select .real or .imag first.")
+    flat = values.reshape(len(values), -1)
+    if resample == "jackknife" and attrs and attrs.get("jackknife_layout"):
+        covariance = numpy.zeros((flat.shape[1], flat.shape[1]), dtype=float)
+        for block in _jackknife_blocks(flat, attrs):
+            delta = block - block.mean(axis=0)
+            covariance += (len(block) - 1) / len(block) * (delta.T @ delta)
+        return covariance
+    if len(values) == 1:
+        return numpy.zeros((flat.shape[1], flat.shape[1]), dtype=float)
+    covariance = numpy.atleast_2d(numpy.cov(flat, rowvar=False, ddof=1))
+    if resample == "raw":
+        covariance /= len(values)
+    elif resample == "jackknife":
+        covariance *= (len(values) - 1) ** 2 / len(values)
+    elif resample != "bootstrap":
+        raise ValueError(f"Unknown resampling method '{resample}'.")
+    return covariance
+
+
+def sample_sdev(values: Any, resample: str, attrs: dict[str, Any] | None = None):
+    """Diagonal uncertainty, without allocating a full covariance matrix."""
+    values = numpy.asarray(values)
+    if resample == "jackknife" and attrs and attrs.get("jackknife_layout"):
+        variance = numpy.zeros(values.shape[1:], dtype=float)
+        for block in _jackknife_blocks(values, attrs):
+            delta = block - block.mean(axis=0)
+            variance += (len(block) - 1) / len(block) * numpy.sum(numpy.abs(delta) ** 2, axis=0)
+        return numpy.sqrt(variance)
+    if len(values) == 1:
+        return numpy.zeros(values.shape[1:], dtype=float)
+    std = numpy.std(values, axis=0, ddof=1)
+    if resample == "raw":
+        std /= len(values) ** 0.5
+    elif resample == "jackknife":
+        std *= (len(values) - 1) / len(values) ** 0.5
+    elif resample != "bootstrap":
+        raise ValueError(f"Unknown resampling method '{resample}'.")
+    return std
+
+
+def _combined_lineage(datasets: Sequence["EnsembleData"]) -> dict[str, str]:
+    lineage: dict[str, str] = {}
+    for data in datasets:
+        try:
+            entries = json.loads(data.attrs["resample_lineage"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("resample_lineage must encode a group-to-plan mapping") from exc
+        if not isinstance(entries, dict) or not entries:
+            raise ValueError("resample_lineage must be a nonempty group-to-plan mapping")
+        for group, plan in entries.items():
+            if not isinstance(group, str) or not group or not isinstance(plan, str) or not plan:
+                raise ValueError("sample lineage groups and plans must be nonempty strings")
+            if group in lineage and lineage[group] != plan:
+                raise ValueError(f"conflicting resampling plans for shared group '{group}'")
+            lineage[group] = plan
+    return lineage
+
+
+def _lineage_metadata(lineage: dict[str, str], frame: str) -> dict[str, str]:
+    encoded = json.dumps(lineage, sort_keys=True, separators=(",", ":"))
+    identifier = (
+        next(iter(lineage.values())) if len(lineage) == 1
+        else hashlib.sha256((frame + encoded).encode()).hexdigest()
+    )
+    return {
+        "replica_frame_id": frame,
+        "resample_lineage": encoded,
+        "resample_id": identifier,
+        "resample_group": next(iter(lineage)) if len(lineage) == 1 else "composite",
+    }
+
+
+def _validate_native_jackknife(data: "EnsembleData") -> dict[str, int]:
+    counts = _jackknife_counts(data.attrs, "jackknife_groups")
+    lineage = _combined_lineage((data,))
+    if set(counts) != set(lineage):
+        raise ValueError("jackknife_groups must identify exactly the tracked resampling sources")
+    if data.attrs.get("jackknife_layout"):
+        tuple(_jackknife_blocks(data.values, data.attrs))
+    elif len(counts) != 1 or next(iter(counts.values())) != data.n_sample:
+        raise ValueError("native tracked jackknife requires one group matching its sample count")
+    if not numpy.array_equal(data.array.coords["resample"], numpy.arange(data.n_sample)):
+        raise ValueError("jackknife inputs must preserve the original replica order")
+    return counts
+
+
+def merge_sample_lineage(*datasets: "EnsembleData") -> dict[str, str]:
+    """Validate aligned replica order and merge tracked raw sampling plans.
+
+    Use :func:`align_sample_lineage` before numerical operations on independent
+    jackknife groups. A bootstrap row instead represents a simultaneous draw
+    from all independent groups and needs no expansion.
+    """
+    if not datasets:
+        raise ValueError("sample lineage requires at least one dataset")
+    first = datasets[0]
+    if any(data.resample != first.resample or data.n_sample != first.n_sample for data in datasets):
+        raise ValueError("inputs must share resampling mode and replica count; "
+                         "align independent jackknife groups first")
+    if any(not numpy.array_equal(data.array.coords["resample"], first.array.coords["resample"]) for data in datasets):
+        raise ValueError("inputs must preserve the same replica order")
+    tracked = [bool(data.attrs.get("resample_lineage")) for data in datasets]
+    if not any(tracked):
+        identifiers = {data.attrs.get("resample_id") for data in datasets}
+        if len(identifiers) > 1:
+            raise ValueError("legacy inputs must share resample_id; independent groups require sample lineage")
+        return {key: first.attrs[key] for key in ("resample_id", "resample_group") if key in first.attrs}
+    if not all(tracked) or first.resample not in {"bootstrap", "jackknife"}:
+        raise ValueError("tracked combinations require bootstrap or jackknife lineage on every input")
+    frames = {data.attrs.get("replica_frame_id") for data in datasets}
+    if len(frames) != 1 or not next(iter(frames)):
+        raise ValueError("inputs use different bootstrap replica frames" if first.resample == "bootstrap"
+                         else "inputs use different jackknife replica frames")
+    lineage = _combined_lineage(datasets)
+    metadata = _lineage_metadata(lineage, str(next(iter(frames))))
+    if first.resample == "jackknife":
+        groups = [_validate_native_jackknife(data) for data in datasets]
+        layouts = [data.attrs.get("jackknife_layout") for data in datasets]
+        if any(group != groups[0] for group in groups[1:]) or any(layout != layouts[0] for layout in layouts[1:]):
+            raise ValueError("independent jackknife groups must be aligned before combining samples")
+        metadata["jackknife_groups"] = json.dumps(groups[0], sort_keys=True, separators=(",", ":"))
+        if layouts[0]:
+            metadata["jackknife_layout"] = layouts[0]
+            metadata["central_estimator"] = "mean_native_jackknife_then_propagated"
+    return metadata
+
+
+def align_sample_lineage(*datasets: "EnsembleData") -> tuple["EnsembleData", ...]:
+    """Align independent delete-one groups without drawing or inflating samples.
+
+    Each group's native rows occupy their own canonical block; all other groups
+    are held at their central estimates in that block. Existing composite blocks
+    are copied unchanged, so shared factors cancel exactly across DAG branches.
+    Native same-group data retain their original rows and statistical convention.
+    """
+    if not datasets:
+        raise ValueError("sample lineage requires at least one dataset")
+    first = datasets[0]
+    if first.resample != "jackknife" or not first.attrs.get("resample_lineage"):
+        merge_sample_lineage(*datasets)
+        return tuple(datasets)
+    if any(data.resample != "jackknife" or not data.attrs.get("resample_lineage") for data in datasets):
+        raise ValueError("tracked combinations require jackknife lineage on every input")
+    lineage = _combined_lineage(datasets)
+    counts: dict[str, int] = {}
+    source_counts = []
+    for data in datasets:
+        groups = _validate_native_jackknife(data)
+        source_counts.append(groups)
+        for group, count in groups.items():
+            if group in counts and counts[group] != count:
+                raise ValueError(f"conflicting jackknife counts for shared group '{group}'")
+            counts[group] = count
+    frames = {data.attrs.get("replica_frame_id") for data in datasets}
+    if len(frames) != 1 or not next(iter(frames)):
+        raise ValueError("inputs use different jackknife replica frames")
+    if len(counts) == 1 and all(not data.attrs.get("jackknife_layout") for data in datasets):
+        merge_sample_lineage(*datasets)
+        return tuple(datasets)
+    counts = dict(sorted(counts.items()))
+    layout = json.dumps(counts, sort_keys=True, separators=(",", ":"))
+    metadata = _lineage_metadata(lineage, str(next(iter(frames))))
+    metadata.update({"jackknife_groups": layout, "jackknife_layout": layout,
+                     "central_estimator": "mean_native_jackknife_then_propagated"})
+    aligned = []
+    for data, groups in zip(datasets, source_counts):
+        central = sample_mean(data.values, data.resample, data.attrs)
+        blocks = {}
+        if data.attrs.get("jackknife_layout"):
+            offset = 0
+            for group, count in groups.items():
+                blocks[group] = data.values[offset:offset + count]
+                offset += count
+        else:
+            blocks[next(iter(groups))] = data.values
+        values = numpy.concatenate([
+            blocks[group] if group in blocks else numpy.broadcast_to(central, (count, *numpy.shape(central)))
+            for group, count in counts.items()
+        ] + [numpy.expand_dims(central, axis=0)], axis=0)
+        aligned.append(EnsembleData(data.ensemble, data.resample, list(values), data.dims, data.coords,
+                                    {**data.attrs, **metadata}, data.name))
+    return tuple(aligned)
 
 
 class EnsembleInfo(NamedTuple):
@@ -269,6 +506,11 @@ class EnsembleData:
             for other_dim in first.dims:
                 if other_dim != dim and data.coords[other_dim] != first.coords[other_dim]:
                     raise ValueError(f"Coordinates differ for dimension '{other_dim}'.")
+        lineage = {}
+        if any(data.attrs.get("resample_lineage") for data in data_list):
+            data_list = align_sample_lineage(*data_list)
+            first = data_list[0]
+            lineage = merge_sample_lineage(*data_list)
         array = xarray.concat([data.array for data in data_list], dim)
         if dim in first.dims:
             if coord is not None:
@@ -279,6 +521,7 @@ class EnsembleData:
                 raise ValueError("Coordinates are required for a new dimension.")
             array = array.assign_coords({dim: coord})
             dims_out = [_RESAMPLE_DIM, dim, *first.dims]
+        array.attrs = {**first.attrs, **lineage}
         return cls._from_xarray(first.ensemble, first.resample, array.transpose(*dims_out).sortby(dim))
 
     def at(self, dim: _DimType, coord: Union[_IndexType, _CoordType]) -> "EnsembleData":
@@ -300,21 +543,14 @@ class EnsembleData:
         else:
             if numpy.iscomplexobj(self.array.values):
                 raise TypeError("gvar conversion requires real data; select .real or .imag first.")
-            n_sample = self.array.values.shape[0]
             shape = self.array.values.shape[1:]
-            values = self.array.values.reshape(n_sample, -1)
-            mean = numpy.mean(values, axis=0)
-            cov = numpy.atleast_2d(numpy.cov(values, rowvar=False, ddof=1))
-            if n_sample == 1:
-                cov = numpy.zeros((mean.size, mean.size), mean.dtype)
-            elif self.resample == "raw":
-                cov /= n_sample
-            elif self.resample == "jackknife":
-                cov *= (n_sample - 1) ** 2 / n_sample
-            elif self.resample == "bootstrap":
-                pass
-            else:
-                raise ValueError(f"Unknown resampling method '{self.resample}'.")
+            mean = numpy.asarray(sample_mean(self.values, self.resample, self.attrs)).reshape(-1)
+            cov = sample_covariance(self.values, self.resample, self.attrs)
+            # A scalar gvar's second argument is a standard deviation, whereas
+            # an array gvar accepts a covariance matrix. Scalar ratio factors
+            # must therefore take the square root before crossing that API.
+            if not shape:
+                return gvar.gvar(mean[0], numpy.sqrt(cov[0, 0]))
             return gvar.gvar(mean.reshape(shape), cov.reshape(shape + shape))
 
     @property
@@ -324,20 +560,8 @@ class EnsembleData:
         else:
             if numpy.iscomplexobj(self.array.values):
                 raise TypeError("gvar conversion requires real data; select .real or .imag first.")
-            n_sample = self.array.values.shape[0]
-            values = self.array.values
-            mean = numpy.mean(values, axis=0)
-            std = numpy.std(values, axis=0, ddof=1)
-            if n_sample == 1:
-                std = numpy.zeros_like(mean)
-            elif self.resample == "raw":
-                std /= n_sample**0.5
-            elif self.resample == "jackknife":
-                std *= (n_sample - 1) / n_sample**0.5
-            elif self.resample == "bootstrap":
-                pass
-            else:
-                raise ValueError(f"Unknown resampling method '{self.resample}'.")
+            mean = sample_mean(self.values, self.resample, self.attrs)
+            std = sample_sdev(self.values, self.resample, self.attrs)
             return gvar.gvar(mean, std)
 
     @property
@@ -347,6 +571,9 @@ class EnsembleData:
         else:
             if numpy.iscomplexobj(self.array.values):
                 raise TypeError("gvar conversion requires real data; select .real or .imag first.")
+            if self.resample == "jackknife" and self.attrs.get("jackknife_layout"):
+                raise ValueError("one_sigma percentiles are undefined for independent-group jackknife blocks; "
+                                 "use covariance or variance")
             n_sample = self.array.values.shape[0]
             values = self.array.values
             meanm, mean, meanp = numpy.percentile(values, q=[50 - 34.1344746, 50, 50 + 34.1344746], axis=0)
@@ -422,8 +649,13 @@ class EnsembleData:
     def apply_renormalization(
         self, renorm_scheme: "EnsembleData", operator: Callable[[xarray.DataArray, xarray.DataArray], xarray.DataArray]
     ) -> "EnsembleData":
-        values = operator(self.array, self.aligned_ref_array(renorm_scheme))
-        values.attrs = self.attrs
+        target, reference = self, renorm_scheme
+        lineage = {}
+        if self.attrs.get("resample_lineage") or renorm_scheme.attrs.get("resample_lineage"):
+            target, reference = align_sample_lineage(self, renorm_scheme)
+            lineage = merge_sample_lineage(target, reference)
+        values = operator(target.array, target.aligned_ref_array(reference))
+        values.attrs = {**target.attrs, **lineage}
         values.name = self.name
         return self._from_xarray(self.ensemble, self.resample, values)
 
@@ -487,7 +719,4 @@ class EnsembleData:
         return self._from_xarray(self.ensemble, self.resample, array)
 
 
-__all__ = [
-    "EnsembleInfo",
-    "EnsembleData",
-]
+__all__ = ["EnsembleInfo", "EnsembleData"]

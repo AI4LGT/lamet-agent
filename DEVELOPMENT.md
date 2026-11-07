@@ -316,7 +316,7 @@ collisions, and record downstream mappings in `state`.
 
 ### Workflow and artifacts
 
-The five standard numerical stages are listed in `_WORKFLOW_STAGES` in
+The standard numerical stages are listed in `_WORKFLOW_STAGES` in
 `agent.py`. Their `workflow.py` exports:
 
 ```python
@@ -364,13 +364,90 @@ Matching is owned by `stages/matching/` and uses `matching` consistently in
 manifests, systematics, provenance, and literature stage tags. The former
 `perturbative_matching` package and stage identifier have no compatibility alias.
 
-`soft_analysis` is a contract-only placeholder, not an executable numerical
-stage. Its local contract adapts the shared job envelope to allow `jobs: []`
-and rejects actual jobs through `CHECKS` with a not-implemented explanation.
-It is not registered in `_WORKFLOW_STAGES` and has no workflow, reporter, or
-numerical input/output contract. Empty stages create no jobs or stage artifacts;
-subsequent artifact numbering still follows the authored stage-key positions.
-Keep the shared `stage_job_rules()` nonempty-list requirement for other stages.
+`soft_analysis` is an executable numerical stage with CS-kernel and intrinsic-soft
+job types. It consumes earlier Fourier/FF jobs, and intrinsic-soft jobs also
+consume an earlier CS job in the same stage. Matching can reuse all three
+branches without changes to ordered DAG scheduling. Empty soft job lists remain
+valid for compatibility.
+
+TMD conventions are owned by the relevant numerical stages. The generic target
+`tmd` enables per-job `tmdwf`/`tmdpdf` routing. The shared dispatcher
+`kernels/tmd/coefficients.py` selects the unchanged fixed-order `cg_nlo.py` or
+tree-boundary NLL `cg_nll.py`. Soft analysis and multiplicative TMD matching use
+the same validated coefficient provenance, including running coupling and
+infrared prescription; mismatched soft inputs fail instead of mixing orders.
+Keep transverse coordinates in fm and retain the underlying ensemble spacing:
+an off-axis displacement changes the coordinate step, not a_s.
+
+TMD Fourier jobs author their projection independently of perturbative order.
+`projection="real_even"` remains the default and preserves the previous
+centered-WF/valence-PDF calculation. PDF-only `projection="hermitian"` applies
+the full real-even/imaginary-odd completion, producing
+`Re(h) cos(x P z) + Im(h) sin(x P z)` for the declared negative Fourier phase.
+It requires input `attrs.output_component="both"`; a previously projected
+real-only artifact must fail rather than silently provide an absent imaginary
+channel. Preserve `fourier_projection`, `source_component`, phase sign and
+`sector` (`full` versus PDF `valence`) in downstream artifacts and reports.
+
+The saved TMD packet has different PDF projections across momenta: P3/P4 use
+the full Hermitian transform, whereas P5 uses the real-even projection. The
+NLL example therefore sets P3/P4 correlator `component="both"` and corresponding
+Fourier `projection="hermitian"`; P5 explicitly retains `real_even`. Keep those
+observable/sector distinctions when comparing or grouping outputs. A common
+`flavor_factor=2` does not make full-channel and valence projections identical;
+do not average those three momenta as interchangeable valence determinations.
+This projection choice does not change the 0.06 fm lattice spacing or the
+off-axis geometry, and the original NLO manifest remains unchanged.
+
+NLL uses the reference analytic NNLO running-coupling convention with three
+flavors, one-loop noncusp and two-loop cusp anomalous dimensions for the hard
+coefficient, and the Appendix A Sudakov integral. `infrared_policy="error"`
+rejects a running-coupling pole before integration. `freeze` requires an explicit
+`freeze_scale_gev` and floors the natural/evolution scale, including its boundary
+and logarithms; it is a declared model choice. `reference_quad` preserves the
+historical integration variable and QUADPACK tolerance, recording pole crossings,
+warnings and estimated errors. A finite historical quadrature return does not
+define a convergent infrared integral. Cache scalar Sudakov evaluations and the
+deterministic double-integration kernel; do not repeat them for every replica.
+
+Reference soft choices are explicit job parameters: `evolution_cs="quasi_ratio"`
+reconstructs the uncorrected ratio from the same CS replicas and saved hard
+correction; `sudakov_momentum="quasi"` chooses the source WF momentum independently
+of the FF target in rapidity evolution. `endpoint_fit_points_per_window` and
+`endpoint_central_points` request interpolation grids. The optional
+`endpoint_covariance="reference_cs_diagonal"` retains quasi covariance and adds
+the CS uncertainty diagonally **only in the fit metric**. Every fit and later
+stage still propagates the aligned shared jackknife rows, preserving CS/WF/soft
+cross-correlations. It does not discard correlations between correlator tsep
+blocks or create independent CS replicas.
+
+The original NLO example remains unchanged. The separate
+`examples/pion_tmd_cg_nll_manifest.json` authors the reference choices with 20
+points per shoulder (40 total), 100 central points, and `reference_quad`, and
+contains all 516 raw-data numerical jobs without a Review stage. Numerical
+order, statistical provenance, infrared diagnostics and reference-specific
+choices must remain visible in reports and artifacts.
+
+The TMD example uses the shared correlator prior controls. Priors are authored
+in physical parameter units and conditioned only by the fitter. Original-mode
+replica fits reuse those priors; a chained spectral posterior is a separate
+input with its own width scale. Keep reference-specific choices in job parameters
+and diagnostics, rather than adding a second prior API for TMD.
+
+Review audits the complete upstream provenance graph while sending bounded
+numerical evidence for the selected jobs. Each stage also exposes fit-quality
+totals across every job, including unselected jobs, with bounded affected-job
+lists and explicit missing-data counts. TMD evidence includes all center-fit
+quality counts, soft replica quantiles, endpoint-fit quality, quadrature
+convergence, and momentum consistency. The catalog classifies TMD under
+`kinematic_dependence`; Review must recognize that convention when the workflow
+target is `tmd`. Soft auxiliaries can join WF and PDF valence ensembles sharing
+lattice geometry, but a quasi distribution must retain its own operator and
+momentum through matching.
+
+The runner passes a per-stage `state["stage_shared"]` mapping to each job. The
+correlator stage uses it to prepare and cache explicit configuration-group masks
+before the first fit. This cache owns preprocessing metadata, not job outputs.
 
 ## LLM extension points
 
@@ -560,6 +637,36 @@ standard-deviation variables and reconstructed on load.
 - stage provenance belongs in JSON-compatible attrs and must be preserved when a
   transformation does not intentionally change it.
 
+Explicit TMD bootstrap groups derive independent seeds from the run seed and
+group name. `replica_frame_id` identifies the run-wide replica frame;
+`resample_lineage` maps each contributing group to its sampling-plan hash.
+`merge_sample_lineage` validates overlapping plans and retains correlations when
+a branch is reused. Do not redraw derived distributions or drop replicas.
+Group identity is distinct from valence-ensemble identity: two valence masses
+may share gauge configurations, while a smaller unknown subset is modeled as
+an independent group. Existing untracked workflows retain their prior behavior.
+
+Tracked jackknife groups retain their native delete-one rows during fitting.
+`align_sample_lineage` expands independent groups into sorted contiguous blocks
+only when their branches meet, holding absent groups at their native jackknife
+means and appending one central evaluation row. `jackknife_groups` records bin
+counts; `jackknife_layout` marks this combined representation. The central row
+is propagated through nonlinear operations and excluded from the covariance.
+For each group, covariance contributes `(N_g-1)/N_g` times the centered sum of
+outer products in that group's block. `sample_mean`, `sample_covariance`, and
+`sample_sdev` implement these conventions; downstream code must use them instead
+of a single total-replica jackknife factor. No bias correction or random redraw
+is applied. Review validates group counts, plan hashes and canonical block order
+across expansions. Native same-group and untracked workflows retain their
+existing representation. Percentile error bands are not defined for mixed
+jackknife blocks.
+
+TMD WF jobs may author `qda_windows_by_z`, a numeric-coordinate string mapping
+to half-open time windows, with `qda_window` as the fallback. The fitter and
+the common configuration preflight use the same resolved `(t,z)` domain.
+Each coordinate's actual window is recorded in its fit diagnostics. Fixed
+coordinate-specific windows do not imply per-replica adaptive window selection.
+
 Correlators selected together are resampled with one plan and carry a shared
 `resample_id`. Downstream code must not silently align unrelated replicas by
 array index. When a stage intentionally changes grids, units, schemes, or sample
@@ -570,6 +677,12 @@ The agent supplies one bounded process pool for a run. Stage workflows should
 pass it to shared fitting, Fourier, or Lanczos functions rather than create
 nested pools. `parallel/` owns no UI; the stage that knows the logical unit of
 work owns progress reporting.
+The pool bounds worker lifetime by recycling processes between completed
+maps. This prevents accumulated correlated gvar covariance blocks from
+slowing long fits. Recycling must happen only after results have returned
+to the parent; it must preserve task order, captured posterior covariance
+and chained priors. Do not replace this with an in-flight reset of a gvar
+factory, which can make existing GVars incompatible.
 
 Use `FitNumericalError` for a numerically attempted candidate that failed and
 may participate in an approved retry/selection policy. Use `ValueError` or

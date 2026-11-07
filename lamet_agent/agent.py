@@ -42,7 +42,7 @@ _MAX_ASSISTANT_TURNS = 40
 _LLM_TRANSCRIPT_FILENAME = "llm_transcript.md"
 _SAFE_TOOL = re.compile(r"^[a-z][a-z0-9_]*$")
 _WORKFLOW_STAGES = frozenset(
-    {"correlator_analysis", "renormalization", "fourier_transform", "matching", "extrapolation"}
+    {"correlator_analysis", "renormalization", "fourier_transform", "soft_analysis", "matching", "extrapolation"}
 )
 
 
@@ -173,8 +173,11 @@ def _review_output_summary(output: Any, mode: str, *, max_points: int | None) ->
     selected = output
     if "component" in selected.dims and "real" in selected.coords.get("component", []):
         selected = selected.at("component", "real")
-    plot_dim = next((name for name in ("x", "z", "state") if name in selected.dims), selected.dims[-1])
-    original_count = len(selected.coords[plot_dim])
+    plot_dim = next(
+        (name for name in ("x", "z", "bT", "state") if name in selected.dims),
+        selected.dims[-1] if selected.dims else None,
+    )
+    original_count = len(selected.coords[plot_dim]) if plot_dim is not None else 1
     if max_points is not None and original_count > max_points:
         indices = np.rint(np.linspace(0, original_count - 1, max_points)).astype(int)
         coordinates = [selected.coords[plot_dim][index] for index in indices]
@@ -195,7 +198,7 @@ def _review_output_summary(output: Any, mode: str, *, max_points: int | None) ->
             "dimension": plot_dim,
             "method": method,
             "original_points": original_count,
-            "sent_points": len(selected.coords[plot_dim]),
+            "sent_points": len(selected.coords[plot_dim]) if plot_dim is not None else 1,
             "full_resolution_available": True,
         },
         "center_error": {},
@@ -254,11 +257,56 @@ def _review_summary(context: ToolContext, summary: Mapping[str, Any]) -> dict[st
             "hermitian_partner_id",
             "gpd_completion_mode",
             "coord_unit",
+            "bT_fm",
+            "longitudinal_direction",
+            "longitudinal_spacing_fm",
+            "phase_rotation_applied",
+            "order",
+            "resummation",
+            "mu",
+            "alpha_s",
+            "flavor_factor",
+            "p_ref_gev",
+            "zeta_gev2",
         )
         if key in output.attrs
     }
     if selected_attrs:
         record["physical_metadata"] = selected_attrs
+    if (
+        context.manifest["metadata"].get("target_observable") == "tmd"
+        or output.attrs.get("target_observable") == "tmd"
+    ):
+        diagnostics = summary.get("diagnostics", {})
+        application = diagnostics.get("selected_application_fit", diagnostics)
+        fits = application.get("fits", [])
+        evidence = {}
+        if fits:
+            evidence.update({
+                "center_fit_count": len(fits),
+                "Q_below_0_05": sum(fit["Q"] < 0.05 for fit in fits),
+                "minimum_Q": min(fit["Q"] for fit in fits),
+                "n_failed_samples": application.get("n_failed_samples"),
+            })
+        if "replica_distribution" in diagnostics:
+            evidence["replica_distribution"] = diagnostics["replica_distribution"]
+        momenta = [
+            momentum for row in diagnostics.get("bT_records", []) for momentum in row.get("momenta", [])
+        ]
+        if momenta:
+            evidence.update({
+                "max_quadrature_relative_change": max(row["quadrature_max_relative_change"] for row in momenta),
+                "max_quadrature_change_over_stat_error": max(
+                    row["quadrature_change_over_stat_error"] or 0 for row in momenta
+                ),
+                "minimum_endpoint_Q": min(row["endpoint_fit"]["Q"] for row in momenta),
+                "momentum_consistency": [
+                    {"bT_fm": row["bT_fm"], **row["correlated_average"]["momentum_consistency"]}
+                    for row in diagnostics["bT_records"] if "correlated_average" in row
+                ],
+            })
+        if evidence:
+            record["tmd_diagnostics"] = evidence
     return record
 
 
@@ -1344,14 +1392,13 @@ class _AgentSession:
         issues = manifest.validate(stage_root=self.stage_root)
         if issues:
             raise ValueError("\n".join(f"{issue.path}: {issue.message}" for issue in issues))
-        jobs, _artifact_root = self._prepare_artifact_directory(manifest)
+        jobs, artifact_root = self._prepare_artifact_directory(manifest)
         document = manifest.document
         jobs_by_stage = manifest.jobs_by_stage
         progress_mode = _resolve_progress_mode(self.progress_mode, has_systematics=manifest.has_systematics)
-        artifact_base = jobs[0].artifact_directory.parent
         jobs_by_id = {job.job_id: job for job in jobs}
-        artifact_base.mkdir(parents=True, exist_ok=True)
-        (artifact_base / "resolved_manifest.json").write_text(
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        (artifact_root / "resolved_manifest.json").write_text(
             json.dumps(document, indent=2, sort_keys=True), encoding="utf-8"
         )
         manifest_file = manifest.path
@@ -1362,6 +1409,7 @@ class _AgentSession:
         _emit_progress("")
         stage_reports: dict[str, str] = {}
         stage_records: list[StageReportRecord] = []
+        stage_shared: dict[str, dict[str, Any]] = {}
         stage_progress = None
         parallel = _ParallelPool(int(metadata["workers"]))
         try:
@@ -1399,7 +1447,10 @@ class _AgentSession:
                     copy.deepcopy(dict(job.params)),
                     resolved_inputs,
                     input_summaries,
-                    {"show_job_progress": progress_mode == "job"},
+                    {
+                        "show_job_progress": progress_mode == "job",
+                        "stage_shared": stage_shared.setdefault(stage_id, {}),
+                    },
                     job.artifact_directory,
                     np.random.default_rng(seed_sequence),
                     _parallel=parallel,

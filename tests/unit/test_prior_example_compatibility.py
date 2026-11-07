@@ -17,6 +17,8 @@ from lamet_agent.contract import evaluate_rules
 from lamet_agent.data import EnsembleData, EnsembleInfo
 from lamet_agent.stages.correlator_analysis import _fit_matrix, _fit_qda, physics
 from lamet_agent.stages.correlator_analysis.contract import PARAM_RULES
+import lamet_agent.parallel._pool as pool_module
+from lamet_agent.parallel._pool import _ParallelPool
 
 
 _EXAMPLES = ("pion_pdf_cg", "pion_pdf_gi", "pion_da_gi", "kaon_da_gi")
@@ -224,3 +226,45 @@ def test_example_replica_outputs_match_frozen_legacy_prior_recipe(monkeypatch, e
     legacy, baseline = fit(records, **kwargs)
     np.testing.assert_allclose(current.values, legacy.values, rtol=1e-10, atol=1e-12)
     assert diagnostics["min_Q"] == pytest.approx(baseline["min_Q"], rel=1e-10, abs=1e-12)
+
+
+@pytest.mark.parametrize("example", _EXAMPLES)
+def test_example_replica_outputs_survive_worker_pool_recycling(monkeypatch, example):
+    params = _resolved(next(item.values[2] for item in _jobs() if item.values[0] == example))
+    pdf = "pdf" in example
+    window = params["pt2_windows"][0]
+    kwargs = dict(
+        fit_scope=params["fit_scope"],
+        components={"re": "real", "both": "both"}[params["component"]],
+        tmin=window["tmin"],
+        tmax=window["tmax"],
+        n_states={key: values[0] for key, values in params["nstate"].items()},
+        prior_width=params["prior_width"][0],
+        svdcut=params["svdcut"],
+        posterior_prior_error_scale=params["posterior_prior_error_scale"],
+        workers=2,
+        sample_error_mode="variance",
+        priors=params["priors"],
+        sample_prior_mode=params["sample_prior_mode"],
+        chained_prior_error_scale=params.get("chained_prior_error_scale"),
+    )
+    if pdf:
+        three = params["pt3_windows"][0]
+        kwargs.update(
+            fitting_form=params["fitting_form"],
+            tsep_values=three["tsep_ls"],
+            tau_min=three["tau_cut"],
+            correlator_rescale=1e5,
+        )
+    fit = physics.fit_matrix_element_samples if pdf else physics.fit_qda_samples
+    records = _data(example)
+    monkeypatch.setattr(pool_module, "_MAX_MAPS_PER_EXECUTOR", 128)
+    with _ParallelPool(2) as pool:
+        persistent, baseline = fit(records, _parallel=pool, **kwargs)
+        assert pool._executor is not None
+    monkeypatch.setattr(pool_module, "_MAX_MAPS_PER_EXECUTOR", 1)
+    with _ParallelPool(2) as pool:
+        recycled, diagnostics = fit(records, _parallel=pool, **kwargs)
+        assert pool._executor is None
+    np.testing.assert_array_equal(recycled.values, persistent.values)
+    assert diagnostics["min_Q"] == baseline["min_Q"]

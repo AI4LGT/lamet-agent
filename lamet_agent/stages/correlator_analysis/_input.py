@@ -231,9 +231,27 @@ def load_descriptor(path: Path, *, selected_ids: set[str] | None = None) -> dict
             "bz_direction",
             "bT",
             "momentum",
+            "resample_group",
+            "observable",
+            "bT_fm",
+            "momentum_index",
         ):
             if key in record["selectors"]:
                 attrs[key] = record["selectors"][key]
+        direction = record["selectors"].get("longitudinal_direction")
+        if direction is not None:
+            direction = np.asarray(direction, dtype=float)
+            if direction.shape != (3,) or not np.all(np.isfinite(direction)) or np.linalg.norm(direction) == 0:
+                raise ValueError("longitudinal_direction must be a finite nonzero three-vector")
+            step = float(ensemble.a_s * np.linalg.norm(direction))
+            authored_step = record["selectors"].get("bz_step_fm", step)
+            if not np.isclose(float(authored_step), step, rtol=0.0, atol=1e-12):
+                raise ValueError("bz_step_fm conflicts with lattice spacing and longitudinal_direction")
+            attrs["longitudinal_direction"] = json.dumps(direction.tolist())
+            attrs["bz_step_fm"] = step
+            attrs["momentum_gev"] = float(
+                ensemble.k_s * abs(np.dot(record["sink_momentum"], direction / np.linalg.norm(direction)))
+            )
         if record["source_sink_separation"] is not None:
             attrs["source_sink_separation"] = int(record["source_sink_separation"])
         for key in ("kernel_operator", "parton", "renormalization_scheme"):
@@ -254,7 +272,8 @@ def load_descriptor(path: Path, *, selected_ids: set[str] | None = None) -> dict
 
 
 def resample_correlators(
-    raw: dict[str, Any], *, mode: str, group: str, bin_size: int, n_boot: int | None, seed: int
+    raw: dict[str, Any], *, mode: str, group: str, bin_size: int, n_boot: int | None, seed: int,
+    tracked: bool = False,
 ) -> dict[str, EnsembleData]:
     """Apply one explicit plan to every configuration-aligned correlator."""
     data = raw["correlators"]
@@ -267,6 +286,9 @@ def resample_correlators(
     plan_seed: int | None = None
     if mode == "bootstrap":
         plan_seed = int(seed)
+        if tracked:
+            digest = hashlib.sha256(f"lamet-bootstrap-v1:{seed}:{group}".encode()).digest()
+            plan_seed = int.from_bytes(digest[:8], "little")
     elif mode != "jackknife":
         raise ValueError("resampling must be bootstrap or jackknife")
     plan_header = json.dumps(
@@ -275,7 +297,7 @@ def resample_correlators(
             "configurations": raw.get("configuration_ids", []),
             "bin_size": bin_size,
             "mode": mode,
-            "n_boot": n_boot,
+            "n_boot": n_boot if mode == "bootstrap" else None,
             "seed": plan_seed,
         },
         sort_keys=True,
@@ -291,6 +313,21 @@ def resample_correlators(
             sampled = prepared.jackknife()
         attrs = sampled.attrs
         attrs.update({"resample_id": resample_id, "resample_group": group})
+        if tracked:
+            frame_header = json.dumps(
+                {"algorithm": "group-bootstrap-v1", "seed": int(seed), "samples": int(n_boot)}
+                if mode == "bootstrap" else {"algorithm": "group-jackknife-v1"}, sort_keys=True
+            )
+            attrs.update({
+                "replica_frame_id": hashlib.sha256(frame_header.encode()).hexdigest(),
+                "resample_lineage": json.dumps({group: resample_id}, sort_keys=True, separators=(",", ":")),
+                "configuration_ids": json.dumps(raw.get("configuration_ids", [])),
+            })
+            if mode == "jackknife":
+                attrs["jackknife_groups"] = json.dumps(
+                    {group: sampled.n_sample}, sort_keys=True, separators=(",", ":")
+                )
+                attrs["central_estimator"] = "mean_native_jackknife"
         result[correlator_id] = EnsembleData(
             sampled.ensemble,
             sampled.resample,
@@ -301,6 +338,146 @@ def resample_correlators(
             name=sampled.name,
         )
     return result
+
+
+def _finite_fit_configurations(data: EnsembleData, params: dict[str, Any]) -> np.ndarray:
+    """Check only the authored likelihood domain, including all published z."""
+    physical_shape = np.asarray(data.values).shape[1:]
+    domain = np.ones(physical_shape, dtype=bool)
+    scopes = set("+".join(params.get("fit_scope", [])).split("+"))
+    if "t" in data.dims:
+        times = np.asarray(data.coords["t"], dtype=float)
+        is_qda = data.attrs.get("correlator_type") == "qda"
+        if "ff" in scopes and is_qda and "z" not in data.dims:
+            chosen = [0.5 * float(tsep) for window in params.get("pt3_windows", []) for tsep in window["tsep_ls"]]
+            keep = np.isin(times, chosen) if chosen else np.ones(times.shape, dtype=bool)
+        else:
+            windows = [params["qda_window"]] if is_qda and params.get("qda_window") else params.get("pt2_windows", [])
+            keep = np.zeros(times.shape, dtype=bool) if windows else np.ones(times.shape, dtype=bool)
+            for window in windows:
+                keep |= (times >= window["tmin"]) & (times < window["tmax"])
+            if not is_qda and scopes & {"3pt_over_2pt", "FH"}:
+                # The ratio likelihood also consumes measured two-point
+                # values outside the spectral fit window.
+                for window in params.get("pt3_windows", []):
+                    keep |= np.isin(times, window["tsep_ls"])
+                    if params.get("fitting_form") == "NonBreit":
+                        for tsep in window["tsep_ls"]:
+                            keep |= (times >= window["tau_cut"]) & (times <= tsep - window["tau_cut"])
+        shape = [1] * len(data.dims)
+        shape[data.dims.index("t")] = len(times)
+        if is_qda and "z" in data.dims and params.get("qda_windows_by_z"):
+            from ._qda_windows import qda_time_masks
+
+            windows = [params["qda_window"]] if params.get("qda_window") else params.get("pt2_windows", [])
+            if not windows:
+                raise ValueError("qda_windows_by_z requires an explicit default time window")
+            keep_by_z = np.zeros((len(times), len(data.coords["z"])), dtype=bool)
+            for window in windows:
+                keep_by_z |= qda_time_masks(times, data.coords["z"], window, params["qda_windows_by_z"])
+            shape[data.dims.index("z")] = len(data.coords["z"])
+            if data.dims.index("t") > data.dims.index("z"):
+                keep_by_z = keep_by_z.T
+            domain &= keep_by_z.reshape(shape)
+        else:
+            domain &= keep.reshape(shape)
+    if "tsep" in data.dims and "tau" in data.dims:
+        tseps = np.asarray(data.coords["tsep"], dtype=float)
+        taus = np.asarray(data.coords["tau"], dtype=float)
+        windows = params.get("pt3_windows", [])
+        keep = np.full((len(tseps), len(taus)), not bool(windows), dtype=bool)
+        for window in windows:
+            cut = int(window["tau_cut"])
+            keep |= (
+                np.isin(tseps, window["tsep_ls"])[:, None]
+                & (taus[None, :] >= cut)
+                & (taus[None, :] <= tseps[:, None] - cut)
+            )
+        shape = [1] * len(data.dims)
+        shape[data.dims.index("tsep")] = len(tseps)
+        shape[data.dims.index("tau")] = len(taus)
+        if data.dims.index("tsep") > data.dims.index("tau"):
+            keep = keep.T
+        domain &= keep.reshape(shape)
+    if not np.any(domain):
+        raise ValueError("authored fit windows select no raw correlator data")
+    values = np.asarray(data.values)[:, domain]
+    # Ratios divide complex correlators before selecting a fitted component.
+    # A nonfinite imaginary operand can therefore contaminate the real ratio.
+    complex_arithmetic = params.get("tmd_phase_rotation") or bool(
+        scopes & {"3pt_over_2pt", "3pt_over_3pt", "FH", "wf_over_2pt"}
+    )
+    if not complex_arithmetic:
+        if params.get("component") == "re":
+            values = values.real
+        elif params.get("component") == "im":
+            values = values.imag
+    return np.all(np.isfinite(values), axis=1)
+
+
+def prepare_resampling_groups(document: dict[str, Any], root: Path) -> dict[str, dict[str, Any]]:
+    """Freeze one common configuration mask before any correlated job is fitted.
+
+    The union is over every authored job's fit domain, so later branch choices
+    cannot silently change the sampling plan of an already fitted observable.
+    """
+    block = document.get("stages", {}).get("correlator_analysis", {})
+    groups: dict[str, dict[str, Any]] = {}
+    masks: dict[str, np.ndarray] = {}
+    exclusion_reasons: dict[str, dict[str, list[dict[str, str]]]] = {}
+    for job in block.get("jobs", []):
+        params = {**block.get("defaults", {}), **job}
+        for source in job.get("inputs", {}).get("correlators", []):
+            path = Path(source["json"])
+            if not path.is_absolute():
+                path = root / path
+            # Inspect selectors before loading large legacy datasets.
+            records = json.loads(path.read_text(encoding="utf-8"))["correlators"]
+            record = next(record for record in records if record["id"] == source["id"])
+            group = record.get("selectors", {}).get("resample_group")
+            if group is None:
+                continue
+            if not isinstance(group, str) or not group:
+                raise ValueError("resample_group must be a nonempty string")
+            loaded = load_descriptor(path, selected_ids={source["id"]})
+            data = loaded["correlators"][source["id"]]
+            count = data.n_sample
+            identities = record.get("selectors", {}).get("configuration_ids", list(range(count)))
+            if not isinstance(identities, list) or len(identities) != count or len(set(map(str, identities))) != count:
+                raise ValueError("configuration_ids must uniquely identify every raw configuration in order")
+            identities = list(map(str, identities))
+            geometry = tuple(getattr(data.ensemble, name) for name in ("a_s", "a_t", "L_s", "L_t"))
+            if group in groups:
+                if groups[group]["all_configuration_ids"] != identities or groups[group]["geometry"] != geometry:
+                    raise ValueError(f"resample_group '{group}' has inconsistent configuration ordering or lattice")
+            else:
+                groups[group] = {"all_configuration_ids": identities, "geometry": geometry}
+                masks[group] = np.ones(count, dtype=bool)
+                exclusion_reasons[group] = {}
+            finite = _finite_fit_configurations(data, params)
+            masks[group] &= finite
+            for index in np.flatnonzero(~finite):
+                exclusion_reasons[group].setdefault(str(index), []).append({
+                    "configuration_id": identities[index],
+                    "job_id": job["id"],
+                    "correlator_id": source["id"],
+                    "reason": "nonfinite_in_authored_fit_domain",
+                })
+    for group, entry in groups.items():
+        mask = masks[group]
+        retained = np.flatnonzero(mask).tolist()
+        if len(retained) // int(document["metadata"]["bin_size"]) < 2:
+            raise ValueError(f"resample_group '{group}' has fewer than two valid configuration bins")
+        entry.update({
+            "retained_indices": retained,
+            "excluded_indices": np.flatnonzero(~mask).tolist(),
+            "configuration_ids": [entry["all_configuration_ids"][index] for index in retained],
+            "exclusion_reasons": {
+                index: sorted(reasons, key=lambda reason: (reason["job_id"], reason["correlator_id"]))
+                for index, reasons in sorted(exclusion_reasons[group].items(), key=lambda item: int(item[0]))
+            },
+        })
+    return groups
 
 
 def ensure_raw_correlators(
@@ -357,7 +534,39 @@ def ensure_raw_correlators(
             f"selected correlator ids are not present in the project descriptors: {sorted(requested - set(selected))}"
         )
     context.state["correlator_descriptor_path"] = loaded_paths[0] if len(loaded_paths) == 1 else loaded_paths
-    context.state["correlator_resample_group"] = str((ensemble or {}).get("id", context.job_id))
+    explicit_groups = {item.attrs.get("resample_group") for item in selected.values()}
+    tracked = any(value is not None for value in explicit_groups)
+    if tracked and (len(explicit_groups) != 1 or None in explicit_groups):
+        raise ValueError("one correlator fit must use exactly one explicit resample_group")
+    group = str(next(iter(explicit_groups))) if tracked else str((ensemble or {}).get("id", context.job_id))
+    if tracked:
+        shared = context.state.setdefault("stage_shared", {})
+        groups = shared.get("resampling_groups", context.state.get("resampling_groups"))
+        if groups is None:
+            root = Path(context.manifest["metadata"]["root_directory"])
+            if not root.is_absolute():
+                root = context.manifest_path.parent / root
+            groups = prepare_resampling_groups(context.manifest, root)
+        shared["resampling_groups"] = groups
+        context.state["resampling_groups"] = groups
+        if group not in groups:
+            raise ValueError(f"resampling group '{group}' was not preflighted")
+        plan = groups[group]
+        indices = np.asarray(plan["retained_indices"], dtype=int)
+        configuration_ids = list(plan["configuration_ids"])
+        selected = {
+            key: EnsembleData(
+                item.ensemble, "raw", list(np.asarray(item.values)[indices]), item.dims, item.coords,
+                attrs={
+                    **item.attrs,
+                    "excluded_configurations": json.dumps(plan["excluded_indices"]),
+                    "excluded_configuration_reasons": json.dumps(plan["exclusion_reasons"], sort_keys=True),
+                }, name=item.name,
+            )
+            for key, item in selected.items()
+        }
+    context.state["correlator_resample_group"] = group
+    context.state["correlator_tracked_resampling"] = tracked
     context.state["correlator_records"] = records
     context.state["correlator_configuration_ids"] = configuration_ids or []
     context.state["raw_correlators"] = selected
@@ -386,9 +595,11 @@ def ensure_correlators(
         bin_size=context.manifest["metadata"]["bin_size"],
         n_boot=context.manifest["metadata"].get("samples"),
         seed=int(context.manifest["metadata"]["random_seed"]),
+        tracked=bool(context.state.get("correlator_tracked_resampling", False)),
     )
     context.state["correlators"] = resampled
     return resampled
 
 
-__all__ = ["ensure_correlators", "ensure_raw_correlators", "load_descriptor", "resample_correlators"]
+__all__ = ["ensure_correlators", "ensure_raw_correlators", "load_descriptor", "resample_correlators",
+           "prepare_resampling_groups"]
