@@ -15,6 +15,7 @@ from lamet_agent.contract import (
     Depends,
     Issue,
     List,
+    Provides,
     Recommends,
     Source,
     Suggests,
@@ -182,7 +183,7 @@ def _kernel_parameter_issues(kernel: Any, values: dict[str, Any]) -> list[Issue]
 # fmt: off
 PARAM_RULES = (
     Depends("", "order", physics="The perturbative order remains explicit in the manifest and is encoded in the runtime-derived kernel filename."),
-    Value("order", Literal["nlo", "nnlo"], physics="NLO kernels and the NNLO GI gamma-t hybrid nonsinglet quark PDF kernel are available."),
+    Value("order", Literal["nlo", "nnlo", "nll"], physics="NLO kernels and the NNLO GI gamma-t hybrid nonsinglet quark PDF kernel are available."),
     Recommends("", "resummation", physics="Matching uses the selected fixed order unless an explicit resummation is selected.", default=""),
     Value("resummation", Literal["", "rgr", "lrr"], physics="Empty selects fixed-order matching at the requested order; rgr resums the running coupling and lrr resums the leading renormalon. NNLO GI gamma-t hybrid supports empty or rgr resummation."),
     Depends("", "mu", physics="The matching scale is the MS-bar scale of the published light-cone distribution in GeV, conventionally 2 GeV, and enters every coefficient function through the logarithm ln(4 y^2 Pz^2 / mu^2)."),
@@ -220,9 +221,69 @@ def check_x_output(context: CheckContext) -> Issue | None:
     return None
 
 
-JOB_RULES = stage_job_rules(PARAM_RULES, INPUT_RULES)
+PARAM_RULES += (
+    Recommends("", "observable", default="collinear",
+               physics="Collinear matching retains filename-selected kernels; TMD matching is multiplicative."),
+    Value("observable", Literal["collinear", "tmdwf", "tmdpdf"],
+          physics="TMD modes require the CS kernel and intrinsic soft function from soft analysis."),
+    Provides("", "tmdwf", "observable", physics="The TMDWF uses quark and antiquark hard coefficients."),
+    Provides("", "tmdpdf", "observable", physics="The TMDPDF uses the squared quark hard coefficient."),
+    Recommends("tmdwf", "p_ref_gev", default=4.30, physics="Reference momentum sets both WF rapidity scales."),
+    Value("tmdwf.p_ref_gev", (int, float), physics="Finite positive reference momentum in GeV.",
+          validator=_positive),
+    Recommends("tmdpdf", "zeta_gev2", default=4.0, physics="Target PDF rapidity scale in GeV squared."),
+    Value("tmdpdf.zeta_gev2", (int, float), physics="Finite positive rapidity scale.", validator=_positive),
+    *tuple(rule for branch, default_flavor in (("tmdwf", 1.0), ("tmdpdf", 2.0)) for rule in (
+        Recommends(branch, "infrared_policy", default="error",
+                   physics="NLL rejects pole crossings by default; reproduction prescriptions must be explicit."),
+        Value(f"{branch}.infrared_policy", Literal["error", "freeze", "reference_quad"],
+              physics="The coefficient prescription must match both soft inputs."),
+        Recommends(branch, "freeze_scale_gev", default=None, physics="An explicit scale is needed only for freezing."),
+        Value(f"{branch}.freeze_scale_gev", (int, float),
+              physics="Positive scale required only with infrared_policy=freeze.", validator=_positive),
+        Recommends(branch, "alpha_s", default=0.293,
+                   physics="Explicit alpha_s(mu), consistent with both soft inputs and anchoring NLL running."),
+        Value(f"{branch}.alpha_s", (int, float), physics="Finite positive fixed coupling.", validator=_positive),
+        Recommends(branch, "flavor_factor", default=default_flavor,
+                   physics="Explicit normalization; the pion PDF converts (u-d)/2 to u-d using factor two."),
+        Value(f"{branch}.flavor_factor", (int, float), physics="Finite positive flavor normalization.",
+              validator=_positive),
+    )),
+)
 
-CHECKS = (check_x_output,)
+TMD_INPUT_RULES = tuple(rule for branch in ("tmdwf", "tmdpdf") for rule in (
+    Depends(branch, "inputs", physics="TMD matching combines the quasi distribution with both soft results."),
+    Depends(f"{branch}.inputs", "cs_kernel", physics="CS kernel sets rapidity evolution."),
+    Source(f"{branch}.inputs.cs_kernel", physics="CS output with matching scale, scheme and replica lineage."),
+    Depends(f"{branch}.inputs", "intrinsic_soft", physics="Intrinsic soft function completes TMD factorization."),
+    Source(f"{branch}.inputs.intrinsic_soft", physics="Intrinsic-soft output on the same bT grid and scheme."),
+))
+
+
+def check_tmd(context: CheckContext):
+    if context.params.get("observable") not in {"tmdwf", "tmdpdf"}:
+        if context.params.get("order") == "nll":
+            return Issue("order", "order='nll' is available only for TMD matching",
+                         "Collinear matching retains its existing kernel interface.")
+        return None
+    physics = "CG TMD matching supports fixed-order NLO and NLL with consistent explicit coefficient controls."
+    if context.params.get("order") not in {"nlo", "nll"} or context.params.get("resummation", ""):
+        return Issue("order", "TMD matching requires order='nlo' or 'nll' and empty resummation", physics)
+    from lamet_agent.kernels.tmd.coefficients import validate_settings
+    try:
+        validate_settings(**{name: context.params[name] for name in (
+            "order", "mu", "alpha_s", "infrared_policy", "freeze_scale_gev") if name in context.params})
+    except ValueError as exc:
+        return Issue("infrared_policy", str(exc), physics)
+    if context.params.get("kernel_parameters", {}):
+        return Issue("kernel_parameters", "TMD controls are alpha_s, p_ref_gev/zeta_gev2 and flavor_factor", physics)
+    if set(context.inputs) != {"quasi", "cs_kernel", "intrinsic_soft"}:
+        return Issue("inputs", "TMD matching requires exactly quasi, cs_kernel, intrinsic_soft", physics)
+    return None
+
+
+JOB_RULES = stage_job_rules(PARAM_RULES, INPUT_RULES, TMD_INPUT_RULES)
+CHECKS = (check_x_output, check_tmd)
 
 
 def check_systematics(context: CheckContext) -> Issue | None:

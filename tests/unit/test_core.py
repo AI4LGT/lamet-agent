@@ -1724,7 +1724,7 @@ def test_soft_analysis_empty_placeholder_validates_but_has_no_runnable_jobs(tmp_
     assert not (tmp_path / "runs").exists()
 
 
-def test_soft_analysis_rejects_jobs_before_execution(tmp_path: Path) -> None:
+def test_soft_analysis_rejects_incomplete_jobs_before_execution(tmp_path: Path) -> None:
     manifest = Manifest(
         tmp_path / "manifest.json",
         {
@@ -1733,14 +1733,13 @@ def test_soft_analysis_rejects_jobs_before_execution(tmp_path: Path) -> None:
         },
     )
     issues = manifest.validate()
-    assert [issue.path for issue in issues] == [
-        "stages.soft_analysis.jobs[0]",
-        "stages.soft_analysis.jobs[1]",
-    ]
-    assert all("Soft Analysis is not implemented yet" in issue.message for issue in issues)
+    assert issues
+    assert any(issue.path.startswith("stages.soft_analysis.jobs[0]") for issue in issues)
+    assert any(issue.path.startswith("stages.soft_analysis.jobs[1]") for issue in issues)
+    assert all("not implemented" not in issue.message for issue in issues)
 
     backend = _ScriptedBackend([])
-    with pytest.raises(ValueError, match="Soft Analysis is not implemented yet"):
+    with pytest.raises(ValueError, match="is required"):
         create_session(backend).run_manifest(manifest)
     assert backend.calls == []
     assert not (tmp_path / "runs").exists()

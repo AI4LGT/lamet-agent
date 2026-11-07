@@ -65,6 +65,7 @@ def initial(context: ToolContext, session: LlmSession) -> dict[str, Any]:
         return cached
     scope = _scope(context)
     pt2 = context.params.get("pt2_windows")
+    authored_z = context.params.get("tune_z_values")
     if scope.is_spectrum and pt2 and context.params.get("priors"):
         names = declared_prior_names(context.params)
         priors = validate_prior_overrides(context.params["priors"])
@@ -89,6 +90,15 @@ def initial(context: ToolContext, session: LlmSession) -> dict[str, Any]:
                 {"attempt": "initial", "fixed": dict(result), "suggested": {}, "source": "manifest"}
             )
             return result
+    if not scope.is_spectrum and pt2 and authored_z and (scope.is_qda or context.params.get("pt3_windows")):
+        result = {"pt2_windows": list(pt2), "tune_z_values": list(authored_z)}
+        if not scope.is_qda:
+            result["pt3_windows"] = list(context.params["pt3_windows"])
+        context.state[_CACHE_KEY] = result
+        context.state.setdefault("fit_parameter_provenance", []).append(
+            {"attempt": "initial", "fixed": dict(result), "suggested": {}, "source": "manifest"}
+        )
+        return result
     if scope.is_spectrum:
         from .ask_for_spectrum_fit import recommend
 
@@ -176,6 +186,8 @@ def revise(
 
 def pt2_windows(context: ToolContext, session: LlmSession) -> list[dict[str, int]]:
     """Null-hook accessor for the joint pt2 recommendation."""
+    if _scope(context).is_form_factor:
+        return []
     return list(initial(context, session)["pt2_windows"])
 
 

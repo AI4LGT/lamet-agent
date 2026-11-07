@@ -108,6 +108,11 @@ def run(context: ToolContext, session: LlmSession) -> None:
 
     inspect(context)
     scope = parse_fit_scope(context.params["fit_scope"])
+    if scope.is_form_factor:
+        from ._fit_ff import run as fit_form_factor
+
+        fit_form_factor(context)
+        return
     suggestion = initial(context, session)
     if scope.is_spectrum:
         _apply_spectrum_suggestion(context, suggestion)

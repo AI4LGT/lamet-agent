@@ -82,6 +82,27 @@ while successive list entries propagate widened posteriors.
 The selected time window is applied to every production sample.
 """.strip()
 
+_TMDWF_METHOD = r"""
+The axial TMDWF fit uses independent authored SS and nonlocal time windows.
+Its periodic spectral terms are $C_{SS}=\sum_n Z_n^2 D_n/(2E_n)$ and
+$C_{SP}=\sum_n Z_n\Phi_n D_n/2$, so the published amplitude is
+$\Phi_0=O_{00}/E_0$. Numerical conditioning multiplies SS by $s$ and SP by
+$\sqrt{s}$, preserving this amplitude. Native longitudinal axial data are
+rotated by $-i\exp(-i\mathbf P\cdot\mathbf z/2)$ when explicitly requested.
+The zero-momentum reference instead fits one periodic exponential and publishes
+its unnormalized amplitude; the later ratio stage performs the local division.
+""".strip()
+
+_FF_METHOD = r"""
+Each of the four wall-source currents X/X, Y/Y, X5/X5, and Y5/Y5 is divided
+samplewise by $\operatorname{Re}[C_{Z5}(t/2)+C_{X5}(t/2)]^2$ and fitted to
+$f[1+c_1(e^{-\Delta E\tau}+e^{-\Delta E(t-\tau)})]/[1+c_2e^{-\Delta E t/2}]$.
+The aligned fitted samples are averaged over the four currents, then multiplied
+by $-6L_s^3/[(P^2+E^2)/(2P^2)]$. The authored energy is in GeV and momentum
+is derived from the lattice geometry. Fit-quality diagnostics retain every
+current separately.
+""".strip()
+
 
 _FH_METHOD = r"""
 For a Feynman--Hellmann scope, the summed ratio and its finite-difference slope
@@ -211,8 +232,16 @@ def _method_lines(records: tuple[StageReportRecord, ...]) -> list[str]:
         lines.extend([_BREIT_METHOD, ""])
     if "NonBreit" in forms:
         lines.extend([_NONBREIT_METHOD, ""])
-    if scopes & {"qda", "wf_over_2pt"}:
+    if any(
+        record.params.get("qda_output", "ratio") == "ratio"
+        and set("+".join(record.params.get("fit_scope", [])).split("+")) & {"qda", "wf_over_2pt"}
+        for record in lsq_records
+    ):
         lines.extend([_QDA_METHOD, ""])
+    if any(record.params.get("qda_output") in {"tmdwf", "amplitude"} for record in lsq_records):
+        lines.extend([_TMDWF_METHOD, ""])
+    if "ff" in scopes:
+        lines.extend([_FF_METHOD, ""])
     if "FH" in scopes:
         lines.extend([_FH_METHOD, ""])
     if "3pt_over_3pt" in scopes:
@@ -502,6 +531,26 @@ def _prior_control_lines(record: StageReportRecord) -> list[str]:
 
 def _application_summary_lines(record: StageReportRecord) -> list[str]:
     diagnostics = record.summary.get("diagnostics", {})
+    if record.params.get("fit_scope") == ["ff"]:
+        rows = []
+        threshold = float(record.params.get("q_min", 0.05))
+        for fit in diagnostics.get("fits", []):
+            samples = fit.get("sample_diagnostics", [])
+            below = sum(sample["Q"] < threshold for sample in samples)
+            rows.append(
+                f"| {fit['current']} | {format_value(fit['Q'])} | {format_value(fit['chi2_dof'])} | "
+                f"{below}/{len(samples)} | {format_value(fit['ff'])} | {format_value(fit['ff_sdev'])} |"
+            )
+        return [
+            "### Four-current Application Fit Summary",
+            "",
+            "The job summary shows the smallest current Q and largest current chi2/dof. "
+            "Every aligned fitted sample is retained in the four-current average.",
+            "",
+            "| current | center Q | center chi2/dof | sample Q < threshold | bare amplitude | center uncertainty |",
+            "|---|---:|---:|---:|---:|---:|",
+            *rows,
+        ]
     application = diagnostics.get("selected_application_fit", {}) if isinstance(diagnostics, Mapping) else {}
     fits = application.get("fits", []) if isinstance(application, Mapping) else []
     quality = diagnostics.get("sample_fit_quality", {}) if isinstance(diagnostics, Mapping) else {}
@@ -914,16 +963,17 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
                         f"{_window_text(candidate)} | {z_value} | {format_value(fit.get('Q'))} | "
                         f"{format_value(fit.get('chi2_dof'))} | {format_value(fit.get('logGBF'))} |"
                     )
-            lines.extend(
-                [
-                    "",
-                    "### Per-tuning-z Fit Summary",
-                    "",
-                    "| fit method | selected window | z | Q | chi2/dof | logGBF |",
-                    "|---|---|---:|---:|---:|---:|",
-                    *(tune_rows or ["| n/a | n/a | n/a | n/a | n/a | n/a |"]),
-                ]
-            )
+            if params.get("fit_scope") != ["ff"]:
+                lines.extend(
+                    [
+                        "",
+                        "### Per-tuning-z Fit Summary",
+                        "",
+                        "| fit method | selected window | z | Q | chi2/dof | logGBF |",
+                        "|---|---|---:|---:|---:|---:|",
+                        *(tune_rows or ["| n/a | n/a | n/a | n/a | n/a | n/a |"]),
+                    ]
+                )
             lines.extend(["", *_application_summary_lines(record)])
             if diagnostics.get("fallback_no_q_passing"):
                 lines.extend(

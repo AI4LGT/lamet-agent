@@ -112,9 +112,18 @@ def _nonnegative_finite(value: int | float) -> bool:
 # fmt: off
 PARAM_RULES = (
     Depends("", "strategy", physics="Renormalization factors are either supplied through an external denominator or extracted by fitting reference matrix elements in the self-renormalization workflow."),
-    Value("strategy", Literal["external_denominator", "self_renormalization"], physics="Selects whether the denominator factor is externally determined or fitted from reference matrix elements."),
+    Value("strategy", Literal["external_denominator", "self_renormalization", "tmd_ratio"], physics="Selects external factors, self-renormalization, or the Coulomb-gauge TMD ratio prescription."),
     Provides("", "external_denominator", "strategy", physics="External-denominator jobs apply a renormalization factor determined outside this workflow to the target matrix element."),
     Provides("", "self_renormalization", "strategy", physics="Self-renormalization jobs extract a reusable factor from reference matrix elements and apply it to target matrix elements."),
+    Provides("", "tmd_ratio", "strategy", physics="TMD ratios retain the common local-current and zero-momentum reference uncertainties."),
+    Depends("tmd_ratio", "operation", physics="normalize_wf divides a wavefunction by its local matrix element; reference forms the zero-momentum transverse reference; apply divides by that reference."),
+    Value("tmd_ratio.operation", Literal["normalize_wf", "reference", "apply"], physics="The three operations implement the explicit TMD ratio chain."),
+    Recommends("tmd_ratio", "projection", physics="Preserve both components unless the authored prescription projects the normalized ratio onto its real part.", default="preserve"),
+    Value("tmd_ratio.projection", Literal["preserve", "real"], physics="real sets the imaginary part of the final ratio to zero sample by sample, retaining the real part and its propagated uncertainty."),
+    Recommends("tmd_ratio", "type", physics="TMD ratios apply sample-wise algebra.", default="apply"),
+    Value("tmd_ratio.type", Literal["apply"], physics="TMD ratio jobs do not fit renormalization factors."),
+    Recommends("tmd_ratio", "scheme", physics="The Coulomb-gauge TMD reference defines the ratio scheme.", default="ratio"),
+    Value("tmd_ratio.scheme", Literal["ratio"], physics="TMD reference normalization uses the ratio scheme."),
     Depends("", "normalization", physics="Selects whether matrix-element inputs are normalized at the origin z=0 before the renormalization prescription is applied."),
     Value("normalization", bool, physics="Origin normalization divides each sample by its own value at the unique z=0 point, setting that local normalization to one."),
     Depends("external_denominator", "scheme", physics="The external scheme determines how the supplied renormalization factor is interpreted across the short- and long-distance regions."),
@@ -165,6 +174,21 @@ PARAM_RULES = (
 INPUT_RULES = ()
 
 JOB_CONDITIONAL_RULES = (
+    Depends("tmd_ratio", "inputs", physics="TMD normalization consumes explicit sample-bearing sources."),
+    Depends("tmd_ratio.inputs", "target", physics="The matrix element being normalized is explicit."),
+    Source("tmd_ratio.inputs.target", physics="The target is an earlier job or NetCDF artifact."),
+    Provides("tmd_ratio", "normalize_wf", "tmd_ratio.operation", physics="Wavefunction normalization uses the local current at z=0."),
+    Provides("tmd_ratio", "reference", "tmd_ratio.operation", physics="The zero-momentum reference uses two z=0 matrix elements."),
+    Provides("tmd_ratio", "apply", "tmd_ratio.operation", physics="Reference application divides by the transverse reference."),
+    Depends("tmd_ratio.normalize_wf", "inputs", physics="The local normalization source is explicit."),
+    Depends("tmd_ratio.reference", "inputs", physics="The reference local normalization source is explicit."),
+    Depends("tmd_ratio.apply", "inputs", physics="The ratio denominator source is explicit."),
+    Depends("tmd_ratio.normalize_wf.inputs", "local", physics="The bT=0 local matrix element fixes the wavefunction normalization."),
+    Source("tmd_ratio.normalize_wf.inputs.local", physics="The local current is an earlier job or NetCDF artifact."),
+    Depends("tmd_ratio.reference.inputs", "local", physics="The bT=0, z=0 matrix element fixes the reference normalization."),
+    Source("tmd_ratio.reference.inputs.local", physics="The local current is an earlier job or NetCDF artifact."),
+    Depends("tmd_ratio.apply.inputs", "denominator", physics="The transverse reference is applied without resampling again."),
+    Source("tmd_ratio.apply.inputs.denominator", physics="The reference is an earlier job or NetCDF artifact."),
     Depends("external_denominator", "inputs", physics="External renormalization applies the supplied denominator factor to one target matrix element."),
     Depends("external_denominator.inputs", "target", physics="The target is the bare matrix element selected for renormalization."),
     Depends("external_denominator.inputs", "denominator", physics="The denominator is the externally determined renormalization factor, supplied as a coordinate-dependent source or a nonzero constant."),
@@ -187,10 +211,15 @@ JOB_CONDITIONAL_RULES = (
 
 
 def check_path(context: CheckContext) -> Issue | None:
-    physics = "Only declared renormalization strategy, type, and scheme combinations define a valid numerical path; the renormalon-related mass term is extracted by fitting and supplied when applying the factor."
+    physics = (
+        "Only declared renormalization strategy, type, and scheme combinations define a valid numerical path; "
+        "the renormalon-related mass term is extracted by fitting and supplied when applying the factor."
+    )
     params = context.params
     strategy = params.get("strategy")
     job_type = params.get("type")
+    if strategy == "tmd_ratio" and params.get("normalization"):
+        return Issue("normalization", "must be false for explicit TMD local-current normalization", physics)
     if job_type == "fit" and strategy != "self_renormalization":
         return Issue("type", "fit is available only for self_renormalization", physics)
     if job_type == "fit" and "d" not in params:
@@ -203,7 +232,10 @@ def check_path(context: CheckContext) -> Issue | None:
 def check_hybrid(context: CheckContext) -> Issue | None:
     params = context.params
     inputs = context.inputs
-    physics = "Hybrid renormalization separates short- and long-distance treatments at an explicit switching distance; the external branch additionally requires its mass-subtraction parameters and coordinate-dependent denominator."
+    physics = (
+        "Hybrid renormalization separates short- and long-distance treatments at an explicit switching distance; "
+        "the external branch also requires its mass-subtraction parameters and coordinate-dependent denominator."
+    )
     if params.get("scheme") == "hybrid":
         missing = ["zs_fm"] if "zs_fm" not in params else []
         if missing:
@@ -220,12 +252,18 @@ def check_hybrid(context: CheckContext) -> Issue | None:
 
 
 def check_inputs(context: CheckContext) -> Issue | None:
-    physics = "The strategy, job type, and scheme determine whether target, denominator, reference, and fitted factor roles are physically required; no additional input roles are meaningful."
+    physics = (
+        "The strategy, job type, and scheme determine whether target, denominator, reference, and fitted factor roles "
+        "are physically required; no additional input roles are meaningful."
+    )
     params = context.params
     strategy = params.get("strategy")
     scheme = params.get("scheme")
     job_type = params.get("type")
     expected = (
+        {"target", "denominator" if params.get("operation") == "apply" else "local"}
+        if strategy == "tmd_ratio"
+        else
         {"target", "denominator"}
         if strategy == "external_denominator"
         else {"reference"}
@@ -238,7 +276,8 @@ def check_inputs(context: CheckContext) -> Issue | None:
     if active != expected:
         return Issue(
             "inputs",
-            f"must provide exactly {sorted(expected)}; missing={sorted(expected - active)}, unexpected={sorted(active - expected)}",
+            f"must provide exactly {sorted(expected)}; missing={sorted(expected - active)}, "
+            f"unexpected={sorted(active - expected)}",
             physics,
         )
     for role in active:
@@ -274,7 +313,10 @@ def check_kernel(context: CheckContext) -> list[Issue] | Issue | None:
     kernel_id = params.get("kernel_id")
     if not isinstance(kernel_id, str):
         return None
-    physics = "Self-renormalization matches the selected operator's short-distance behavior to an explicit coordinate-space MSbar kernel; its signature and authored overrides must be consistent."
+    physics = (
+        "Self-renormalization matches the selected operator's short-distance behavior to an explicit coordinate-space "
+        "MSbar kernel; its signature and authored overrides must be consistent."
+    )
     try:
         kernel = load_renormalization_kernel(kernel_id)
     except (ImportError, OSError, TypeError, ValueError) as exc:
@@ -299,13 +341,15 @@ def _check_scale(context: CheckContext) -> Issue | None:
         return Issue(
             "mu",
             "is required for this renormalization path",
-            "Scale-dependent renormalization paths require a positive perturbative scale; pure external ratio division does not.",
+            "Scale-dependent renormalization paths require a positive perturbative scale; "
+            "pure external ratio division does not.",
         )
     if (is_fit or strategy == "self_renormalization") and "LambdaQCD_gev" not in params:
         return Issue(
             "LambdaQCD_gev",
             "is required for self-renormalization fitting and application",
-            "The reusable zR fit and its target remap must use one shared QCD scale so their UV running and finite remapping remain in the same prescription.",
+            "The reusable zR fit and its target remap must use one shared QCD scale so their UV running and finite "
+            "remapping remain in the same prescription.",
         )
     return None
 

@@ -79,6 +79,18 @@ def declared_prior_names(params: Mapping[str, Any]) -> set[str]:
     counts = {atom: max(values) for atom, values in params["nstate"].items()}
     if scope.is_spectrum:
         return {f"{prefix}{state}" for prefix in ("E", "z") for state in range(counts["2pt"])}
+    if scope.is_form_factor:
+        return {"ff"} | ({"log(dE)", "c1", "c2"} if counts["ff"] > 1 else set())
+    output = params.get("qda_output", "ratio")
+    if output in {"tmdwf", "amplitude"}:
+        names = {"log(E0)"} | {f"log(dE{state})" for state in range(1, counts["qda"])}
+        components = ("re", "im") if params["component"] == "both" else (params["component"],)
+        if output == "tmdwf":
+            names |= {f"log(overlap{state})" for state in range(counts["qda"])}
+            names |= {f"phi{state}_{component}" for state in range(counts["qda"]) for component in components}
+        else:
+            names |= {f"amplitude_{component}" for component in components}
+        return names
     from .physics import matrix_element_prior
 
     names = set()

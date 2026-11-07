@@ -709,6 +709,9 @@ def fit_matrix_element_samples(
         fitted_samples[:, origin_index] = 1.0 + 0.0j
     center_metrics = []
     sample_failures = []
+    # A separate initial spectrum has identical data, priors, and resamples at
+    # every z in this call. Joint likelihoods remain z-dependent and are refit.
+    cached_initial_spectrum = None
     parallel = _parallel or _ParallelPool(min(workers, three_point.n_sample))
     try:
         fit_indices = track(
@@ -813,21 +816,27 @@ def fit_matrix_element_samples(
                     if fit_samples and previous_sample_posteriors is not None
                     else None
                 )
-                result = nonlinear_fit(
-                    (x, fit_data),
-                    matrix_element_fcn,
-                    fit_prior,
-                    workers=workers,
-                    sample_prior_scale=(None if sample_priors is not None else replica_prior_scale),
-                    sample_priors=sample_priors,
-                    sample_error_mode=sample_error_mode,
-                    mode="resamples" if fit_samples else "center",
-                    tolerate_sample_failures=fit_samples,
-                    capture_sample_posteriors=(0,) if is_final and fit_samples else (),
-                    _parallel=parallel if fit_samples else None,
-                    svdcut=svdcut,
-                    maxit=10000,
-                )
+                cacheable_spectrum = stage_index == 0 and atoms == ("2pt",)
+                if cacheable_spectrum and cached_initial_spectrum is not None:
+                    result = cached_initial_spectrum
+                else:
+                    result = nonlinear_fit(
+                        (x, fit_data),
+                        matrix_element_fcn,
+                        fit_prior,
+                        workers=workers,
+                        sample_prior_scale=(None if sample_priors is not None else replica_prior_scale),
+                        sample_priors=sample_priors,
+                        sample_error_mode=sample_error_mode,
+                        mode="resamples" if fit_samples else "center",
+                        tolerate_sample_failures=fit_samples,
+                        capture_sample_posteriors=(0,) if is_final and fit_samples else (),
+                        _parallel=parallel if fit_samples else None,
+                        svdcut=svdcut,
+                        maxit=10000,
+                    )
+                    if cacheable_spectrum:
+                        cached_initial_spectrum = result
                 previous_posterior = result.p
                 previous_sample_posteriors = _sample_posteriors_from_result(result) if fit_samples else None
                 stage_diagnostics.append(
@@ -1219,6 +1228,10 @@ def fit_qda_samples(
     priors: Mapping[str, Any] | None = None,
     sample_prior_mode: str = "center_posterior",
     chained_prior_error_scale: float | None = None,
+    qda_window: dict[str, int] | None = None,
+    qda_windows_by_z: Mapping[str, Any] | None = None,
+    qda_output: str = "ratio",
+    tmd_phase_rotation: bool = False,
     sample_error_mode: str = "covariance",
     workers: int = 1,
     tune_z: int | float | None = None,
@@ -1227,6 +1240,34 @@ def fit_qda_samples(
     _parallel: _ParallelPool | None = None,
 ) -> tuple[EnsembleData | None, dict[str, Any]]:
     """Fit one raw/ratio qDA scope pipeline and return normalized samples."""
+    if qda_output != "ratio":
+        from ._tmdwf import fit_tmdwf_samples
+
+        return fit_tmdwf_samples(
+            correlators,
+            qda_output=qda_output,
+            qda_window=qda_window,
+            qda_windows_by_z=qda_windows_by_z,
+            tmd_phase_rotation=tmd_phase_rotation,
+            fit_scope=fit_scope,
+            components=components,
+            tmin=tmin,
+            tmax=tmax,
+            n_states=n_states,
+            prior_width=prior_width,
+            svdcut=svdcut,
+            posterior_prior_error_scale=posterior_prior_error_scale,
+            priors=priors,
+            sample_prior_mode=sample_prior_mode,
+            sample_error_mode=sample_error_mode,
+            workers=workers,
+            tune_z=tune_z,
+            fit_samples=fit_samples,
+            show_progress=show_progress,
+            _parallel=_parallel,
+        )
+    if qda_window is not None or qda_windows_by_z or tmd_phase_rotation:
+        raise ValueError("qda_window, qda_windows_by_z and tmd_phase_rotation require an explicit TMD qda_output")
     pipeline = parse_fit_scope(fit_scope)
     atom_counts = resolve_atom_n_states(n_states, pipeline)
     replica_prior_scale = sample_prior_scale(sample_prior_mode, posterior_prior_error_scale)
@@ -1627,6 +1668,10 @@ def matrix_element_samples(
             priors=lsqfit.get("priors"),
             sample_prior_mode=lsqfit.get("sample_prior_mode", "center_posterior"),
             chained_prior_error_scale=lsqfit.get("chained_prior_error_scale"),
+            qda_window=lsqfit.get("qda_window"),
+            qda_windows_by_z=lsqfit.get("qda_windows_by_z"),
+            qda_output=lsqfit.get("qda_output", "ratio"),
+            tmd_phase_rotation=lsqfit.get("tmd_phase_rotation", False),
             sample_error_mode=sample_error_mode,
             workers=workers,
             tune_z=tune_z,

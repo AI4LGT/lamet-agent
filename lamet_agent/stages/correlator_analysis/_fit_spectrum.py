@@ -91,6 +91,7 @@ def run(
         name="spectrum",
     )
     candidates = context.state.setdefault("spectrum_candidates", [])
+    candidate.array = candidate.array.assign_coords(resample=source.array.coords["resample"])
     candidate_id = f"spectrum_{len(candidates) + 1:03d}"
     candidates.append(
         {

@@ -128,7 +128,7 @@ def _has_interior_gap(data: EnsembleData) -> bool:
     return len(grid_segments(data.coords["x"])) > 1
 
 
-def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_directory: Path) -> Path:
+def _collinear_report_lines(*, records: tuple[StageReportRecord, ...], artifact_directory: Path) -> list[str]:
     kernel_ids = list(dict.fromkeys(_record_kernel_id(record) for record in records))
     lines = [
         "# Matching Stage Report",
@@ -292,4 +292,15 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
                 *artifact_rows(record, artifact_directory),
             ]
         )
+    return lines
+
+
+def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_directory: Path) -> Path:
+    tmd = tuple(record for record in records if record.params.get("observable") in {"tmdwf", "tmdpdf"})
+    collinear = tuple(record for record in records if record not in tmd)
+    lines = _collinear_report_lines(records=collinear, artifact_directory=artifact_directory) if collinear else []
+    if tmd:
+        from lamet_agent.stages.matching.tmd import report_lines
+
+        lines.extend(["", *report_lines(tmd, artifact_directory)])
     return write_report(artifact_directory, lines)
