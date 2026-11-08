@@ -212,6 +212,15 @@ FF 低 Q、soft 动量依赖和大横向距离误差仍是明确保留的限制�
 
 架构、文件所有权和贡献者工作流记录在 [`DEVELOPMENT.md`](DEVELOPMENT.md) 中。
 
+### Intrinsic soft function 的 Sudakov kernel
+
+可直接调用 `lamet_agent.kernels.tmd.coefficients.form_factor_kernel` 计算
+双变量系数 `H_F(x1, x2)`，支持 `order="nlo"` 和论文树级边界约定的
+`order="nll"` 重求和。输入采用 NumPy 广播规则，二维网格传入
+`x[:, None]` 和 `y[None, :]`。公式、调用示例和 NLL 低尺度选项见
+[Sudakov kernel 说明](lamet_agent/kernels/tmd/sudakov.md)。该数值接口可独立使用，
+Soft Analysis 的 intrinsic-soft 积分也使用同一系数。
+
 ## 中间数据（NetCDF）
 
 stage 之间传递的数值 artifacts 存储为 NetCDF 文件。每个 array 都具有：

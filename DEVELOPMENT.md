@@ -725,6 +725,18 @@ The Python signature defines accepted `kernel_parameters`; shared private
 helpers stay in `implementation.py`. Coordinate-space renormalization kernels
 such as `z_msbar_*` are loaded separately and need no paired document.
 
+### Multiplicative Sudakov coefficients
+
+`kernels/tmd/` contains the standalone coefficients used in the intrinsic-soft
+form-factor integral. `coefficients.form_factor_kernel` selects fixed-order
+NLO or the paper's tree-boundary NLL convention. These functions return
+broadcast coefficient values, without integration weights, and are separate
+from the top-level collinear convolution-matrix discovery. Soft Analysis
+uses the same form-factor coefficient in its intrinsic-soft integral. See
+[`kernels/tmd/sudakov.md`](lamet_agent/kernels/tmd/sudakov.md) for formulas,
+provenance, input conventions and an example. Focused tests live in
+`test_tmd_sudakov.py` and `test_tmd_nll_kernels.py`.
+
 ### NNLO nonsinglet DGLAP building block
 
 `kernels/implementation.py` provides `_p_nnlo_ns_minus(x, nf=4)` for the
