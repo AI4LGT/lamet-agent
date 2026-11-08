@@ -46,7 +46,7 @@ def test_resummed_weak_coupling_recovers_nlo_logs_without_the_boundary_constant(
     np.testing.assert_allclose(resummed, one_loop_logs, rtol=4e-6, atol=1e-9)
 
 
-@pytest.mark.parametrize("order", ["nlo", "nll"])
+@pytest.mark.parametrize("order", ["nlo", "nll", "nnll"])
 def test_rectangular_grid_broadcasting_and_quark_antiquark_symmetry(order):
     x, y = np.array([0.2, 0.4, 0.8]), np.array([0.3, 0.7])
     kwargs = dict(momentum_gev=2.58, order=order)
@@ -60,7 +60,7 @@ def test_rectangular_grid_broadcasting_and_quark_antiquark_symmetry(order):
     )
 
 
-@pytest.mark.parametrize("order", ["nlo", "nll"])
+@pytest.mark.parametrize("order", ["nlo", "nll", "nnll"])
 @pytest.mark.parametrize("invalid", [0.0, 1.0, -0.1, 1.1, np.nan, np.inf])
 def test_invalid_fractions_are_rejected_on_either_leg(order, invalid):
     for x, y in ((invalid, 0.5), (0.5, invalid)):

@@ -729,13 +729,15 @@ such as `z_msbar_*` are loaded separately and need no paired document.
 
 `kernels/tmd/` contains the standalone coefficients used in the intrinsic-soft
 form-factor integral. `coefficients.form_factor_kernel` selects fixed-order
-NLO or the paper's tree-boundary NLL convention. These functions return
+NLO, the paper's tree-boundary NLL convention, or NNLL with one-loop matching
+from Collins–Rogers, arXiv:1705.07167. NNLL applies only to this form-factor
+kernel; the separate TMDWF/TMDPDF hard factors remain NLO/NLL. These functions return
 broadcast coefficient values, without integration weights, and are separate
 from the top-level collinear convolution-matrix discovery. Soft Analysis
 uses the same form-factor coefficient in its intrinsic-soft integral. See
 [`kernels/tmd/sudakov.md`](lamet_agent/kernels/tmd/sudakov.md) for formulas,
 provenance, input conventions and an example. Focused tests live in
-`test_tmd_sudakov.py` and `test_tmd_nll_kernels.py`.
+`test_tmd_sudakov.py`, `test_tmd_nll_kernels.py` and `test_tmd_nnll_kernels.py`.
 
 ### NNLO nonsinglet DGLAP building block
 

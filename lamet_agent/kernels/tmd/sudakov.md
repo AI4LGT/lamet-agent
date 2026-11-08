@@ -4,7 +4,9 @@ Use `lamet_agent.kernels.tmd.coefficients.form_factor_kernel` to evaluate
 the dimensionless coefficient $H_F(x,y;P,\mu)$ for transverse vector or
 axial-vector currents. The source is
 [arXiv:2504.04625v5, Eq. (18) and Appendix A.2](https://arxiv.org/html/2504.04625v5#A1.SS2).
-The numerical routines are taken from upstream lamet-agent commit `c55a373`.
+The NLO/NLL routines are taken from upstream lamet-agent commit `c55a373`.
+The NNLL extension follows Collins and Rogers,
+[arXiv:1705.07167, Eqs. (58)-(60)](https://arxiv.org/html/1705.07167#S6.SS2).
 
 For $0<x,y<1$ and positive $P,\mu$ in GeV, define
 
@@ -31,6 +33,12 @@ The default NLL policy rejects scales at or below the coupling pole;
 floor. NLO retains signed coefficients and is truncated before any
 $O(\alpha_s^2)$ cross term. NLL uses a unit boundary at $Q=\mu$, so it does
 not include the finite NLO boundary constant.
+
+`order="nnll"` keeps the same product, scales and input conventions, using
+three-loop cusp, two-loop non-cusp and the one-loop matching boundary.
+It shares the NLL three-loop running coupling and `error`/`freeze` policies.
+See [cg_nnll.md](cg_nnll.md) for the formula and normalization. This choice
+extends only `form_factor_kernel`; TMDWF/TMDPDF `hard_factor` remains NLO/NLL.
 
 ## Evaluate a grid
 
