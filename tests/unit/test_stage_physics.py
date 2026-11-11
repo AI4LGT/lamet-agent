@@ -3998,7 +3998,7 @@ def test_every_migrated_kernel_owns_its_callable_and_formula_document() -> None:
 
     root = Path(__file__).parents[2] / "lamet_agent" / "kernels"
     kernel_ids = list_kernel_ids()
-    assert len(kernel_ids) == 46
+    assert len(kernel_ids) == 47
     assert set(kernel_ids) == {path.stem for path in root.glob("*.md")}
     for kernel_id in kernel_ids:
         assert not hasattr(implementation, kernel_id)
@@ -4009,6 +4009,8 @@ def test_every_migrated_kernel_owns_its_callable_and_formula_document() -> None:
             if isinstance(node, ast.ImportFrom) and node.module == "lamet_agent.kernels.implementation":
                 assert all(alias.name != kernel_id and alias.asname != "_implementation" for alias in node.names)
         parameters = {"zs_fm": 0.2} if "_hybrid_" in kernel_id else {}
+        if kernel_id == "tmdwf_gi_unlo":
+            parameters = {"b_perp_fm": 0.1053, "alpha_s": 0.293, "sign": 1}
         accepted, required = inspect_callable(load_kernel(kernel_id), parameter_values=parameters)
         assert set(required).issubset(parameters)
         assert "zs_fm" in accepted if "_hybrid_" in kernel_id else "zs_fm" not in accepted

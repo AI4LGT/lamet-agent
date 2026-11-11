@@ -118,7 +118,13 @@ def publish(context: ToolContext, result: dict[str, object]) -> dict[str, object
         attrs=output_attrs,
         name="quasi_distribution",
     )
-    output.to_netcdf(context.artifact_directory / "output.nc")
+    real_projection = context.inputs.get("real_projection")
+    if real_projection is not None and (
+        context.manifest["metadata"]["target_observable"] != "tmdwf" or context.params.get("tmdwf_projection") != "imag"
+    ):
+        raise ValueError("real_projection requires the paired TMDWF imaginary Fourier job")
+    component_file = "projection_imag.nc" if real_projection is not None else "output.nc"
+    output.to_netcdf(context.artifact_directory / component_file)
     selected_range = result["selected_range"]
     selected_range_label = f"zmin_{selected_range['z_min_fm']:g}_zmax_{selected_range['z_max_fm']:g}".replace(".", "p")
     model_labels = [candidate["label"] for candidate in result["model_candidates"]]
@@ -306,6 +312,13 @@ def publish(context: ToolContext, result: dict[str, object]) -> dict[str, object
         "diagnostics": diagnostics,
         "artifacts": artifacts,
     }
+    if real_projection is not None:
+        from lamet_agent.stages.fourier_transform.physics import combine_tmdwf_transforms
+
+        output = combine_tmdwf_transforms(real_projection, output)
+        output.to_netcdf(context.artifact_directory / "output.nc")
+        artifacts.append("projection_imag.nc")
+        summary["result"] = "quasi_tmdwf"
     context.finish(output, summary)
     return {
         "summary": "published scanned quasi distribution",

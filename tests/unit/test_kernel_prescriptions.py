@@ -106,9 +106,10 @@ def _builders_used(kernel_id: str, grid: np.ndarray) -> set[str]:
     return used
 
 
-def test_every_kernel_declares_one_plus_prescription() -> None:
+def test_every_kernel_declares_its_prescription() -> None:
     assert not COLUMN_PLUS & ROW_PLUS
-    assert set(list_kernel_ids()) == COLUMN_PLUS | ROW_PLUS
+    # C42's TMDWF hard-only kernel is diagonal, with no plus prescription.
+    assert set(list_kernel_ids()) == COLUMN_PLUS | ROW_PLUS | {"tmdwf_gi_unlo"}
 
 
 @pytest.mark.parametrize("kernel_id", sorted(COLUMN_PLUS | ROW_PLUS))

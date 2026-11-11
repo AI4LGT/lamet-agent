@@ -10,14 +10,19 @@ from __future__ import annotations
 
 import argparse
 import json
+from tempfile import TemporaryDirectory
 from pathlib import Path
 from typing import Sequence
 
 from .agent import create_session
+from .cs_kernel import build_manifest as build_cs_kernel
 from .contract import Issue
 from .llm import create_backend
 from .manifest import Manifest, load_manifest
 from .ui import PlainUi, create_ui, use_ui
+
+
+ANALYSES = {"CS_kernel": build_cs_kernel}
 
 
 def _render_issues(issues: Sequence[Issue]) -> str:
@@ -80,6 +85,30 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _dispatch(args: argparse.Namespace, cli_ui: PlainUi) -> int:
+    try:
+        document = json.loads(args.manifest.read_text(encoding="utf-8"))
+        analysis = document.get("analysis") if isinstance(document, dict) else None
+        if analysis is not None:
+            if not isinstance(analysis, str) or analysis not in ANALYSES:
+                raise ValueError(f"Unknown registered analysis: {analysis}")
+            if args.command == "validate":
+                with TemporaryDirectory(dir=args.manifest.resolve().parent) as temporary:
+                    prepared = ANALYSES[analysis](document, args.manifest.resolve(), work_directory=Path(temporary))
+                    issues = prepared.validate()
+                message = _render_issues(issues) if issues else f"{analysis} raw inputs and four-stage graph are valid"
+                cli_ui.log(message)
+                return int(bool(issues))
+            if args.command != "run":
+                raise ValueError(f"Use validate or run for the {analysis} analysis recipe")
+            prepared = ANALYSES[analysis](document, args.manifest.resolve())
+            issues = prepared.validate()
+            if issues:
+                raise ValueError(_render_issues(issues))
+            args.manifest = prepared.path
+            cli_ui.log(f"{analysis} pipeline: {prepared.path}")
+    except (KeyError, OSError, TypeError, ValueError) as exc:
+        cli_ui.log(str(exc), level="error")
+        return 2
     if args.command == "validate":
         cli_ui.set_phase("validate")
         try:
