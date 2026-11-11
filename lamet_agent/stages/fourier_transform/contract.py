@@ -16,10 +16,8 @@ from lamet_agent.contract import (
     Source,
     Suggests,
     Value,
-    _scope_rules,
     stage_job_rules,
 )
-from lamet_agent.stages._priors import valid_prior_overrides
 from lamet_agent.stages.fourier_transform.ask import zmax_fm as recommend_zmax_fm
 from lamet_agent.stages.fourier_transform.ask import zmin_fm as recommend_zmin_fm
 
@@ -79,8 +77,13 @@ def _nonzero(value: int) -> bool:
 # ruff: disable[E501]
 # fmt: off
 PARAM_RULES = (
-    Recommends("", "priors", physics="Optional named tail-prior overrides shared by all ranges and LA/NLA models; missing parameters retain the fixed defaults and unused names are ignored.", default={}),
-    Value("priors", dict, physics="Each override is a gvar string such as 1.0(0.3), with a physical-parameter mean and a positive sdev in the bounded internal coordinate, preserving the existing tail-prior convention. Names include A2, phi2, Lambda and n, not positional u indices.", validator=valid_prior_overrides),
+    Depends("tmdwf", "tmdwf_projection", physics="Select the midpoint component before endpoint rotation."),
+    Value("tmdwf.tmdwf_projection", Literal["real", "imag"], physics="Two paired jobs retain the complex TMDWF."),
+    Depends("tmdwf", "negative_z", physics="Explicit negative-z convention of the midpoint amplitude."),
+    Value("tmdwf.negative_z", Literal["even_both_notebook"], physics="Both midpoint components are assumed even."),
+    Provides("", "tmdwf", "$.metadata.target_observable", physics="Explicit reuse of the native DA tail for each real even midpoint component at fixed transverse separation."),
+    Depends("tmdwf", "tmdwf_profile", physics="Requires two separately prepared midpoint components; this is a tail ansatz choice, not DA matching."),
+    Value("tmdwf.tmdwf_profile", Literal["pion_da_components"], physics="Fit each even midpoint component with the existing light-light DA tail. Supply real_projection to the imaginary job to publish the complex quasi-TMDWF."),
     Depends("", "quasi_y_ls", physics="Dimensionless quasi momentum-fraction grid y for P_z/(2 pi hbar c) sum_z w_z exp(+i y P_z z/(hbar c)) h(z), with z and w_z in fm and full endpoint weights on a uniform grid; it becomes the downstream matching input grid, so its range and spacing set numerical coverage but add no lattice information."),
     Depends("", "zmin_fm", physics="Candidate lower separations for the long-distance tail fit in fm; positive-z data with zmin <= z <= zmax constrain the tail, and one common range is selected from the sample-average data before resample fits.", null_hook=recommend_zmin_fm),
     Depends("", "zmax_fm", physics="Candidate upper separations of measured data entering the tail fit in fm; varying zmax tests the balance between large-|z| asymptotic validity and deteriorating lattice signal, independently of the later extension endpoint.", null_hook=recommend_zmax_fm),
@@ -125,6 +128,8 @@ PARAM_RULES = (
 )
 
 INPUT_RULES = (
+    Recommends("", "real_projection", physics="For a TMDWF imaginary projection, combine with its paired real Fourier output.", default=None),
+    Value("real_projection", str, physics="Earlier native real-projection Fourier job ID."),
     Depends("", "input", physics="One coordinate-space matrix element on a nonnegative-z or signed-z grid supplies the resampled signal and provenance; PDF/DA nonnegative data use real-even/imaginary-odd completion, while a non-forward GPD can use an exchanged-flow partner for explicit signed-z completion."),
     Recommends("", "hermitian_partner", physics="Optional exchanged-flow input for a non-forward GPD; its source and sink momenta are reversed relative to input so Hermiticity supplies the negative-z branch.", default=None),
     Value("hermitian_partner", (str, dict), physics="Upstream job id or external-file object for the exchanged GPD flow; the data must share ensemble, resampling, fm z grid, and compatible samples with input."),
@@ -165,7 +170,7 @@ def check_observable_sector(context: CheckContext) -> Issue | None:
     if scan is None:
         return None
     observable = str(context.manifest["metadata"]["target_observable"]).lower()
-    if observable == "da" and scan["sector"] != "full":
+    if observable in {"da", "tmdwf"} and scan["sector"] != "full":
         return Issue(
             "scheme_scan.sector",
             "must be full for a DA",
@@ -180,57 +185,9 @@ def check_observable_sector(context: CheckContext) -> Issue | None:
     return None
 
 
-PARAM_RULES = (
-    Recommends(
-        "", "strategy", physics="Select fitted collinear tails or the measured TMD transform.", default="tail_fit"
-    ),
-    Value("strategy", Literal["tail_fit", "tmd"], physics="TMD uses direct or tapered measured data."),
-    Provides("", "tail_fit", "strategy", physics="Existing fitted-tail Fourier workflow."),
-    Provides("", "tmd", "strategy", physics="TMD wave functions and beam functions have explicit geometry."),
-    *_scope_rules("tail_fit", PARAM_RULES),
-    Depends("tmd", "observable", physics="Select the centered WF or valence PDF Fourier convention."),
-    Value("tmd.observable", Literal["tmdwf", "tmdpdf"], physics="The job observable determines the Fourier shift."),
-    Recommends(
-        "tmd",
-        "quasi_y_ls",
-        physics="Momentum-fraction grid for the measured Fourier sum.",
-        default={"start": -1.0, "stop": 2.0, "num": 301},
-    ),
-    Value("tmd.quasi_y_ls", (list, dict), physics="Increasing finite momentum-fraction grid.", validator=_valid_grid),
-    Recommends("tmd", "projection", default="real_even",
-               physics="real_even retains the centered WF or valence PDF; hermitian keeps both fitted PDF channels."),
-    Value("tmd.projection", Literal["real_even", "hermitian"],
-          physics="Hermitian PDF reflection gives Re(h) cos + Im(h) sin and requires both input components."),
-    Recommends("tmd", "taper_start", physics="PDF longitudinal site at which the linear taper starts.", default=13),
-    Recommends(
-        "tmd", "taper_stop", physics="PDF longitudinal site at which the linear taper reaches zero.", default=20
-    ),
-    Value(
-        "tmd.taper_start",
-        int,
-        physics="Nonnegative site index, independent of physical lattice spacing.",
-        validator=_nonnegative,
-    ),
-    Value("tmd.taper_stop", int, physics="Positive site index delimiting the Fourier signal.", validator=_positive),
-)
-
-
-def check_tmd(context: CheckContext) -> Issue | None:
-    if context.params.get("strategy") != "tmd":
-        return None
-    if context.params.get("projection", "real_even") == "hermitian" and context.params["observable"] != "tmdpdf":
-        return Issue("projection", "hermitian requires observable='tmdpdf'",
-                     "The centered WF keeps its real projection.")
-    if context.params["taper_start"] >= context.params["taper_stop"]:
-        return Issue("taper_stop", "must exceed taper_start", "The taper must have a positive extent.")
-    if context.manifest["metadata"]["target_observable"] != "tmd":
-        return Issue("observable", "TMD Fourier jobs require target_observable='tmd'", "Explicit observable routing.")
-    return None
-
-
 JOB_RULES = stage_job_rules(PARAM_RULES, INPUT_RULES)
 
-CHECKS = (check_tail_ranges, check_observable_sector, check_tmd)
+CHECKS = (check_tail_ranges, check_observable_sector)
 
 
 def check_systematics(context: CheckContext) -> list[Issue]:

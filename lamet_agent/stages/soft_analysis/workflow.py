@@ -1,89 +1,82 @@
-"""Deterministic soft extraction and publication."""
+"""Deterministic Soft Analysis workflow using the normal stage/job harness."""
+
+from __future__ import annotations
 
 import json
 
+import gvar
 import numpy as np
 
-from lamet_agent.data import sample_mean
-from lamet_agent.plotting import configure_plot, errorline, save_figure, start_plot
-from lamet_agent.stages.soft_analysis.physics import extract_cs, extract_intrinsic, load, load_many, replica_sdev
+from lamet_agent.agent import LlmSession, ToolContext
+from lamet_agent.plotting import configure_plot, errorband, hline, save_figure, start_plot
+from lamet_agent.stages.soft_analysis.physics import compute_pair, load_quasi
 
 
-def replica_distribution(result):
-    """Report raw replica quantiles and the resampling-aware standard error."""
-    values = np.asarray(result.values)
-    replicas = values[:-1] if result.attrs.get("jackknife_layout") else values
-    quantiles = np.quantile(replicas, [0.16, 0.5, 0.84], axis=0)
-    errors = replica_sdev(values, result.resample, result.attrs)
-    means = sample_mean(values, result.resample, result.attrs)
-    return [
+def run(context: ToolContext, _session: LlmSession) -> None:
+    """Inspect paired inputs, compute CSK sample-wise, and publish standard artifacts."""
+    first = load_quasi(context.inputs["quasi1"])
+    second = load_quasi(context.inputs["quasi2"])
+    if context.manifest["metadata"]["resample_mode"] != "bootstrap":
+        raise ValueError("Soft Analysis requires metadata.resample_mode='bootstrap'")
+    if any(data.n_sample != context.manifest["metadata"]["samples"] for data in (first, second)):
+        raise ValueError("input bootstrap counts disagree with metadata.samples")
+    mode = str(context.manifest["metadata"]["sample_error_mode"])
+    computed = compute_pair(first, second, context.params, sample_error_mode=mode)
+    output, raw = computed["data"], computed["raw"]
+    output.to_netcdf(context.artifact_directory / "output.nc")
+    raw.to_netcdf(context.artifact_directory / "raw_ratio.nc")
+    x = np.asarray(output.coords["x"], dtype=float)
+    diagnostics = computed["diagnostics"]
+    (context.artifact_directory / "diagnostics.json").write_text(
+        json.dumps(diagnostics, indent=2, allow_nan=False) + "\n", encoding="utf-8"
+    )
+    columns = [x]
+    labels = ["x"]
+    for component in ("real", "imag"):
+        for label, data in (("raw", raw), ("csk", output)):
+            average = getattr(data, component).average(mode)
+            columns.extend((gvar.mean(average), gvar.sdev(average)))
+            labels.extend((f"{label}_{component}", f"{label}_{component}_error"))
+        columns.append(getattr(computed["correction"], component))
+        labels.append(f"delta_gamma_{component}")
+    np.savetxt(
+        context.artifact_directory / "csk.csv",
+        np.column_stack(columns),
+        delimiter=",",
+        header=",".join(labels),
+        comments="",
+    )
+    artifacts = ["output.nc", "raw_ratio.nc", "diagnostics.json", "csk.csv"]
+    plot_components = (
+        (("real", "Re"),) if context.manifest["metadata"]["run_id"] == "CS_kernel" else (("real", "Re"), ("imag", "Im"))
+    )
+    for component, label in plot_components:
+        start_plot()
+        hline(0.0, color="black")
+        for source in (first, second):
+            selected = getattr(source.at("x", list(x)), component)
+            momentum = float(source.attrs["momentum_gev"])
+            errorband(x, selected.average(mode), label=rf"$P_z={momentum:.3f}$ GeV")
+        configure_plot(xlabel=r"$x$", ylabel=rf"${label}\,\widetilde\Psi$", legend=True)
+        paths = [f"plots/quasi_{component}.{extension}" for extension in ("pdf", "svg")]
+        save_figure(*(context.artifact_directory / path for path in paths))
+        artifacts.extend(paths)
+        start_plot()
+        hline(0.0, color="black")
+        errorband(x, getattr(raw, component).average(mode), label="quasi ratio")
+        errorband(x, getattr(output, component).average(mode), label="ratio + uNLO")
+        configure_plot(xlabel=r"$x$", ylabel=rf"${label}\,\gamma_q$", legend=True)
+        paths = [f"plots/csk_{component}.{extension}" for extension in ("pdf", "svg")]
+        save_figure(*(context.artifact_directory / path for path in paths))
+        artifacts.extend(paths)
+    context.finish(
+        output,
         {
-            "bT_fm": float(b), "mean": float(means[i]),
-            "sdev": float(errors[i]),
-            "quantile_interpretation": (
-                "bootstrap percentile interval" if result.resample == "bootstrap"
-                else ("raw leave-one-out replica quantiles across independent group blocks; "
-                      "central evaluation excluded; not a confidence interval"
-                      if result.attrs.get("jackknife_layout")
-                      else "raw leave-one-out replica quantiles; not a confidence interval")
-            ),
-            "q16": float(quantiles[0, i]), "median": float(quantiles[1, i]),
-            "q84": float(quantiles[2, i]), "minimum": float(replicas[:, i].min()),
-            "maximum": float(replicas[:, i].max()),
-        }
-        for i, b in enumerate(result.coords["bT"])
-    ]
-
-
-def run(context, _session=None):
-    quasi = load_many(context.inputs["quasi"])
-    if context.params["type"] == "cs_kernel":
-        result, diagnostics = extract_cs(quasi, context.params)
-    elif context.params["type"] == "intrinsic_soft":
-        result, diagnostics = extract_intrinsic(
-            quasi, load_many(context.inputs["form_factor"]), load(context.inputs["cs_kernel"]), context.params
-        )
-    else:
-        raise ValueError("soft_analysis.type must be 'cs_kernel' or 'intrinsic_soft'")
-    root = context.artifact_directory
-    root.mkdir(parents=True, exist_ok=True)
-    result.array.attrs["sample_error_mode"] = context.manifest["metadata"]["sample_error_mode"]
-    diagnostics["replica_distribution"] = replica_distribution(result)
-    if result.attrs.get("jackknife_layout"):
-        diagnostics.update({
-            "jackknife_groups": json.loads(result.attrs["jackknife_layout"]),
-            "statistical_replica_count": result.n_sample - 1,
-            "central_evaluation_row": result.n_sample - 1,
-        })
-    result.to_netcdf(root / "output.nc")
-    (root / "diagnostics").mkdir(exist_ok=True)
-    artifacts = ["output.nc", "diagnostics/soft.json", "plots/result.pdf", "plots/result.svg"]
-    pair_samples = diagnostics.pop("_pair_samples", None)
-    if pair_samples is not None:
-        pair_samples.array.attrs["sample_error_mode"] = context.manifest["metadata"]["sample_error_mode"]
-        pair_samples.to_netcdf(root / "diagnostics" / "cs_pairs.nc")
-        diagnostics["pair_samples_artifact"] = "diagnostics/cs_pairs.nc"
-        artifacts.append("diagnostics/cs_pairs.nc")
-    reduced_samples = diagnostics.pop("_reduced_samples", None)
-    if reduced_samples is not None:
-        reduced_samples.array.attrs["sample_error_mode"] = context.manifest["metadata"]["sample_error_mode"]
-        reduced_samples.to_netcdf(root / "diagnostics" / "cs_quasi_ratio.nc")
-        diagnostics["quasi_ratio_samples_artifact"] = "diagnostics/cs_quasi_ratio.nc"
-        artifacts.append("diagnostics/cs_quasi_ratio.nc")
-    (root / "diagnostics" / "soft.json").write_text(json.dumps(diagnostics, indent=2), encoding="utf-8")
-    start_plot()
-    errorline(result.coords["bT"], result.average(context.manifest["metadata"]["sample_error_mode"]),
-              label=context.params["type"])
-    configure_plot(xlabel=r"$b_T$ [fm]", ylabel=context.params["type"], legend=True)
-    save_figure(root / "plots" / "result.pdf", root / "plots" / "result.svg")
-    context.finish(result, {
-        "stage_id": context.stage_id, "job_id": context.job_id, "result": context.params["type"],
-        "decisions": {"type": context.params["type"], "order": result.attrs["order"],
-                      "resummation": result.attrs["resummation"], "mu": result.attrs["mu"],
-                      "alpha_s": result.attrs["alpha_s"], "scheme": "ratio",
-                      "coefficient_provenance": json.loads(result.attrs["coefficient_provenance"]),
-                      **{key: result.attrs[key] for key in ("evolution_cs", "sudakov_momentum")
-                         if key in result.attrs}},
-        "diagnostics": diagnostics,
-        "artifacts": artifacts,
-    })
+            "stage_id": context.stage_id,
+            "job_id": context.job_id,
+            "result": "finite_momentum_collins_soper_kernel",
+            "decisions": {"kernel_id": "tmdwf_gi_unlo", **context.params},
+            "diagnostics": diagnostics,
+            "artifacts": artifacts,
+        },
+    )

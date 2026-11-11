@@ -46,7 +46,6 @@ COLUMN_PLUS = frozenset(
         "quark_pdf_cg_gzg5_ratio_nlo",
         "quark_pdf_gi_gt_hybrid_nlo_lrr",
         "quark_pdf_gi_gt_hybrid_nlo",
-        "quark_pdf_gi_gt_hybrid_nnlo",
         "quark_pdf_gi_gt_ratio_nlo",
         "quark_pdf_gi_gtg5_hybrid_nlo_lrr",
         "quark_pdf_gi_gtg5_hybrid_nlo",
@@ -79,26 +78,6 @@ ROW_PLUS = frozenset(
     }
 )
 
-GENERAL_RGR = frozenset(
-    [
-        "quark_pdf_cg_gt_hybrid_nlo_rgr",
-        "quark_pdf_cg_gt_msbar_nlo_rgr",
-        "quark_pdf_cg_gt_ratio_nlo_rgr",
-        "quark_pdf_cg_gz_hybrid_nlo_rgr",
-        "quark_pdf_cg_gz_msbar_nlo_rgr",
-        "quark_pdf_cg_gz_ratio_nlo_rgr",
-        "quark_pdf_gi_gt_hybrid_nlo_rgr",
-        "quark_pdf_gi_gt_ratio_nlo_rgr",
-        "quark_pdf_gi_gz_hybrid_nlo_rgr",
-        "quark_pdf_gi_gz_ratio_nlo_rgr",
-        "quark_pdf_gi_gt_hybrid_nnlo_rgr",
-    ]
-)
-
-# Fixed-skewness GPD coefficients use their own two-variable column subtraction,
-# rather than either shared one-variable builder inspected below.
-BESPOKE_GPD_COLUMN_PLUS = frozenset({"quark_gpd_gi_gt_hybrid_nlo"})
-
 BUILDERS = ("build_matching_matrix_column_plus", "build_matching_matrix_row_plus")
 
 
@@ -127,10 +106,10 @@ def _builders_used(kernel_id: str, grid: np.ndarray) -> set[str]:
     return used
 
 
-def test_every_kernel_declares_one_plus_prescription() -> None:
+def test_every_kernel_declares_its_prescription() -> None:
     assert not COLUMN_PLUS & ROW_PLUS
-    assert not BESPOKE_GPD_COLUMN_PLUS & (COLUMN_PLUS | ROW_PLUS | GENERAL_RGR)
-    assert set(list_kernel_ids()) == COLUMN_PLUS | ROW_PLUS | GENERAL_RGR | BESPOKE_GPD_COLUMN_PLUS
+    # C42's TMDWF hard-only kernel is diagonal, with no plus prescription.
+    assert set(list_kernel_ids()) == COLUMN_PLUS | ROW_PLUS | {"tmdwf_gi_unlo"}
 
 
 @pytest.mark.parametrize("kernel_id", sorted(COLUMN_PLUS | ROW_PLUS))
@@ -138,16 +117,3 @@ def test_kernel_stays_on_its_plus_prescription(kernel_id: str) -> None:
     expected = "build_matching_matrix_row_plus" if kernel_id in ROW_PLUS else "build_matching_matrix_column_plus"
     grid = np.linspace(-1.0, 1.0, 9) + 1.0 / 8
     assert _builders_used(kernel_id, grid) == {expected}
-
-
-@pytest.mark.parametrize("kernel_id", sorted(BESPOKE_GPD_COLUMN_PLUS))
-def test_fixed_skewness_gpd_column_plus_preserves_the_local_current(kernel_id: str) -> None:
-    # Equal uniform input/output grids make the local-current integral the sum
-    # of grid values. A column-plus correction must leave that integral intact.
-    grid = np.linspace(-0.875, 0.875, 8)
-    matrix = load_kernel(kernel_id)(
-        grid, grid, momentum_gev=2.0, scale_gev=2.0, zs_fm=0.3, skewness=0.2
-    )
-    assert np.all(np.isfinite(matrix))
-    assert not np.allclose(matrix, np.eye(len(grid)))
-    np.testing.assert_allclose(matrix.sum(axis=0), 1.0, rtol=0.0, atol=1e-12)
