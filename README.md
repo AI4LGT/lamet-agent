@@ -560,3 +560,39 @@ If you find this work useful in your research, you can refer to the following te
 ## Related Links
 
 - [LQCD_Master](https://github.com/sjtu-sai-agents/LQCD_Master) ([arXiv:2607.15001](https://arxiv.org/abs/2607.15001))
+
+
+### NLO threshold resummation (GI gamma-t hybrid PDF)
+
+Set `order: "nlo"`, `resummation: "rgr_tr"` for independent NLO+RGR+TR.
+The spectator scale is `2*spectator_kappa*(1-abs(x))*Pz`; `spectator_kappa`
+defaults to 1 and `threshold_cut` to 0.4. Active spectator scales below
+`mu_min_gev` raise an error: restrict the requested x range away from ±1.
+For Pz=1.722 GeV and the default 0.6 GeV cutoff, use |x| <= 0.82.
+TR turns off when its spectator scale is at least the hard scale, recovering
+NLO+RGR exactly. This selector does not include LRR or NNLO TR.
+See [the kernel document](lamet_agent/kernels/quark_pdf_gi_gt_hybrid_nlo_rgr_tr.md)
+for the notebook prescription, analytic soft limit, and convergence limitations.
+
+
+### NNLO threshold resummation
+
+The GI gamma-t hybrid nonsinglet channel also accepts `order: "nnlo"` with
+`resummation: "rgr_tr"`. This follows the supplied notebook's two-loop hard/soft
+functions and NNLO DGLAP evolution. The new NNLO kernel defaults to fractional
+source-cell cut weights (`cut_quadrature: "fractional"`); use `"point"` for the
+historical pointwise-cut diagnostic. The NLO selector is unchanged.
+The notebook's separate finite-cut factors leave an O(alpha_s^2) residual;
+this is not an exact finite-cut NNLO matching prescription. See the
+[NNLO TR document](lamet_agent/kernels/quark_pdf_gi_gt_hybrid_nnlo_rgr_tr.md)
+for that limitation, reference conventions, and infrared/output-grid controls.
+
+
+### Combined LRR and threshold resummation
+
+GI gamma-t hybrid nonsinglet PDFs support `order: "nlo"` or `"nnlo"` with
+`resummation: "rgr_lrr_tr"`. This includes notebook LRR in fixed matching,
+hard modulus/phase, and soft matrices before the cut product and signed DGLAP.
+Both new modes default to fractional sharp-cut cell integration; `point` is
+available for reference comparisons. See the companion kernel documents for
+regulator defaults, scale guards, and the finite-cut matching limitation.

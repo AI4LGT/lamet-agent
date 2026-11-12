@@ -45,7 +45,7 @@ from lamet_agent.parallel.lanczos import (
 from lamet_agent.stages.extrapolation.physics import basis_terms, fit_candidate
 from lamet_agent.parallel import fourier_transform
 from lamet_agent.stages.fourier_transform.physics import fit_tail_parameters, scan_fourier_transform, tail_model_values
-from lamet_agent.stages.perturbative_matching.physics import inspect_callable
+from lamet_agent.stages.matching.physics import inspect_callable
 from lamet_agent.stages.renormalization.physics import (
     fit_factor,
     load_data as load_renormalization_data,
@@ -3401,7 +3401,7 @@ def test_matching_kernel_id_uses_upstream_provenance_and_new_suffix_order() -> N
 
 
 def test_matching_inspection_uses_real_xspace_quasi_and_source_component_for_rgr(tmp_path) -> None:
-    from lamet_agent.stages.perturbative_matching._inspection import run
+    from lamet_agent.stages.matching._inspection import run
 
     values = [np.array([1.0 + 4.0j, 2.0 + 5.0j]), np.array([1.5 + 4.5j, 2.5 + 5.5j])]
     quasi = EnsembleData(
@@ -3458,7 +3458,7 @@ def test_matching_inspection_uses_real_xspace_quasi_and_source_component_for_rgr
 
 
 def test_matching_output_drops_legacy_component_attrs(tmp_path) -> None:
-    from lamet_agent.stages.perturbative_matching._apply import run
+    from lamet_agent.stages.matching._apply import run
 
     quasi = EnsembleData(
         None,
@@ -3507,7 +3507,7 @@ def test_matching_output_drops_legacy_component_attrs(tmp_path) -> None:
 
 
 def test_matching_terminal_writes_original_quasi_matched_plot_pair(tmp_path) -> None:
-    from lamet_agent.stages.perturbative_matching._apply import run
+    from lamet_agent.stages.matching._apply import run
 
     x = [-0.5, 0.0, 0.5]
     quasi = EnsembleData(
@@ -3571,7 +3571,7 @@ def test_matching_terminal_writes_original_quasi_matched_plot_pair(tmp_path) -> 
 
 
 def test_matching_plot_crops_even_quasi_to_nonnegative_x(monkeypatch, tmp_path) -> None:
-    import lamet_agent.stages.perturbative_matching._apply as tool
+    import lamet_agent.stages.matching._apply as tool
 
     x = [-0.5, 0.0, 0.5]
     quasi = EnsembleData(
@@ -4040,7 +4040,20 @@ def test_migrated_kernel_code_has_no_legacy_imports_or_embedded_documentation() 
         tree = ast.parse(source, filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("lamet_agent."):
-                assert node.module == "lamet_agent.kernels.implementation"
+                assert node.module == "lamet_agent.kernels.implementation" or (
+                    path.stem == "quark_pdf_gi_gt_hybrid_nnlo_rgr"
+                    and node.module == "lamet_agent.kernels.quark_pdf_gi_gt_hybrid_nnlo"
+                ) or (
+                    path.stem in {"quark_pdf_gi_gt_hybrid_nnlo_rgr_tr", "quark_pdf_gi_gt_hybrid_nlo_rgr_lrr_tr"}
+                    and node.module in {
+                        "lamet_agent.kernels.quark_pdf_gi_gt_hybrid_nnlo",
+                        "lamet_agent.kernels.quark_pdf_gi_gt_hybrid_nlo_rgr_tr",
+                        "lamet_agent.kernels.quark_pdf_gi_gt_hybrid_nnlo_rgr_tr",
+                    }
+                ) or (
+                    path.stem == "quark_pdf_gi_gt_hybrid_nnlo_rgr_lrr_tr"
+                    and node.module == "lamet_agent.kernels.quark_pdf_gi_gt_hybrid_nlo_rgr_lrr_tr"
+                )
             if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
                 assert ast.get_docstring(node, clean=False) is None
         comments = [
@@ -4138,7 +4151,7 @@ def test_matching_inherits_hybrid_provenance_through_fourier_and_netcdf(monkeypa
     from lamet_agent.stages.renormalization._apply import run as renormalize
     from lamet_agent.stages.renormalization._inspection import run as inspect_renormalization
     from lamet_agent.stages.fourier_transform.physics import complete_signed_z, _project_xspace_output
-    from lamet_agent.stages.perturbative_matching import _inspection, _apply
+    from lamet_agent.stages.matching import _inspection, _apply
 
     renorm_path = tmp_path / "renorm"
     renorm_path.mkdir()
@@ -4223,7 +4236,7 @@ def test_matching_inherits_hybrid_provenance_through_fourier_and_netcdf(monkeypa
 def test_matching_inspection_validates_inherited_attrs_and_kernel_types(
     tmp_path, attrs_update, parameters, error
 ) -> None:
-    from lamet_agent.stages.perturbative_matching._inspection import run
+    from lamet_agent.stages.matching._inspection import run
 
     quasi = EnsembleData(
         None,

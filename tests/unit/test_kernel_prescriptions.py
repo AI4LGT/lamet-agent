@@ -99,6 +99,9 @@ GENERAL_RGR = frozenset(
 
 BUILDERS = ("build_matching_matrix_column_plus", "build_matching_matrix_row_plus")
 
+THRESHOLD_RGR = frozenset({"quark_pdf_gi_gt_hybrid_nlo_rgr_tr", "quark_pdf_gi_gt_hybrid_nnlo_rgr_tr",
+                           "quark_pdf_gi_gt_hybrid_nlo_rgr_lrr_tr", "quark_pdf_gi_gt_hybrid_nnlo_rgr_lrr_tr"})
+
 
 def _builders_used(kernel_id: str, grid: np.ndarray) -> set[str]:
     used: set[str] = set()
@@ -127,7 +130,7 @@ def _builders_used(kernel_id: str, grid: np.ndarray) -> set[str]:
 
 def test_every_kernel_declares_one_plus_prescription() -> None:
     assert not COLUMN_PLUS & ROW_PLUS
-    assert set(list_kernel_ids()) == COLUMN_PLUS | ROW_PLUS | GENERAL_RGR | {"tmdwf_gi_unlo"}
+    assert set(list_kernel_ids()) == COLUMN_PLUS | ROW_PLUS | GENERAL_RGR | THRESHOLD_RGR | {"tmdwf_gi_unlo"}
 
 
 @pytest.mark.parametrize("kernel_id", sorted(COLUMN_PLUS | ROW_PLUS))
