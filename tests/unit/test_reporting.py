@@ -15,7 +15,7 @@ _TEST_ENSEMBLE = EnsembleInfo("test", "a06", 0.06, 0.06, 64, 128, 0.13)
 def test_correlator_report_labels_render_joint_and_chained_scopes() -> None:
     from lamet_agent.stages.correlator_analysis.reporting import _method_name
 
-    assert _method_name("lsqfit", ["qda_ratio"]) == "qDA nonlocal/local ratio fit"
+    assert _method_name("lsqfit", ["wf_over_2pt"]) == "qDA nonlocal/local ratio fit"
     assert _method_name("lsqfit", ["2pt+qda"]) == "2pt spectrum + raw qDA correlator fit"
     assert _method_name("lsqfit", ["2pt", "qda"]) == "2pt spectrum → raw qDA correlator fit"
 
@@ -177,6 +177,34 @@ def test_correlator_stage_report_contains_method_candidates_and_artifacts(tmp_pa
     assert "[output.nc](ca/output.nc)" in text
 
 
+@pytest.mark.parametrize("mode", ["original", "center_posterior"])
+def test_correlator_report_distinguishes_authored_replica_and_chain_priors(tmp_path: Path, mode: str) -> None:
+    from lamet_agent.stages.correlator_analysis.reporting import _prior_control_lines
+
+    record = _record(
+        tmp_path, "ca", output=_data(), summary={"artifacts": []},
+        params={
+            "fit_scope": ["2pt", "3pt_over_2pt"],
+            "prior_width": [0.5, 1.0],
+            "sample_prior_mode": mode,
+            "posterior_prior_error_scale": 7.0,
+            "chained_prior_error_scale": 1.0,
+            "priors": {"log(E0)": "-0.9(0.3)"},
+        },
+    )
+    text = "\n".join(_prior_control_lines(record))
+    assert "| `log(E0)` | -0.9 | 0.3 |" in text
+    assert "Chained posterior width factor: 1" in text
+    assert "before width scaling and numerical conditioning" in text
+    if mode == "original":
+        assert "posterior replica widening is inactive" in text
+        assert "Center-posterior replica width factor" not in text
+    else:
+        assert "Center-posterior replica width factor: 7" in text
+    record.params.pop("chained_prior_error_scale")
+    assert "Chained posterior width factor: 7" in "\n".join(_prior_control_lines(record))
+
+
 def test_lanczos_report_uses_configuration_language_and_readable_provenance(tmp_path: Path) -> None:
     from lamet_agent.stages.correlator_analysis.reporting import write_stage_report
 
@@ -241,7 +269,7 @@ def test_correlator_report_renders_only_the_authored_kinematic_formula(tmp_path:
         params = {
             **_correlator_lsqfit_params(),
             "fitting_form": form,
-            "fit_scope": ["2pt+3pt_ratio"],
+            "fit_scope": ["2pt+3pt_over_2pt"],
         }
         summary = {
             "result": "bare_matrix_element",
@@ -263,6 +291,8 @@ def test_correlator_report_renders_only_the_authored_kinematic_formula(tmp_path:
         records=(make_record(nonbreit_stage, "NonBreit"),), artifact_directory=nonbreit_stage
     ).read_text(encoding="utf-8")
     assert "R_{\\rm NB}" in nonbreit
+    assert r"\frac{O_{00}(z)}{2\sqrt{E_{0,i}E_{0,f}}}" in nonbreit
+    assert "E_{0,i}+E_{0,f}" not in nonbreit
     assert "The published Breit matrix element" not in nonbreit
 
 
@@ -324,7 +354,7 @@ def test_correlator_report_limits_job_figures_to_first_middle_and_last_z(tmp_pat
 
     artifacts = ["output.nc"]
     for z_value in (1, 2, 3, 4):
-        artifacts.append(f"fit_logs/plots/ca_joint_3pt_ratio_z{z_value}_sample0_pt3_ratio_re.pdf")
+        artifacts.append(f"fit_logs/plots/ca_joint_3pt_over_2pt_z{z_value}_sample0_pt3_ratio_re.pdf")
     summary = {
         "result": "bare_matrix_element",
         "decisions": {"method": "lsqfit"},
@@ -594,6 +624,46 @@ def test_correlator_dispersion_fit_requires_more_momenta_than_parameters(tmp_pat
     assert "fit band was omitted" not in text
     assert band_widths
     assert all(width < 1.0 for width in band_widths)
+
+
+@pytest.mark.parametrize("conflict", [False, True])
+def test_dispersion_priors_are_combined_across_jobs_and_conflicts_are_reported(tmp_path, monkeypatch, conflict):
+    import lsqfit
+
+    from lamet_agent.stages._priors import prior_diagnostics
+    from lamet_agent.stages.correlator_analysis.reporting import _dispersion_lines
+
+    ensemble = EnsembleInfo("HISQ", "HISQa060_X", 0.06, 0.06, 48, 64, 0.3)
+    records = [
+        _correlator_dispersion_record(tmp_path, f"p{index}", ensemble, momentum, samples)
+        for index, (momentum, samples) in enumerate([
+            (0.0, [0.090, 0.092, 0.089, 0.091]),
+            (0.86, [0.280, 0.285, 0.275, 0.282]),
+            (1.72, [0.530, 0.540, 0.520, 0.535]),
+            (2.15, [0.690, 0.700, 0.680, 0.695]),
+        ])
+    ]
+    records[0].params["priors"] = {"k2": "1.1(0.1)", "unused": "9(1)"}
+    records[1].params["priors"] = {"k2": "0.9(0.1)" if conflict else "1.10(10)"}
+    calls = []
+    actual = lsqfit.nonlinear_fit
+
+    class CaptureFit(actual):
+        def __init__(self, *args, **kwargs):
+            calls.append(prior_diagnostics(kwargs["prior"])["effective_priors"])
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(lsqfit, "nonlinear_fit", CaptureFit)
+    text = "\n".join(_dispersion_lines(tuple(records), tmp_path))
+    if conflict:
+        assert not calls
+        assert "conflicting dispersion prior" in text
+    else:
+        assert len(calls) == 1
+        assert set(calls[0]) == {"m2", "k2", "k3"}
+        assert calls[0]["k2"] == {"mean": 1.1, "sdev": 0.1}
+        assert calls[0]["k3"] == {"mean": 0.0, "sdev": 10.0}
+        assert "dispersion effective priors" in text
 
 
 @pytest.mark.parametrize("second_spacing", [0.06, 0.06000000000001, 0.09])
@@ -899,9 +969,9 @@ def test_stage_overlay_splits_crowded_series_into_even_figures(tmp_path: Path) -
 
 
 def test_matching_stage_report_embeds_shipped_kernel_document(tmp_path: Path) -> None:
-    from lamet_agent.stages.perturbative_matching.reporting import write_stage_report
+    from lamet_agent.stages.matching.reporting import write_stage_report
 
-    stage = tmp_path / "04_perturbative_matching"
+    stage = tmp_path / "04_matching"
     quasi = _data(
         attrs={"momentum_gev": 2.0, "output_scale": 1.0, "source_component": "both", "output_component": "both"}
     )
@@ -947,7 +1017,7 @@ def test_matching_stage_report_embeds_shipped_kernel_document(tmp_path: Path) ->
     )
     text = path.read_text(encoding="utf-8")
     assert "quark_da_gi_gzg5_ratio_nlo" in text
-    assert "Matching" in text
+    assert text.startswith("# Matching Stage Report\n")
     assert "Relative change" in text
     assert "Kernel-id and Field Definitions" in text
     assert "Matching Scheme" in text
@@ -959,7 +1029,8 @@ def test_matching_stage_report_embeds_shipped_kernel_document(tmp_path: Path) ->
     assert r"$x$" in overview_svg
 
 
-def test_extrapolation_stage_report_contains_model_and_budget(tmp_path: Path) -> None:
+@pytest.mark.parametrize("named_priors", [False, True])
+def test_extrapolation_stage_report_contains_model_and_budget(tmp_path: Path, named_priors: bool) -> None:
     from lamet_agent.stages.extrapolation.reporting import write_stage_report
 
     stage = tmp_path / "05_extrapolation"
@@ -979,7 +1050,7 @@ def test_extrapolation_stage_report_contains_model_and_budget(tmp_path: Path) ->
         "x_independent_terms": ["a"],
         "x_dependent_terms": ["inv_p2"],
         "x_covariance": False,
-        "priors": {"mean": 0.0, "sdev": 3.0},
+        "priors": {"h0": "0.8(0.2)"} if named_priors else "0.0(3.0)",
         "posterior_prior_error_scale": 3.0,
         "pdep_gev": [1.5, 2.0, 2.5],
     }
@@ -1055,3 +1126,93 @@ def test_extrapolation_stage_report_contains_model_and_budget(tmp_path: Path) ->
     assert "FillBetweenPolyCollection" in overview_svg
     assert "Errorbar" not in overview_svg
     assert r"$x$" in overview_svg
+
+
+def test_correlator_stage_report_uses_one_legend_for_q2_vector(tmp_path: Path) -> None:
+    from lamet_agent.stages.correlator_analysis.reporting import write_stage_report
+
+    stage = tmp_path / "01_correlator_analysis"
+    output = EnsembleData(
+        _TEST_ENSEMBLE,
+        "bootstrap",
+        [[0.8, 0.7, 0.6], [0.82, 0.72, 0.62]],
+        ["Q2"],
+        {"Q2": [0.1, 0.2, 0.3]},
+        attrs={"sample_error_mode": "covariance"},
+    )
+    params = _correlator_lsqfit_params()
+    summary = {
+        "result": "bare_matrix_element",
+        "decisions": {"method": "scan"},
+        "diagnostics": {},
+        "artifacts": ["output.nc"],
+    }
+    record = _record(stage, "ff_scan", params=params, output=output, summary=summary)
+
+    text = write_stage_report(records=(record,), artifact_directory=stage).read_text(encoding="utf-8")
+    svg = (stage / "plots" / "local_observable.svg").read_text(encoding="utf-8")
+
+    assert "local_observable.svg" in text
+    assert "Q^2" in svg
+    assert svg.count("ff_scan") == 1
+
+
+def test_correlator_stage_report_uses_one_legend_for_pz_vector(tmp_path: Path) -> None:
+    from lamet_agent.stages.correlator_analysis.reporting import write_stage_report
+
+    stage = tmp_path / "01_correlator_analysis"
+    output = EnsembleData(
+        _TEST_ENSEMBLE,
+        "bootstrap",
+        [[0.2, 0.4], [0.22, 0.42]],
+        ["Pz"],
+        {"Pz": [1.0, 2.0]},
+        attrs={"sample_error_mode": "covariance"},
+    )
+    params = _correlator_lsqfit_params()
+    summary = {
+        "result": "bare_matrix_element",
+        "decisions": {"method": "scan"},
+        "diagnostics": {},
+        "artifacts": ["output.nc"],
+    }
+    record = _record(stage, "mom_scan", params=params, output=output, summary=summary)
+
+    text = write_stage_report(records=(record,), artifact_directory=stage).read_text(encoding="utf-8")
+    svg = (stage / "plots" / "local_observable.svg").read_text(encoding="utf-8")
+
+    assert "local_observable.svg" in text
+    assert "P_z" in svg
+    assert svg.count("mom_scan") == 1
+
+
+def test_pdf_stage_report_keeps_one_series_per_pz_job(tmp_path: Path) -> None:
+    from lamet_agent.stages.correlator_analysis.reporting import write_stage_report
+
+    stage = tmp_path / "01_correlator_analysis"
+    params = _correlator_lsqfit_params()
+    records = []
+    for job_id, scale in (("pdf_pz4", 0.8), ("pdf_pz5", 1.0)):
+        output = EnsembleData(
+            _TEST_ENSEMBLE,
+            "bootstrap",
+            [[scale, scale * 0.9, scale * 0.8], [scale * 1.01, scale * 0.91, scale * 0.81]],
+            ["z"],
+            {"z": [0, 1, 2]},
+            attrs={"sample_error_mode": "covariance"},
+        )
+        summary = {
+            "result": "bare_matrix_element",
+            "decisions": {"method": "lsqfit"},
+            "diagnostics": {},
+            "artifacts": ["output.nc"],
+        }
+        records.append(_record(stage, job_id, params=params, output=output, summary=summary))
+
+    text = write_stage_report(records=tuple(records), artifact_directory=stage).read_text(encoding="utf-8")
+    svg = (stage / "plots" / "correlator_overview.svg").read_text(encoding="utf-8")
+
+    assert "correlator_overview.svg" in text
+    assert "local_observable.svg" not in text
+    assert svg.count("pdf_pz4") == 1
+    assert svg.count("pdf_pz5") == 1

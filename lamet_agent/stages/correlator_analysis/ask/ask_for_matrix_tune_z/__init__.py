@@ -45,7 +45,7 @@ def recommend(
     schema, _nullable = annotation_schema(MatrixFitSuggestion)
     requested = requested_fields or {"tune_z_values"}
     schema["properties"]["tune_z_values"]["minItems"] = 1
-    if "self_ratio" in parse_fit_scope(context.params["fit_scope"]).atom_set:
+    if "3pt_over_3pt" in parse_fit_scope(context.params["fit_scope"]).atom_set:
         schema["properties"]["tune_z_values"]["items"]["exclusiveMinimum"] = 0
     schema["properties"]["pt2_windows"]["minItems"] = 1
     schema["properties"]["pt3_windows"]["minItems"] = 1

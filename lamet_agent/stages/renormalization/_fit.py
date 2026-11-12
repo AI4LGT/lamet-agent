@@ -62,6 +62,7 @@ def run(context: ToolContext) -> dict[str, object]:
         kernel_id=kernel_id,
         kernel_parameters=kernel_parameters,
         svdcut=float(params["svdcut"]),
+        priors=params.get("priors"),
         lattice_spacing_range_fm=(spacings[0], spacings[-1]),
         sample_error_mode=sample_error_mode,
     )

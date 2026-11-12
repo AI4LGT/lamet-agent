@@ -52,6 +52,12 @@ def attempt(context: ToolContext) -> dict[str, object]:
     is_da = target == "da"
     is_gpd = target == "gpd"
     da = context.params if is_da else None
+    if target == "tmdwf":
+        if context.params.get("tmdwf_profile") != "pion_da_components":
+            raise ValueError("TMDWF requires an explicit native tail profile")
+        # Each prepared input is a real even midpoint amplitude rotated to the
+        # endpoint convention. The native DA equations apply to that projection.
+        da = {"phase_transfer_da": False, "psi1_flavor_class": "light", "psi2_flavor_class": "light"}
     requested_grid = list(grid)
     result = scan_fourier_transform(
         source,
@@ -65,7 +71,7 @@ def attempt(context: ToolContext) -> dict[str, object]:
             "smoothing_method": context.params["smooth"],
         },
         scan=scan,
-        observable=target.upper(),
+        observable="DA" if target == "tmdwf" else target.upper(),
         phase_transfer_da=da["phase_transfer_da"] if da is not None else False,
         psi1_flavor_class=da["psi1_flavor_class"] if da is not None else "heavy",
         psi2_flavor_class=da["psi2_flavor_class"] if da is not None else "heavy",
@@ -112,7 +118,13 @@ def publish(context: ToolContext, result: dict[str, object]) -> dict[str, object
         attrs=output_attrs,
         name="quasi_distribution",
     )
-    output.to_netcdf(context.artifact_directory / "output.nc")
+    real_projection = context.inputs.get("real_projection")
+    if real_projection is not None and (
+        context.manifest["metadata"]["target_observable"] != "tmdwf" or context.params.get("tmdwf_projection") != "imag"
+    ):
+        raise ValueError("real_projection requires the paired TMDWF imaginary Fourier job")
+    component_file = "projection_imag.nc" if real_projection is not None else "output.nc"
+    output.to_netcdf(context.artifact_directory / component_file)
     selected_range = result["selected_range"]
     selected_range_label = f"zmin_{selected_range['z_min_fm']:g}_zmax_{selected_range['z_max_fm']:g}".replace(".", "p")
     model_labels = [candidate["label"] for candidate in result["model_candidates"]]
@@ -246,6 +258,9 @@ def publish(context: ToolContext, result: dict[str, object]) -> dict[str, object
     )
     save_figure(context.artifact_directory / "output_xdep.pdf")
     extended = selected_candidate["extended"]
+    if context.manifest["metadata"]["target_observable"] == "tmdwf":
+        extended.to_netcdf(context.artifact_directory / "extended.nc")
+        artifacts.append("extended.nc")
     z_min_fm = float(selected_range["z_min_fm"])
     z_max_fm = float(selected_range["z_max_fm"])
     extension_z = np.asarray(extended.coords["z"], dtype=float)
@@ -297,6 +312,13 @@ def publish(context: ToolContext, result: dict[str, object]) -> dict[str, object
         "diagnostics": diagnostics,
         "artifacts": artifacts,
     }
+    if real_projection is not None:
+        from lamet_agent.stages.fourier_transform.physics import combine_tmdwf_transforms
+
+        output = combine_tmdwf_transforms(real_projection, output)
+        output.to_netcdf(context.artifact_directory / "output.nc")
+        artifacts.append("projection_imag.nc")
+        summary["result"] = "quasi_tmdwf"
     context.finish(output, summary)
     return {
         "summary": "published scanned quasi distribution",

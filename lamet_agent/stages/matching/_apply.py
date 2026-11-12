@@ -9,6 +9,7 @@ import numpy as np
 
 from lamet_agent.agent import ToolContext
 from lamet_agent.data import EnsembleData
+from lamet_agent.stages._reporting import grid_segments
 from lamet_agent.plotting import (
     configure_plot,
     errorband,
@@ -17,7 +18,7 @@ from lamet_agent.plotting import (
     series_color,
     start_plot,
 )
-from lamet_agent.stages.perturbative_matching.physics import apply_matrix, is_even_about_zero, select_output_component
+from lamet_agent.stages.matching.physics import apply_matrix, is_even_about_zero, select_output_component
 
 
 def _one(value):
@@ -143,7 +144,9 @@ def run(context: ToolContext) -> dict[str, object]:
         plot_min = min(plot_min, float(np.min(center - error)))
         plot_max = max(plot_max, float(np.max(center + error)))
         plotted_x.extend(float(value) for value in np.asarray(x_values, dtype=float))
-        errorband(x_values, average, color=color, label=label)
+        for segment_index, indices in enumerate(grid_segments(x_values)):
+            errorband(np.asarray(x_values)[indices], average[indices], color=color,
+                      label=label if segment_index == 0 else None)
     configure_plot(
         xlabel=r"$x$",
         ylabel="distribution",

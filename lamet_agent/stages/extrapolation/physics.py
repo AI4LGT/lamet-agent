@@ -12,6 +12,7 @@ import gvar as gv
 
 from lamet_agent.data import EnsembleData
 from lamet_agent.kernels.implementation import HBAR_C_GEV_FM
+from lamet_agent.stages._priors import merge_priors, prior_diagnostics, validate_prior_overrides
 
 
 def load_data(value: Any) -> EnsembleData:
@@ -522,7 +523,7 @@ def fit_candidate(
     data: list[EnsembleData],
     terms: list[str],
     physical_mass: float | None,
-    priors: dict[str, float],
+    priors: dict[str, str] | str | None = None,
     *,
     x_range: tuple[float, float],
     x_independent_terms: list[str] | None = None,
@@ -531,7 +532,7 @@ def fit_candidate(
     posterior_prior_error_scale: float = 3.0,
     workers: int = 1,
     _parallel=None,
-) -> tuple[EnsembleData, dict[str, float]]:
+) -> tuple[EnsembleData, dict[str, Any]]:
     """Run the reference joint-x, sample-bearing extrapolation fit."""
     if not data or any(item.dims != ["x"] for item in data):
         raise ValueError("extrapolation requires one-dimensional x-space inputs")
@@ -542,16 +543,20 @@ def fit_candidate(
     if not np.any(mask):
         raise ValueError("fit range selects no x coordinate")
     x = x_all[mask]
-    if set(priors) != {"mean", "sdev"}:
-        raise ValueError("candidate priors must contain exactly mean and sdev")
-    prior_center = float(priors["mean"])
-    prior_width = float(priors["sdev"])
-    if not math.isfinite(prior_center) or not math.isfinite(prior_width) or prior_width <= 0:
-        raise ValueError("candidate prior mean and sdev must be finite with positive sdev")
+    prior_center, prior_width = 0.0, 3.0
+    overrides = priors
+    if isinstance(priors, str):
+        common = validate_prior_overrides({"common": priors})["common"]
+        prior_center, prior_width = common["mean"], common["sdev"]
+        overrides = None
     x_independent_terms = [] if x_independent_terms is None else list(x_independent_terms)
     if len(set(x_independent_terms)) != len(x_independent_terms) or not set(x_independent_terms).issubset(terms):
         raise ValueError("x_independent_terms must be a unique subset of terms")
     x_dependence = {term: term not in x_independent_terms for term in terms}
+    effective_prior = merge_priors(
+        {name: gv.gvar(prior_center, prior_width) for name in ["h0", *terms]}, overrides
+    )
+    prior_record = prior_diagnostics(effective_prior, overrides)
     if not math.isfinite(posterior_prior_error_scale) or posterior_prior_error_scale <= 0:
         raise ValueError("posterior_prior_error_scale must be finite and positive")
     n_sample = min(item.n_sample for item in data)
@@ -579,10 +584,12 @@ def fit_candidate(
     if not x_covariance:
         local_terms = [term for term in terms if x_dependence[term]]
         global_terms = [term for term in terms if not x_dependence[term]]
-        local_means = np.full((len(x), 1 + len(local_terms)), prior_center, dtype=float)
-        local_sdevs = np.full_like(local_means, prior_width)
-        global_means = np.full(len(global_terms), prior_center, dtype=float)
-        global_sdevs = np.full(len(global_terms), prior_width, dtype=float)
+        local_prior = [effective_prior[name] for name in ["h0", *local_terms]]
+        global_prior = [effective_prior[name] for name in global_terms]
+        local_means = np.tile(gv.mean(local_prior), (len(x), 1))
+        local_sdevs = np.tile(gv.sdev(local_prior), (len(x), 1))
+        global_means = np.asarray(gv.mean(global_prior), dtype=float)
+        global_sdevs = np.asarray(gv.sdev(global_prior), dtype=float)
         center_system = _prepare_block_system(
             design,
             covariance,
@@ -629,8 +636,11 @@ def fit_candidate(
             len(x),
         )
         covariance_blocks, covariance_logdet = _factor_full_covariance(covariance, data, len(x))
-        prior_means = np.full(design_matrix.shape[1], prior_center, dtype=float)
-        prior_sdevs = np.full(design_matrix.shape[1], prior_width, dtype=float)
+        prior_means = np.empty(design_matrix.shape[1], dtype=float)
+        prior_sdevs = np.empty(design_matrix.shape[1], dtype=float)
+        for name, parameter_slice in parameter_layout.items():
+            prior_means[parameter_slice] = gv.mean(effective_prior[name])
+            prior_sdevs[parameter_slice] = gv.sdev(effective_prior[name])
         center_system = _prepare_full_system(
             design_matrix,
             covariance_blocks,
@@ -711,9 +721,13 @@ def fit_candidate(
             "posterior_prior_error_scale": float(posterior_prior_error_scale),
             "initial_prior_mean": prior_center,
             "initial_prior_sdev": prior_width,
+            "effective_priors": json.dumps(prior_record["effective_priors"], sort_keys=True),
             "units": '{"values":"dimensionless","x":"dimensionless"}',
         }
     )
+    if overrides:
+        attrs.pop("initial_prior_mean", None)
+        attrs.pop("initial_prior_sdev", None)
     if physical_mass is not None:
         attrs["physical_pion_mass_gev"] = float(physical_mass)
     result = EnsembleData(
@@ -727,6 +741,7 @@ def fit_candidate(
     )
     parameter_count = len(x) + sum(len(x) if x_dependence[term] else 1 for term in terms)
     return result, {
+        **prior_record,
         "chi2": float(fit_diagnostics["chi2"]),
         "dof": float(fit_diagnostics["dof"]),
         "chi2_dof": float(fit_diagnostics["chi2"] / fit_diagnostics["dof"]),

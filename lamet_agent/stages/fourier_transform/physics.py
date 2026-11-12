@@ -13,6 +13,7 @@ import numpy as np
 from lamet_agent.data import EnsembleData
 from lamet_agent.kernels.implementation import HBAR_C_GEV_FM
 from lamet_agent.parallel import FitNumericalError, fourier_transform, nonlinear_fit
+from lamet_agent.stages._priors import merge_priors, prior_diagnostics
 from lamet_agent.parallel._pool import _ParallelPool
 from lamet_agent.ui import track
 
@@ -437,6 +438,7 @@ def fit_tail_parameters(
     z_max_fm: float,
     prior_means: Mapping[str, float],
     prior_widths: Mapping[str, float],
+    priors: Mapping[str, Any] | None = None,
     order: str = "NLA",
     source_component: str = "both",
     lambda0_gev: float = 0.0,
@@ -505,6 +507,11 @@ def fit_tail_parameters(
     widths = np.asarray([float(prior_widths[name]) for name in names], dtype=float)
     if np.any(~np.isfinite(initial)) or np.any(~np.isfinite(widths)) or np.any(widths <= 0):
         raise ValueError("tail prior means must be finite and widths must be finite and positive")
+    prior_inputs = merge_priors(
+        {name: gv.gvar(prior_means[name], prior_widths[name]) for name in names}, priors
+    )
+    initial = np.asarray([float(gv.mean(prior_inputs[name])) for name in names], dtype=float)
+    widths = np.asarray([float(gv.sdev(prior_inputs[name])) for name in names], dtype=float)
     if initial[names.index("Lambda")] <= 0 or ("n" in names and initial[names.index("n")] <= 0):
         raise ValueError("tail Lambda and CG power prior means must be positive")
     samples = np.asarray(data.values)
@@ -553,6 +560,12 @@ def fit_tail_parameters(
         )
         covariance = np.diag(fit_error**2)
     bounds = _tail_bounds(names)
+    for index, name in enumerate(names):
+        if name in (priors or {}) and not bounds[0][index] < initial[index] < bounds[1][index]:
+            raise ValueError(
+                f"prior {name!r} mean must lie strictly inside "
+                f"({bounds[0][index]}, {bounds[1][index]})"
+            )
     internal_start = _internal_start(initial, bounds)
     prior = gv.BufferDict()
     for index, width in enumerate(widths):
@@ -582,6 +595,7 @@ def fit_tail_parameters(
         "maxit": 2000,
         "svdcut": 1e-12,
     }
+    base_fit_priors = prior_diagnostics(prior)["effective_priors"]
     if posterior_prior_scale is not None:
         if not math.isfinite(posterior_prior_scale) or posterior_prior_scale <= 0:
             raise ValueError("posterior_prior_scale must be finite and positive")
@@ -624,6 +638,10 @@ def fit_tail_parameters(
         physical = _physical_tail_parameters(parameters, names, bounds)
         records.append({name: float(physical[name]) + (lambda0_gev if name == "Lambda" else 0.0) for name in names})
     center_diagnostics = {
+        **prior_diagnostics(prior_inputs, priors),
+        "prior_convention": "physical_mean_internal_sdev",
+        "base_fit_priors": base_fit_priors,
+        "fit_priors": prior_diagnostics(prior)["effective_priors"],
         "chi2": result.chi2,
         "dof": float(result.dof),
         "chi2_dof": result.chi2 / result.dof,
@@ -1003,6 +1021,7 @@ def scan_fourier_transform(
     transform: Mapping[str, Any],
     tail: Mapping[str, Any],
     scan: Mapping[str, Any],
+    priors: Mapping[str, Any] | None = None,
     observable: str = "PDF",
     phase_transfer_da: bool = False,
     psi1_flavor_class: str = "heavy",
@@ -1145,6 +1164,7 @@ def scan_fourier_transform(
                 z_max_fm=z_max_fm,
                 prior_means=means,
                 prior_widths=widths,
+                priors=priors,
                 order=range_order,
                 source_component=source_component,
                 lambda0_gev=lambda0_gev,
@@ -1208,6 +1228,7 @@ def scan_fourier_transform(
                 z_max_fm=selected_z_max,
                 prior_means=means,
                 prior_widths=widths,
+                priors=priors,
                 order=order,
                 source_component=source_component,
                 lambda0_gev=lambda0_gev,

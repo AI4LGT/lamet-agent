@@ -216,15 +216,81 @@ Implemented stage families, normally authored in this order, are:
 1. `correlator_analysis`
 2. `renormalization`
 3. `fourier_transform`
-4. `perturbative_matching`
-5. `extrapolation`
-6. `review`
+4. `soft_analysis` (TMD)
+5. `matching`
+6. `extrapolation`
+7. `review`
 
 A partial workflow may omit unneeded stages. The order of keys under `stages`
 is the execution order; there is no separate `metadata.stages` list.
 
+Matching uses `matching` for its Python package, manifest and systematics keys,
+and new artifact directories. Existing manifests must rename
+`perturbative_matching` to `matching`; the old identifier is no longer supported.
+
+Soft Analysis extracts the Collins–Soper kernel and intrinsic soft function from
+quasi-TMD wave functions and four-quark form factors. TMD matching consumes
+both soft outputs alongside a quasi-TMDWF or quasi-TMDPDF. The mixed TMD
+workflow uses `target_observable: "tmd"` and job-specific observables.
+An empty `soft_analysis.jobs` remains valid and produces no artifacts.
+
+`examples/pion_tmd_cg_manifest.json` provides the full raw-correlator-to-matching
+chain and final Review using `data_pion_tmd_cg`, with **516 numerical jobs**,
+NLL coefficients and statistical errors. All three PDF momenta explicitly use
+Fourier `projection="real_even"`: only `Re(h) cos(x P z)` contributes, giving
+the same valence sector at P3/P4/P5. This matches the packet's transverse PDF
+curves, paper exports, and real-even quasi/matched x-space reference files.
+Reference preparation uses the original analysis repository inputs and validates
+both centers and uncertainties against all 153 saved transverse points.
+The example's explicit soft settings
+select the reference's uncorrected-ratio CS evolution, source-WF Sudakov momentum,
+40 shoulder-fit points, 100 central interpolation points, and
+`reference_cs_diagonal` endpoint-fit metric. That metric changes fit weights;
+propagated errors still use the original correlated jackknife replicas.
+The NLL example explicitly selects `infrared_policy="reference_quad"` to diagnose
+the historical integral. Pole-crossing quadrature returns are flagged and do not
+establish controlled infrared accuracy. An explicit `freeze` scale-floor policy
+is available as an alternative; strict `error` remains the default.
+Its explicit Gaussian priors use the [shared prior interface](docs/fit-priors.md)
+and are reused for every jackknife fit. Historical WF time windows corresponding
+to the packet's saved intermediate results are authored per longitudinal separation. Independent configuration groups
+use block jackknife propagation while shared factors retain their correlations.
+The fixed-order NLO raw-data validation completed all 516 numerical jobs and scientific Review,
+including a separate review pinned to the supplied v5 paper. Low-Q FF fits,
+soft momentum dependence and large-distance uncertainties remain documented limitations.
+The earlier bootstrap domain failure is retained as historical validation evidence.
+See [TMD analysis](docs/tmd-analysis.md) for normalization, sampling lineage,
+off-axis geometry, numerical domains, and stage-by-stage debugging, and
+[reference comparison](docs/tmd-reference-comparison.md) for stage-by-stage
+comparisons with the saved `data_pion_tmd_cg` results and the stated NLL limitations.
+
 Architecture, file ownership, and contributor workflows are documented in
 [`DEVELOPMENT.md`](DEVELOPMENT.md).
+
+Unpolarized nonsinglet RGR matches independently at mu0=2*kappa*abs(x)*Pz
+and evolves coupled quark and antiquark components to the requested scale.
+Set `resummation: "rgr"` with `order: "nlo"` for GI/CG gamma-t or gamma-z
+(GI hybrid/ratio; CG hybrid/ratio/MSbar), or `order: "nnlo"` for GI gamma-t
+hybrid. Upstream `source_component` may be `re`, `im`, or `both`.
+These are flavor differences such as u-d and ubar-dbar; singlet/gluon mixing
+and total flavor-summed valence evolution are not included.
+
+For GI gamma-t hybrid matching, set `resummation: "rgr_lrr"` with either
+`order: "nlo"` or `order: "nnlo"` to combine RGR and LRR. Matching remains
+independent at each intrinsic scale. The additional `eps_m` control defaults
+to 0.005 GeV. This selector does not refit upstream mass renormalization;
+use a consistent renormalization prescription for a physical LRR analysis.
+
+The signed convention is f(-x)=-antiquark(x). Input x must be uniform,
+increasing, nonzero and cover [-1,1]. Output x may be nonuniform within [-1,1].
+`kernel_parameters` accepts `kappa`, `mu_min_gev`, `evolution_points` (default
+100), `evolution_steps` (40), and `y_max` (100); NNLO also accepts
+`quadrature_order` (64). Rows below the cutoff are zero on both sides;
+active points below 1/evolution_points are rejected. Splitting functions use
+nf=3 with the supplied package's prescription and the existing running-coupling
+threshold policy. Check numerical convergence for a production analysis.
+Legacy suffixed RGR kernels remain available directly. See each kernel's
+companion Markdown for its formula and numerical prescription.
 
 ## Intermediate Data (NetCDF)
 
@@ -248,6 +314,15 @@ Typical per-job files are:
 | `llm_transcript.md` | Recorded LLM requests and responses, when applicable. |
 | `diagnostics/*`     | Candidate tables and numerical diagnostics.           |
 | `plots/*`           | PDF/SVG result and fit-quality figures.               |
+
+Matching plots split lines and uncertainty bands at detected grid gaps. Matching
+reports give partial quasi and light-cone integrals over the same supported
+intervals shared by the input and output grids, excluding gaps in either grid
+and coverage outside their intersection rather than extrapolating.
+A gap is a spacing greater than twice the median spacing on a grid with at least
+four points. Values are interpolated at interval boundaries; isolated points
+contribute zero area. With no common interval of positive width, integral
+diagnostics are unavailable. These diagnostics are not full-support sum rules.
 
 Stage directories also receive an aggregate `report.md`; job directories do not
 write report files. Review writes its final `review.md`, `review_bundle.json`,
@@ -332,6 +407,12 @@ For correlator inputs that use a descriptor JSON record, see
 [Standard Correlator HDF5 Format](#standard-correlator-hdf5-format) for the
 input-file conventions.
 
+All fitting stages accept partial named Gaussian overrides as gvar strings
+(e.g. `"priors": {"E0": "0.3(0.1)"}`); missing parameters
+keep their existing defaults and unused names are ignored. See
+[Configurable fit priors](docs/fit-priors.md) for stage-specific names and units,
+replica-prior choices, and fully authored two-point fit examples.
+
 Unknown fields, invalid choices, broken input roles, duplicate ids, forward job
 references, missing paths, and cross-parameter inconsistencies are rejected.
 
@@ -344,7 +425,7 @@ Run-wide metadata fields include:
 - `samples`, required only for bootstrap mode;
 - `parameter_recommendation_retries`, defaulting to one extra attempt per job.
 
-`target_observable` accepts `pdf`, `da`, and `gpd`. `sample_error_mode` accepts
+`target_observable` accepts `pdf`, `da`, `gpd`, and `tmd`. `sample_error_mode` accepts
 `covariance`, `variance`, and bootstrap-only `one_sigma`.
 
 Systematic variants are currently supported for Fourier, matching, and
@@ -479,3 +560,39 @@ If you find this work useful in your research, you can refer to the following te
 ## Related Links
 
 - [LQCD_Master](https://github.com/sjtu-sai-agents/LQCD_Master) ([arXiv:2607.15001](https://arxiv.org/abs/2607.15001))
+
+
+### NLO threshold resummation (GI gamma-t hybrid PDF)
+
+Set `order: "nlo"`, `resummation: "rgr_tr"` for independent NLO+RGR+TR.
+The spectator scale is `2*spectator_kappa*(1-abs(x))*Pz`; `spectator_kappa`
+defaults to 1 and `threshold_cut` to 0.4. Active spectator scales below
+`mu_min_gev` raise an error: restrict the requested x range away from ±1.
+For Pz=1.722 GeV and the default 0.6 GeV cutoff, use |x| <= 0.82.
+TR turns off when its spectator scale is at least the hard scale, recovering
+NLO+RGR exactly. This selector does not include LRR or NNLO TR.
+See [the kernel document](lamet_agent/kernels/quark_pdf_gi_gt_hybrid_nlo_rgr_tr.md)
+for the notebook prescription, analytic soft limit, and convergence limitations.
+
+
+### NNLO threshold resummation
+
+The GI gamma-t hybrid nonsinglet channel also accepts `order: "nnlo"` with
+`resummation: "rgr_tr"`. This follows the supplied notebook's two-loop hard/soft
+functions and NNLO DGLAP evolution. The new NNLO kernel defaults to fractional
+source-cell cut weights (`cut_quadrature: "fractional"`); use `"point"` for the
+historical pointwise-cut diagnostic. The NLO selector is unchanged.
+The notebook's separate finite-cut factors leave an O(alpha_s^2) residual;
+this is not an exact finite-cut NNLO matching prescription. See the
+[NNLO TR document](lamet_agent/kernels/quark_pdf_gi_gt_hybrid_nnlo_rgr_tr.md)
+for that limitation, reference conventions, and infrared/output-grid controls.
+
+
+### Combined LRR and threshold resummation
+
+GI gamma-t hybrid nonsinglet PDFs support `order: "nlo"` or `"nnlo"` with
+`resummation: "rgr_lrr_tr"`. This includes notebook LRR in fixed matching,
+hard modulus/phase, and soft matrices before the cut product and signed DGLAP.
+Both new modes default to fractional sharp-cut cell integration; `point` is
+available for reference comparisons. See the companion kernel documents for
+regulator defaults, scale guards, and the finite-cut matching limitation.

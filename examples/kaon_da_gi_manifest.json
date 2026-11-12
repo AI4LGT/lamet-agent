@@ -417,7 +417,7 @@
         }
       ]
     },
-    "perturbative_matching": {
+    "matching": {
       "defaults": {
         "order": "nlo",
         "resummation": "",
@@ -593,7 +593,7 @@
         }
       ]
     },
-    "perturbative_matching": {
+    "matching": {
       "variants": [
         {
           "id": "mu_low",

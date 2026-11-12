@@ -74,6 +74,8 @@ def _sample0_plot_labels(kind: str, component: str) -> tuple[str, str]:
         ("fh", "im"): (TSEP_LABEL, FH_IMAG_LABEL),
         ("qda_ratio", "re"): (QDA_TIME_LABEL, QDA_RATIO_REAL_LABEL),
         ("qda_ratio", "im"): (QDA_TIME_LABEL, QDA_RATIO_IMAG_LABEL),
+        ("tmdwf_amplitude", "re"): (QDA_TIME_LABEL, r"$\Re[\Phi]$"),
+        ("tmdwf_amplitude", "im"): (QDA_TIME_LABEL, r"$\Im[\Phi]$"),
     }
     try:
         return labels[(kind, component)]
@@ -298,7 +300,7 @@ def write_fit_artifacts(
     scope_atoms = {atom for value in scope_values for atom in str(value).split("+")}
     # The dispersion plot compares fitted ground-state energies across momenta, so
     # it is only meaningful when two-point information enters the likelihood.
-    if scope_atoms & {"2pt", "3pt_ratio", "FH"} and not scope_atoms & {"qda", "qda_ratio"}:
+    if scope_atoms & {"2pt", "3pt_over_2pt", "FH"} and not scope_atoms & {"qda", "wf_over_2pt"}:
         energy_fits = [
             fit
             for fit in fits

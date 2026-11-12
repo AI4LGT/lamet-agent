@@ -21,7 +21,7 @@ def run(
     records = load_catalog(context)
     path = catalog_path(context)
     filters = {
-        "stages": stages,
+        "workflow_stages": stages,
         "hadrons": hadrons,
         "currents": currents,
         "observables": observables,
@@ -97,6 +97,11 @@ def run(
         ):
             continue
         record_metadata = {field: tags.get(field, set()) for field in target_metadata}
+        # The catalog records TMD as kinematic dependence, with PDF, WF,
+        # CS and soft in the observable list. A full TMD workflow spans those
+        # observables, so match its target against that catalog convention.
+        if target_metadata["observables"] == {"tmd"} and "tmd" in tags.get("kinematic_dependence", set()):
+            record_metadata["observables"] = {"tmd"}
         if any(
             expected and observed and expected.isdisjoint(observed)
             for field, expected in target_metadata.items()

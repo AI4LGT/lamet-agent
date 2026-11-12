@@ -112,6 +112,16 @@ def overlay_groups(items: list[Any], *, limit: int = _OVERLAY_SERIES_LIMIT) -> l
     return groups
 
 
+def grid_segments(values: Any) -> list[np.ndarray]:
+    """Split an ordered grid where spacing exceeds twice its median spacing."""
+    x = np.asarray(values, dtype=float)
+    if x.ndim != 1 or not x.size or not np.isfinite(x).all() or np.any(np.diff(x) <= 0):
+        raise ValueError("report grid must be nonempty, finite and strictly increasing")
+    spacing = np.diff(x)
+    cuts = np.flatnonzero(spacing > 2 * np.median(spacing) + 1e-12) + 1 if x.size >= 4 else []
+    return list(np.split(np.arange(x.size), cuts))
+
+
 def stage_overlay_lines(
     records: tuple[StageReportRecord, ...],
     artifact_directory: Path,
@@ -122,9 +132,10 @@ def stage_overlay_lines(
     xlabel: str | None = None,
     band: bool = False,
     series_label: Callable[[StageReportRecord], str] | None = None,
+    split_gaps: bool = False,
 ) -> list[str]:
     """Create stage-level real/imaginary overlays from compatible 1D outputs."""
-    from lamet_agent.plotting import configure_plot, errorband, errorline, save_figure, start_plot
+    from lamet_agent.plotting import configure_plot, errorband, errorline, save_figure, series_color, start_plot
 
     usable = [record for record in records if getattr(record.output, "dims", None) == [coordinate]]
     if not usable:
@@ -144,15 +155,16 @@ def stage_overlay_lines(
         suffix_name = f"_{component}" if complex_output else ""
         for group_index, group in enumerate(groups, start=1):
             start_plot()
-            for record in group:
+            for series_index, record in enumerate(group):
                 data = getattr(record.output, component) if np.iscomplexobj(record.output.values) else record.output
                 mode = str(data.attrs.get("sample_error_mode", "covariance"))
                 average = data.average(mode)
-                draw(
-                    data.coords[coordinate],
-                    average,
-                    label=series_label(record) if series_label is not None else record.job_id,
-                )
+                x = np.asarray(data.coords[coordinate])
+                segments = grid_segments(x) if split_gaps else [np.arange(len(x))]
+                label = series_label(record) if series_label is not None else record.job_id
+                for segment_index, indices in enumerate(segments):
+                    draw(x[indices], average[indices], color=series_color(series_index),
+                         label=label if segment_index == 0 else None)
             configure_plot(xlabel=xlabel or coordinate, ylabel=axis_ylabel, legend=True)
             if len(groups) == 1:
                 plot_stem = f"{stem}{suffix_name}"

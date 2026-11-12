@@ -49,6 +49,11 @@ def _selected_quality(result: dict[str, Any]) -> float | None:
 
 def run(context: ToolContext, session: LlmSession) -> None:
     """Try the authored ranges, then at most the configured number of revisions."""
+    if context.params.get("strategy") == "tmd":
+        from ._tmd import run as run_tmd
+
+        run_tmd(context)
+        return
     inspect(context)
     q_min = float(context.params["scheme_scan"]["q_min"])
     revision_limit = max(session.max_recommendation_calls - 1, 0)

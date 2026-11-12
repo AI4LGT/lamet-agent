@@ -25,6 +25,32 @@ def _distribution(points: int = 600) -> EnsembleData:
     )
 
 
+def test_tmd_review_retains_bad_fit_counts_and_nongaussian_soft_evidence(tmp_path: Path) -> None:
+    from lamet_agent.stages.soft_analysis.workflow import replica_distribution
+
+    data = EnsembleData(
+        None, "bootstrap", [np.array([v]) for v in [1., 1., 1., 1., 20.]],
+        ["bT"], {"bT": [1.08]}, attrs={"target_observable": "tmd", "observable": "intrinsic_soft"},
+    )
+    distribution = replica_distribution(data)
+    assert distribution[0]["median"] == 1
+    assert distribution[0]["mean"] == 4.8
+    assert distribution[0]["q16"] == 1
+    assert distribution[0]["q84"] < distribution[0]["mean"] + distribution[0]["sdev"]
+    context = ToolContext(
+        {"metadata": {"sample_error_mode": "covariance"}}, tmp_path / "manifest.json",
+        "soft_analysis", "intrinsic_soft", {}, {}, {}, {}, tmp_path, np.random.default_rng(1), output=data,
+    )
+    summary = {"diagnostics": {"replica_distribution": distribution}}
+    evidence = _review_summary(context, summary)
+    assert evidence["tmd_diagnostics"]["replica_distribution"] == distribution
+    summary["diagnostics"] = {
+        "selected_application_fit": {"fits": [{"Q": .01}, {"Q": .7}], "n_failed_samples": 0}
+    }
+    evidence = _review_summary(context, summary)["tmd_diagnostics"]
+    assert evidence == {"center_fit_count": 2, "Q_below_0_05": 1, "minimum_Q": .01, "n_failed_samples": 0}
+
+
 def test_review_summary_sends_sixty_plot_points_and_selected_fit_quality(tmp_path: Path) -> None:
     context = ToolContext(
         {"metadata": {"sample_error_mode": "covariance"}},
@@ -95,7 +121,7 @@ def test_review_full_resolution_tool_returns_one_selected_job(tmp_path: Path) ->
         {},
         {"results": [data]},
         {},
-        {"review_bundle": {"jobs": {"matched": {"stage_id": "perturbative_matching"}}}},
+        {"review_bundle": {"jobs": {"matched": {"stage_id": "matching"}}}},
         tmp_path,
         np.random.default_rng(1),
     )

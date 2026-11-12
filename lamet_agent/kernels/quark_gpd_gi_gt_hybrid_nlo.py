@@ -1,11 +1,3 @@
-"""GI gamma^t hybrid-NLO inverse matching on nonuniform quasi-GPD grids.
-
-Real and virtual terms share the exclusion |y-x| < epsilon2, following the
-ordered-limit prescription in arXiv:2609.20545, Eqs. (9)-(10). The existing
-hybrid coefficient and coupling convention are retained. The returned matrix
-acts as ``lightcone = matrix @ quasi``.
-"""
-
 from __future__ import annotations
 
 from typing import Final
@@ -26,7 +18,6 @@ def _beta(order: int, nf: int = 3) -> float:
 
 
 def _alphas_nloop(mu: float, order: int = 1, nf: int = 3) -> float:
-    """Use the coupling convention of the original GPD implementation."""
     a_s_ref = 0.293 / (4.0 * np.pi)
     b0 = _beta(0, nf)
     temp = 1.0 + a_s_ref * b0 * np.log((mu / 2.0) ** 2)
@@ -80,7 +71,6 @@ def _abs_log_divided_difference(
     mu: float,
     eps: float,
 ) -> float:
-    """Evaluate [A(a)-A(b)]/(a-b), including its removable same-sign limit."""
     if a == b:
         if abs(a) <= eps:
             raise ValueError("divided difference at the logarithmic cusp is undefined")
@@ -102,14 +92,6 @@ def _c_gpd_gt_hybrid(
     zspz: float,
     eps: float,
 ) -> float:
-    """Original off-diagonal coefficient, with removable y=+/-xi poles combined.
-
-    Writing A(v)=|v|[log(4 Pz^2 v^2/mu^2)-1], set
-    D1=[A(x+xi)-A(x-y)]/(y+xi),
-    D2=[A(xi-x)-A(x-y)]/(xi-y).
-    Then the original first three terms are (D1+D2)/(2 xi), and the
-    transversity-named piece is (D2-D1)/(x-y)+2 A(x-y)/(x-y)^2.
-    """
     delta = x - y
     if abs(delta) <= eps:
         raise ValueError("off-diagonal coefficient requires |x-y| > eps")
@@ -132,7 +114,6 @@ def _lo_interp_matrix(x_grid: np.ndarray, y_grid: np.ndarray) -> np.ndarray:
 
 
 def _basis_weights(value: float, grid: np.ndarray) -> np.ndarray:
-    """Piecewise-linear interpolation weights on a strictly increasing grid."""
     result = np.zeros(grid.size)
     if value < grid[0] or value > grid[-1]:
         return result
@@ -176,7 +157,6 @@ def _build_matrix(
         raise ValueError("x_out must avoid +/-skewness; use one-sided limits after cutoff convergence")
     if epsilon2 > hierarchy_ratio * float(np.min(distances)):
         raise ValueError("epsilon2 must be <= hierarchy_ratio * min_x |x +/- skewness|")
-    # Both sides of the symmetric diagonal exclusion must lie in the data window.
     if np.any(x_grid - epsilon2 <= y_grid[0]) or np.any(x_grid + epsilon2 >= y_grid[-1]):
         raise ValueError("x_out +/- epsilon2 must lie strictly inside the x_in range")
 
@@ -185,13 +165,11 @@ def _build_matrix(
         interpolation = matrix[row].copy()
 
         def integrand(y, x=x, interpolation=interpolation):
-            # The subtraction is integrated at the same y and with the same cutoff.
             real = _c_gpd_gt_hybrid(x, y, skewness, momentum_gev, mu, zspz, eps)
             virtual = _c_gpd_gt_hybrid(y, x, skewness, momentum_gev, mu, zspz, eps)
             return real * _basis_weights(y, y_grid) - virtual * interpolation
 
         for lower, upper in ((y_grid[0], x - epsilon2), (x + epsilon2, y_grid[-1])):
-            # Split at interpolation knots and at the coefficient's logarithmic cusps.
             points = np.unique(np.concatenate((y_grid, [-skewness, skewness])))
             points = points[(points > lower) & (points < upper)]
             correction, _, info = quad_vec(
@@ -227,23 +205,6 @@ def kernel(
     quad_epsabs: float = 1e-8,
     quad_epsrel: float = 1e-6,
 ) -> np.ndarray:
-    """Return a finite-window inverse-matching matrix on nonuniform input grids.
-
-    x_in must be strictly increasing; x_out may be uniform or arbitrary.
-    The input values are interpolated linearly inside [x_in[0], x_in[-1]].
-    Both real and virtual integrals use this finite window and exclude
-    |y-x| < epsilon2. Widen the input window to check tail truncation.
-
-    Require epsilon2 <= hierarchy_ratio * min_i |x_out[i] +/- skewness|.
-    The default ratio 0.01 is a guard, not a convergence guarantee. First
-    reduce epsilon2 at fixed output points and input data, then approach
-    +/-skewness. No crossover extrapolation or forced continuity is applied.
-
-    Input refinement (e.g. h/10 near +/-skewness) belongs to the caller;
-    adaptive quadrature resolves the cutoff independently of input spacing.
-    eps controls only numerical near-zero handling. Quadrature tolerances
-    bound integration error estimates, not input-interpolation or tail errors.
-    """
     controls = {
         "momentum_gev": momentum_gev,
         "scale_gev": scale_gev,
@@ -291,4 +252,3 @@ kernel.matching_structure = {
         "lightcone = matrix @ quasi."
     ),
 }
-

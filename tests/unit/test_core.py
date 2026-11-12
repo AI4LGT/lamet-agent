@@ -1214,7 +1214,7 @@ def test_shipped_contracts_do_not_repeat_depends_mapping_types() -> None:
         "correlator_analysis",
         "renormalization",
         "fourier_transform",
-        "perturbative_matching",
+        "matching",
         "extrapolation",
         "review",
     ):
@@ -1645,7 +1645,7 @@ def test_workflow_asks_are_not_model_visible_tool_directories() -> None:
         "correlator_analysis",
         "renormalization",
         "fourier_transform",
-        "perturbative_matching",
+        "matching",
         "extrapolation",
     ):
         assert not (stages / stage_id / "tools").exists()
@@ -1697,7 +1697,8 @@ def test_all_shipped_stage_contracts_load_without_tool_imports() -> None:
         "correlator_analysis",
         "renormalization",
         "fourier_transform",
-        "perturbative_matching",
+        "matching",
+        "soft_analysis",
         "extrapolation",
         "review",
     ):
@@ -1705,6 +1706,75 @@ def test_all_shipped_stage_contracts_load_without_tool_imports() -> None:
         assert hasattr(contract, "PARAM_RULES")
         assert hasattr(contract, "INPUT_RULES")
         assert hasattr(contract, "CHECKS")
+
+
+def test_soft_analysis_empty_placeholder_validates_but_has_no_runnable_jobs(tmp_path: Path) -> None:
+    manifest = Manifest(
+        tmp_path / "manifest.json",
+        {"metadata": _valid_metadata(tmp_path), "stages": {"soft_analysis": {"jobs": []}}},
+    )
+    assert manifest.validate() == []
+    assert manifest.jobs == ()
+    assert manifest.jobs_by_stage == {"soft_analysis": ()}
+
+    backend = _ScriptedBackend([])
+    with pytest.raises(ValueError, match="manifest has no jobs"):
+        create_session(backend).run_manifest(manifest)
+    assert backend.calls == []
+    assert not (tmp_path / "runs").exists()
+
+
+def test_soft_analysis_rejects_incomplete_jobs_before_execution(tmp_path: Path) -> None:
+    manifest = Manifest(
+        tmp_path / "manifest.json",
+        {
+            "metadata": _valid_metadata(tmp_path),
+            "stages": {"soft_analysis": {"jobs": [{"id": "soft_a"}, {"id": "soft_b"}]}},
+        },
+    )
+    issues = manifest.validate()
+    assert issues
+    assert any(issue.path.startswith("stages.soft_analysis.jobs[0]") for issue in issues)
+    assert any(issue.path.startswith("stages.soft_analysis.jobs[1]") for issue in issues)
+    assert all("not implemented" not in issue.message for issue in issues)
+
+    backend = _ScriptedBackend([])
+    with pytest.raises(ValueError, match="is required"):
+        create_session(backend).run_manifest(manifest)
+    assert backend.calls == []
+    assert not (tmp_path / "runs").exists()
+
+
+@pytest.mark.parametrize("block", [{}, {"jobs": None}, {"jobs": {}}, {"jobs": [{"id": ""}]}])
+def test_soft_analysis_keeps_job_envelope_validation(tmp_path: Path, block: dict) -> None:
+    manifest = Manifest(
+        tmp_path / "manifest.json",
+        {"metadata": _valid_metadata(tmp_path), "stages": {"soft_analysis": block}},
+    )
+    assert manifest.validate()
+
+
+@pytest.mark.parametrize(
+    "stage_id",
+    ["correlator_analysis", "renormalization", "fourier_transform", "matching", "extrapolation", "review"],
+)
+def test_executable_stages_still_require_nonempty_jobs(tmp_path: Path, stage_id: str) -> None:
+    manifest = Manifest(
+        tmp_path / "manifest.json",
+        {"metadata": _valid_metadata(tmp_path), "stages": {stage_id: {"jobs": []}}},
+    )
+    assert any(issue.path == f"stages.{stage_id}.jobs" for issue in manifest.validate())
+
+
+def test_former_matching_stage_identifier_is_rejected(tmp_path: Path) -> None:
+    manifest = Manifest(
+        tmp_path / "manifest.json",
+        {"metadata": _valid_metadata(tmp_path), "stages": {"perturbative_matching": {"jobs": []}}},
+    )
+    assert any(
+        issue.path == "stages.perturbative_matching" and "has no contract.py" in issue.message
+        for issue in manifest.validate()
+    )
 
 
 def test_shipped_contracts_do_not_use_optional_depends() -> None:
@@ -1740,8 +1810,10 @@ def test_correlator_contract_rejects_removed_fit_strategy() -> None:
         ["2pt+3pt"],
         ["2pt", "3pt+FH"],
         ["FH"],
-        ["3pt_ratio"],
-        ["qda_ratio"],
+        ["3pt_over_2pt"],
+        ["3pt_over_3pt"],
+        ["2pt+3pt_over_3pt"],
+        ["wf_over_2pt"],
         ["2pt", "qda"],
         ["2pt+qda"],
     ],
@@ -1759,8 +1831,8 @@ def test_correlator_fit_scope_accepts_ordered_joint_and_chained_pipelines(fit_sc
         ["qda", "3pt"],
         ["2pt", "2pt+3pt"],
         ["3pt", "2pt"],
-        ["qda+qda_ratio"],
-        ["3pt", "3pt_ratio"],
+        ["qda+wf_over_2pt"],
+        ["3pt", "3pt_over_2pt"],
         ["2pt++3pt"],
     ],
 )
@@ -1774,12 +1846,12 @@ def test_correlator_fit_scope_rejects_legacy_mixed_and_duplicate_pipelines(fit_s
 def test_nstate_combinations_expand_per_atom_grids() -> None:
     from lamet_agent.stages.correlator_analysis._scope import nstate_combinations
 
-    assert nstate_combinations({"2pt": [1, 2], "3pt_ratio": [1]}, ["2pt+3pt_ratio"]) == [
-        {"2pt": 1, "3pt_ratio": 1},
-        {"2pt": 2, "3pt_ratio": 1},
+    assert nstate_combinations({"2pt": [1, 2], "3pt_over_2pt": [1]}, ["2pt+3pt_over_2pt"]) == [
+        {"2pt": 1, "3pt_over_2pt": 1},
+        {"2pt": 2, "3pt_over_2pt": 1},
     ]
     with pytest.raises(ValueError, match="individual correlator atoms"):
-        nstate_combinations({"2pt+3pt_ratio": [2]}, ["2pt+3pt_ratio"])
+        nstate_combinations({"2pt+3pt_over_2pt": [2]}, ["2pt+3pt_over_2pt"])
 
 
 def test_manifest_enforces_global_sampling_relationships(tmp_path: Path) -> None:
@@ -1852,7 +1924,7 @@ def test_da_examples_expand_the_reference_systematics_branches(stem: str) -> Non
     assert manifest.has_systematics is True
     authored_stages = manifest.document["stages"]
     assert len(authored_stages["fourier_transform"]["jobs"]) == 9
-    assert len(authored_stages["perturbative_matching"]["jobs"]) == 9
+    assert len(authored_stages["matching"]["jobs"]) == 9
     assert len(authored_stages["extrapolation"]["jobs"]) == 1
 
     resolved = load_manifest(manifest.path)
@@ -1863,7 +1935,7 @@ def test_da_examples_expand_the_reference_systematics_branches(stem: str) -> Non
     assert '"job"' not in json.dumps(resolved.document)
     extrapolation_jobs = [job for job in resolved._resolved_jobs() if job.stage_id == "extrapolation"]
     assert all(
-        job.params["priors"] == {"mean": 0.0, "sdev": 3.0}
+        job.params["priors"] == "0.0(3.0)"
         for job in extrapolation_jobs
         if job.params["operation"] == "fit"
     )
@@ -1871,11 +1943,11 @@ def test_da_examples_expand_the_reference_systematics_branches(stem: str) -> Non
     assert "priors" not in budget_job.params
     variant_count = len(manifest.document["systematics"]["fourier_transform"]["variants"])
     assert len(stages["fourier_transform"]["jobs"]) == 9 * (1 + variant_count)
-    matching_variants = len(manifest.document["systematics"]["perturbative_matching"]["variants"])
-    assert len(stages["perturbative_matching"]["jobs"]) == 9 * (1 + variant_count + matching_variants)
+    matching_variants = len(manifest.document["systematics"]["matching"]["variants"])
+    assert len(stages["matching"]["jobs"]) == 9 * (1 + variant_count + matching_variants)
     labels = [
         variant["id"]
-        for stage_id in ("fourier_transform", "perturbative_matching", "extrapolation")
+        for stage_id in ("fourier_transform", "matching", "extrapolation")
         for variant in manifest.document["systematics"][stage_id]["variants"]
     ]
     assert [job["id"] for job in stages["extrapolation"]["jobs"]] == [
@@ -1912,7 +1984,7 @@ def test_da_examples_expand_the_reference_systematics_branches(stem: str) -> Non
     )
     assert fourier["ft_a06m130_pz6_lambda_low"]["zmin_fm"] == authored_zmin
     assert fourier["ft_a06m130_pz6_lambda_low"]["tail_window_step_offset"] == -1
-    matching = {job["id"]: job for job in stages["perturbative_matching"]["jobs"]}
+    matching = {job["id"]: job for job in stages["matching"]["jobs"]}
     assert matching["mt_a06m130_pz6_lambda_low"]["inputs"]["quasi"] == "ft_a06m130_pz6_lambda_low"
     assert matching["mt_a06m130_pz6_mu_low"]["mu"] == pytest.approx(2.0**0.5)
     assert matching["mt_a06m130_pz6_mu_high"]["mu"] == pytest.approx(2.0 * 2.0**0.5)
@@ -1924,7 +1996,7 @@ def test_da_examples_expand_the_reference_systematics_branches(stem: str) -> Non
     assert "systematics" not in parsed.document
     assert parsed.document["stages"]["extrapolation"]["defaults"]["x_independent_terms"] == independent
     assert parsed.document["stages"]["extrapolation"]["defaults"]["x_dependent_terms"] == dependent
-    assert parsed.document["stages"]["extrapolation"]["jobs"][0]["priors"] == {"mean": 0.0, "sdev": 3.0}
+    assert parsed.document["stages"]["extrapolation"]["jobs"][0]["priors"] == "0.0(3.0)"
     assert parsed.document["stages"]["extrapolation"]["jobs"][0]["x_covariance"] is False
 
 
@@ -1968,9 +2040,9 @@ def test_systematics_schema_errors_use_stage_contract_paths() -> None:
     )
 
     missing = load_manifest(path)
-    missing.document["systematics"]["perturbative_matching"]["variants"][0].pop("mu_factor")
+    missing.document["systematics"]["matching"]["variants"][0].pop("mu_factor")
     assert any(
-        issue.path == "systematics.perturbative_matching.variants[0].mu_factor" and "required" in issue.message
+        issue.path == "systematics.matching.variants[0].mu_factor" and "required" in issue.message
         for issue in missing.validate()
     )
 
@@ -1994,13 +2066,13 @@ def test_empty_systematics_is_a_noop_and_does_not_enable_stage_progress() -> Non
 def test_systematics_propagate_without_downstream_declarations() -> None:
     path = Path(__file__).parents[2] / "examples" / "pion_da_gi_manifest.json"
     manifest = load_manifest(path)
-    manifest.document["systematics"].pop("perturbative_matching")
+    manifest.document["systematics"].pop("matching")
     manifest.document["systematics"].pop("extrapolation")
 
     assert manifest.validate() == []
     stages = manifest.document["stages"]
     assert len(stages["fourier_transform"]["jobs"]) == 27
-    assert len(stages["perturbative_matching"]["jobs"]) == 27
+    assert len(stages["matching"]["jobs"]) == 27
     assert [job["id"] for job in stages["extrapolation"]["jobs"]] == [
         "extrapolate_all",
         "extrapolate_lambda_low",
@@ -2025,12 +2097,12 @@ def test_fourier_systematics_accept_single_zmin_without_resolving_data() -> None
 def test_systematics_defaults_fill_variants_before_compilation() -> None:
     path = Path(__file__).parents[2] / "examples" / "pion_da_gi_manifest.json"
     manifest = load_manifest(path)
-    matching = manifest.document["systematics"]["perturbative_matching"]
+    matching = manifest.document["systematics"]["matching"]
     matching["defaults"] = {"mu_factor": 0.5}
     matching["variants"] = [{"id": "mu_half"}]
 
     assert manifest.validate() == []
-    jobs = {job["id"]: job for job in manifest.document["stages"]["perturbative_matching"]["jobs"]}
+    jobs = {job["id"]: job for job in manifest.document["stages"]["matching"]["jobs"]}
     assert jobs["mt_a06m130_pz6_mu_half"]["mu"] == pytest.approx(1.0)
 
 
@@ -2074,7 +2146,7 @@ def test_correlator_contract_keeps_lanczos_and_ground_fit_parameters_exclusive()
 
 
 @pytest.mark.parametrize("state_counts", [[2], [1, 2]])
-@pytest.mark.parametrize("fit_scope", [["qda_ratio"], ["2pt", "qda"], ["2pt+qda"]])
+@pytest.mark.parametrize("fit_scope", [["wf_over_2pt"], ["2pt", "qda"], ["2pt+qda"]])
 def test_correlator_contract_allows_qda_candidate_grid(state_counts: list[int], fit_scope: list[str]) -> None:
     from lamet_agent.stages.correlator_analysis._scope import parse_fit_scope
 
@@ -2108,7 +2180,7 @@ def test_correlator_contract_requires_nstate_keys_to_match_fit_scope() -> None:
     params = {
         "analysis_method": "lsqfit",
         "component": "re",
-        "fit_scope": ["2pt", "3pt_ratio"],
+        "fit_scope": ["2pt", "3pt_over_2pt"],
         "nstate": {"2pt": [2]},
         "fitting_form": "Breit",
         "model_average": False,
@@ -2128,8 +2200,8 @@ def test_correlator_contract_rejects_joint_nstate_keys() -> None:
     params = {
         "analysis_method": "lsqfit",
         "component": "re",
-        "fit_scope": ["2pt+3pt_ratio"],
-        "nstate": {"2pt+3pt_ratio": [2]},
+        "fit_scope": ["2pt+3pt_over_2pt"],
+        "nstate": {"2pt+3pt_over_2pt": [2]},
         "fitting_form": "Breit",
         "model_average": False,
         "pt2_windows": [{"tmin": 3, "tmax": 8}],
@@ -2147,8 +2219,8 @@ def test_correlator_contract_allows_unequal_atom_nstates() -> None:
     params = {
         "analysis_method": "lsqfit",
         "component": "re",
-        "fit_scope": ["2pt+3pt_ratio"],
-        "nstate": {"2pt": [2], "3pt_ratio": [1]},
+        "fit_scope": ["2pt+3pt_over_2pt"],
+        "nstate": {"2pt": [2], "3pt_over_2pt": [1]},
         "fitting_form": "Breit",
         "model_average": False,
         "pt2_windows": [{"tmin": 3, "tmax": 8}],
@@ -2217,7 +2289,7 @@ def test_each_shipped_stage_contract_reports_incomplete_params_instead_of_crashi
         "correlator_analysis",
         "renormalization",
         "fourier_transform",
-        "perturbative_matching",
+        "matching",
         "extrapolation",
         "review",
     ):
@@ -2254,7 +2326,7 @@ def test_correlator_descriptors_use_physical_field_names() -> None:
 
 
 def test_matching_contract_rejects_removed_resummation_part() -> None:
-    contract = _load_stage_contract("perturbative_matching")
+    contract = _load_stage_contract("matching")
     params = {
         "order": "nlo",
         "resummation": "rgr",
@@ -2268,7 +2340,7 @@ def test_matching_contract_rejects_removed_resummation_part() -> None:
 
 
 def test_matching_contract_accepts_resummation_combinations() -> None:
-    contract = _load_stage_contract("perturbative_matching")
+    contract = _load_stage_contract("matching")
 
     def issues(resummation: str):
         params = {
@@ -2278,7 +2350,7 @@ def test_matching_contract_accepts_resummation_combinations() -> None:
             "lc_x_ls": [0.0, 1.0],
             "kernel_parameters": {},
         }
-        context = CheckContext({}, "perturbative_matching", "job", params, {"quasi": "earlier"})
+        context = CheckContext({}, "matching", "job", params, {"quasi": "earlier"})
         return evaluate_checks(contract.CHECKS, context)
 
     assert issues("") == []
@@ -2288,12 +2360,12 @@ def test_matching_contract_accepts_resummation_combinations() -> None:
 
 def test_matching_kernel_parameter_rules_require_a_dict_and_required_signature_values() -> None:
     manifest = load_manifest(Path(__file__).parents[2] / "examples" / "pion_pdf_cg_manifest.json")
-    manifest.document["stages"]["perturbative_matching"]["defaults"]["kernel_parameters"] = []
+    manifest.document["stages"]["matching"]["defaults"]["kernel_parameters"] = []
     assert any(
         issue.path.endswith("kernel_parameters") and "expected dict" in issue.message for issue in manifest.validate()
     )
 
-    contract = _load_stage_contract("perturbative_matching")
+    contract = _load_stage_contract("matching")
 
     def kernel(x_out, x_in, *, momentum_gev: float, scale_gev: float, cutoff: int, enabled: bool = True):
         return None
@@ -2509,7 +2581,10 @@ def test_manifest_requires_a_positive_run_worker_count(tmp_path: Path) -> None:
     assert any(issue.path == "metadata.workers" for issue in manifest.validate())
 
 
-def test_scripted_review_run_uses_one_tool_per_turn(tmp_path: Path, review_catalog: Path, capsys) -> None:
+@pytest.mark.parametrize("soft_position", [None, "before", "after"])
+def test_scripted_review_run_uses_one_tool_per_turn(
+    tmp_path: Path, review_catalog: Path, capsys, soft_position: str | None
+) -> None:
     source = tmp_path / "source.json"
     source.write_text("{}", encoding="utf-8")
     manifest = {
@@ -2526,6 +2601,10 @@ def test_scripted_review_run_uses_one_tool_per_turn(tmp_path: Path, review_catal
             }
         },
     }
+    if soft_position == "before":
+        manifest["stages"] = {"soft_analysis": {"jobs": []}, **manifest["stages"]}
+    elif soft_position == "after":
+        manifest["stages"]["soft_analysis"] = {"jobs": []}
     responses = [
         _AssistantResponse("read", _ToolCall("1", "read_papers", {"paper_ids": ["refactor_demo_lamet"]})),
         _AssistantResponse(
@@ -2550,8 +2629,12 @@ def test_scripted_review_run_uses_one_tool_per_turn(tmp_path: Path, review_catal
     backend = _ScriptedBackend(responses)
     result = create_session(backend).run_manifest(Manifest(tmp_path / "manifest.json", manifest))
     assert result["summaries"]["review_1"]["result"] == "review"
-    assert (tmp_path / "runs" / "01_review" / "review_1" / "review.md").is_file()
-    transcript = (tmp_path / "runs" / "01_review" / "review_1" / "llm_transcript.md").read_text(encoding="utf-8")
+    assert set(result["summaries"]) == {"review_1"}
+    assert len(backend.calls) == 2
+    assert not list((tmp_path / "runs").glob("*_soft_analysis"))
+    review_directory = tmp_path / "runs" / ("02_review" if soft_position == "before" else "01_review") / "review_1"
+    assert (review_directory / "review.md").is_file()
+    transcript = (review_directory / "llm_transcript.md").read_text(encoding="utf-8")
     assert "## review/review_1 turn 1, request 1: sent to LLM" in transcript
     assert '"role": "system"' in transcript
     assert '"tools": [' in transcript
@@ -2677,7 +2760,7 @@ def test_manifest_run_accepts_a_path_as_the_public_entrypoint(tmp_path: Path, re
 
 
 def test_deterministic_stage_workflow_bypasses_the_backend(tmp_path: Path, monkeypatch) -> None:
-    import lamet_agent.stages.perturbative_matching.workflow as workflow
+    import lamet_agent.stages.matching.workflow as workflow
 
     calls = []
 
@@ -2700,7 +2783,7 @@ def test_deterministic_stage_workflow_bypasses_the_backend(tmp_path: Path, monke
     context = ToolContext(
         {"metadata": {"workers": 1, "parameter_recommendation_retries": 1}},
         tmp_path / "manifest.json",
-        "perturbative_matching",
+        "matching",
         "matching",
         {
             "scheme": "ratio",
@@ -2771,7 +2854,7 @@ def test_correlator_workflow_asks_only_for_typed_fit_parameters(tmp_path: Path, 
         "correlator",
         {
             "analysis_method": "lsqfit",
-            "fit_scope": ["qda_ratio"],
+            "fit_scope": ["wf_over_2pt"],
             "component": "re",
             "pt2_windows": [{"tmin": 2, "tmax": 8}],
             "q_min": 0.05,
@@ -2883,8 +2966,8 @@ def test_joint_qda_null_hook_and_tune_z_share_one_recommendation(tmp_path: Path)
         "correlator",
         {
             "component": "re",
-            "fit_scope": ["qda_ratio"],
-            "nstate": {"qda_ratio": [1]},
+            "fit_scope": ["wf_over_2pt"],
+            "nstate": {"wf_over_2pt": [1]},
         },
         {},
         {},
@@ -3131,7 +3214,7 @@ def test_correlator_workflow_recommends_once_more_after_low_quality(tmp_path: Pa
         context.state["matrix_element_candidates"] = [
             {
                 "id": f"matrix_{len(attempts):03d}",
-                "fit_scope": ["qda_ratio"],
+                "fit_scope": ["wf_over_2pt"],
                 "window": {"tmin": 2, "tmax": 8, "tau_min": None},
                 "nstate": 1,
                 "prior_width": 1.0,
@@ -3159,7 +3242,7 @@ def test_correlator_workflow_recommends_once_more_after_low_quality(tmp_path: Pa
         "correlator",
         {
             "analysis_method": "lsqfit",
-            "fit_scope": ["qda_ratio"],
+            "fit_scope": ["wf_over_2pt"],
             "q_min": 0.05,
             "pt2_windows": [{"tmin": 2, "tmax": 8}],
         },
@@ -3208,7 +3291,7 @@ def test_correlator_workflow_publishes_best_candidate_when_q_min_is_never_met(
         context.state["matrix_element_candidates"] = [
             {
                 "id": "matrix_001",
-                "fit_scope": ["qda_ratio"],
+                "fit_scope": ["wf_over_2pt"],
                 "window": {"tmin": 2, "tmax": 8, "tau_min": None},
                 "nstate": 1,
                 "prior_width": 1.0,
@@ -3233,7 +3316,7 @@ def test_correlator_workflow_publishes_best_candidate_when_q_min_is_never_met(
         "correlator",
         {
             "analysis_method": "lsqfit",
-            "fit_scope": ["qda_ratio"],
+            "fit_scope": ["wf_over_2pt"],
             "q_min": 0.05,
             "pt2_windows": [{"tmin": 2, "tmax": 8}],
         },
@@ -3447,7 +3530,7 @@ def test_matrix_retry_uses_the_same_cross_scan_selector_as_publication(tmp_path:
         "matrix",
         {
             "analysis_method": "lsqfit",
-            "fit_scope": ["3pt_ratio"],
+            "fit_scope": ["3pt_over_2pt"],
             "q_min": 0.05,
             "pt2_windows": [{"tmin": 2, "tmax": 8}],
             "pt3_windows": [{"tau_cut": 1}],
@@ -3504,7 +3587,7 @@ def test_qda_retry_treats_invalid_recommendations_as_failed_attempts(
         context.state["matrix_element_candidates"] = [
             {
                 "id": "matrix_001",
-                "fit_scope": ["qda_ratio"],
+                "fit_scope": ["wf_over_2pt"],
                 "window": {"tmin": 2, "tmax": 8, "tau_min": None},
                 "nstate": 1,
                 "prior_width": 1.0,
@@ -3530,7 +3613,7 @@ def test_qda_retry_treats_invalid_recommendations_as_failed_attempts(
         "correlator",
         {
             "analysis_method": "lsqfit",
-            "fit_scope": ["qda_ratio"],
+            "fit_scope": ["wf_over_2pt"],
             "q_min": 0.05,
             "pt2_windows": [{"tmin": 2, "tmax": 8}],
         },
@@ -3682,7 +3765,7 @@ def test_finish_rejects_a_declared_artifact_that_does_not_exist(tmp_path: Path) 
 
 @pytest.mark.parametrize(("key", "value"), [("scheme", "hybrid"), ("zs_fm", 0.18)])
 def test_matching_contract_rejects_manual_renormalization_settings(key, value) -> None:
-    contract = _load_stage_contract("perturbative_matching")
+    contract = _load_stage_contract("matching")
     params = {"order": "nlo", "mu": 2.0, "lc_x_ls": [0.25, 0.75], "kernel_parameters": {}, key: value}
     issues = evaluate_rules(params, contract.PARAM_RULES)
     assert [(issue.path, issue.message) for issue in issues] == [(key, f"unknown key '{key}'")]

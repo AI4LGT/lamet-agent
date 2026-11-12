@@ -10,8 +10,13 @@ import numpy as np
 
 from lamet_agent.data import EnsembleData
 from lamet_agent.parallel import FitNumericalError, nonlinear_fit
+from lamet_agent.stages._priors import prior_diagnostics, validate_prior_overrides
 from lamet_agent.parallel._pool import _ParallelPool
 from lamet_agent.ui import track
+from lamet_agent.stages.correlator_analysis._priors import (
+    build_priors,
+    sample_prior_scale,
+)
 from lamet_agent.stages.correlator_analysis._scope import (
     atom_state_count,
     parse_fit_scope,
@@ -90,9 +95,7 @@ def _three_point_model(
     for sink, sink_energy in enumerate(energies_f):
         for source, source_energy in enumerate(energies_i):
             index = f"{sink}{source}"
-            matrix = (
-                1.0 if unit_ground and sink == 0 and source == 0 else parameters[f"{prefix}{index}_{component}"]
-            )
+            matrix = 1.0 if unit_ground and sink == 0 and source == 0 else parameters[f"{prefix}{index}_{component}"]
             value = value + matrix * parameters[f"z{sink}_f"] * parameters[f"z{source}_i"] * sink_decay[
                 sink
             ] * source_decay[source] / (2 * sink_energy) / (2 * source_energy)
@@ -126,9 +129,9 @@ def _ratio_model(
         # state block divides both numerator components: its ground state is the
         # normalisation (h_B(0)=1) and the fitted numerator ground state is
         # h_B(z)/h_B(0).
-        return _three_point_model(
-            times, insertions, parameters, n_states, form, component
-        ) / _three_point_model(times, insertions, parameters, n_states, form, "re", denominator_prefix, True)
+        return _three_point_model(times, insertions, parameters, n_states, form, component) / _three_point_model(
+            times, insertions, parameters, n_states, form, "re", denominator_prefix, True
+        )
     numerator = _three_point_model(times, insertions, parameters, n_states, form, component)
     if form == "Breit":
         return numerator / _two_point_model(times, parameters, extent, n_states)
@@ -167,14 +170,14 @@ def _lookup_atom_n_states(n_states: Mapping[str, int] | int, atom: str) -> int:
 
 def _plotted_three_point_n_states(n_states: Mapping[str, int] | int) -> int:
     if isinstance(n_states, Mapping):
-        if "3pt_ratio" in n_states:
-            return atom_state_count(n_states, "3pt_ratio")
-        if "self_ratio" in n_states:
-            return atom_state_count(n_states, "self_ratio")
+        if "3pt_over_2pt" in n_states:
+            return atom_state_count(n_states, "3pt_over_2pt")
+        if "3pt_over_3pt" in n_states:
+            return atom_state_count(n_states, "3pt_over_3pt")
         if "3pt" in n_states:
             return atom_state_count(n_states, "3pt")
         raise ValueError("n_states is missing a three-point atom")
-    return _lookup_atom_n_states(n_states, "3pt_ratio")
+    return _lookup_atom_n_states(n_states, "3pt_over_2pt")
 
 
 def matrix_element_fcn(x: Mapping[str, Any], parameters: Mapping[str, Any]) -> np.ndarray:
@@ -200,8 +203,8 @@ def matrix_element_fcn(x: Mapping[str, Any], parameters: Mapping[str, Any]) -> n
                 values.append(
                     _three_point_model(x["ratio_t"], x["ratio_tau"], parameters, atom_n_states, form, component)
                 )
-        elif atom in {"3pt_ratio", "self_ratio"}:
-            denominator_prefix = "D" if atom == "self_ratio" else ""
+        elif atom in {"3pt_over_2pt", "3pt_over_3pt"}:
+            denominator_prefix = "D" if atom == "3pt_over_3pt" else ""
             for component in components:
                 values.append(
                     _ratio_model(
@@ -218,7 +221,7 @@ def matrix_element_fcn(x: Mapping[str, Any], parameters: Mapping[str, Any]) -> n
         elif atom == "qda":
             for component in components:
                 values.append(_qda_correlator(x["qda_t"], parameters, extent, atom_n_states, component))
-        elif atom == "qda_ratio":
+        elif atom == "wf_over_2pt":
             denominator_key = "zprime" if x.get("denominator_kind") == "qda_z0" else None
             denominator = (
                 _qda_correlator(x["qda_t"], parameters, extent, atom_n_states, denominator_key)
@@ -256,27 +259,30 @@ def matrix_element_prior(
     components: tuple[str, ...],
     width_scale: float,
     denominator_kind: str = "external_2pt",
+    priors: Mapping[str, Any] | None = None,
+    conditioning: Mapping[str, float] | None = None,
 ) -> gv.BufferDict:
     """Build the explicit spectral and matrix-element prior for one fit model."""
     if not np.isfinite(width_scale) or width_scale <= 0:
         raise ValueError("width_scale must be positive")
+    requested_width, width_scale = width_scale, 1.0
     atoms = set(scope.split("+")) if isinstance(scope, str) else set(scope)
     if form not in {"Breit", "NonBreit"} or not atoms:
         raise ValueError("unsupported fitting form or scope")
-    if form == "NonBreit" and atoms - {"2pt", "3pt", "3pt_ratio", "self_ratio"}:
-        raise ValueError("NonBreit fitting supports only 2pt, 3pt, 3pt_ratio, and self_ratio")
+    if form == "NonBreit" and atoms - {"2pt", "3pt", "3pt_over_2pt", "3pt_over_3pt"}:
+        raise ValueError("NonBreit fitting supports only 2pt, 3pt, 3pt_over_2pt, and 3pt_over_3pt")
     counts = {atom: _lookup_atom_n_states(n_states, atom) for atom in atoms}
     prior = gv.BufferDict()
     suffixes = ("",) if form == "Breit" else ("_i", "_f")
     for atom in atoms:
         _add_spectrum_prior(prior, counts[atom], width_scale, suffixes)
-    if atoms & {"3pt", "3pt_ratio", "self_ratio"}:
-        matrix_n_states = max(counts[atom] for atom in atoms if atom in {"3pt", "3pt_ratio", "self_ratio"})
+    if atoms & {"3pt", "3pt_over_2pt", "3pt_over_3pt"}:
+        matrix_n_states = max(counts[atom] for atom in atoms if atom in {"3pt", "3pt_over_2pt", "3pt_over_3pt"})
         if form == "Breit":
             matrix_indices = [(row, column) for row in range(matrix_n_states) for column in range(row, matrix_n_states)]
         else:
             matrix_indices = [(sink, source) for sink in range(matrix_n_states) for source in range(matrix_n_states)]
-        prefixes = ("O", "D") if "self_ratio" in atoms else ("O",)
+        prefixes = ("O", "D") if "3pt_over_3pt" in atoms else ("O",)
         for prefix in prefixes:
             for row, column in matrix_indices:
                 if prefix == "D" and row == 0 and column == 0:
@@ -297,17 +303,24 @@ def matrix_element_prior(
     if denominator_kind == "qda_z0" and "2pt" in atoms:
         for state in range(counts["2pt"]):
             prior.setdefault(f"zprime{state}", gv.gvar(1.0, 10.0 * width_scale) / 3**state)
-    if atoms & {"qda", "qda_ratio"}:
+    if atoms & {"qda", "wf_over_2pt"}:
         if form != "Breit":
             raise ValueError("qDA fitting supports only Breit kinematics")
-        qda_n_states = max(counts[atom] for atom in atoms if atom in {"qda", "qda_ratio"})
+        qda_n_states = max(counts[atom] for atom in atoms if atom in {"qda", "wf_over_2pt"})
         if denominator_kind == "qda_z0":
             for state in range(qda_n_states):
                 prior.setdefault(f"zprime{state}", gv.gvar(1.0, 10.0 * width_scale) / 3**state)
         for state in range(qda_n_states):
             prior.setdefault(f"O0{state}_re", gv.gvar(1.0, 10.0 * width_scale))
             prior.setdefault(f"O0{state}_im", gv.gvar(0.0, 10.0 * width_scale))
-    return prior
+    # Built-in guesses already describe the conditioned data. Transform only
+    # authored raw-unit overrides, preserving legacy defaults exactly.
+    factors = {
+        key: value for key, value in (conditioning or {}).items() if key in (priors or {}) and key in prior.keys()
+    }
+    return build_priors(
+        prior, priors, prior_width=requested_width, conditioning=factors
+    )
 
 
 def _sample_diagnostic_records(result: Any) -> list[dict[str, float | int]]:
@@ -330,9 +343,7 @@ def _sample_diagnostic_records(result: Any) -> list[dict[str, float | int]]:
     return records
 
 
-def _overlay_posterior(
-    prior: Mapping[str, Any], posterior: Mapping[str, Any], scale: float
-) -> gv.BufferDict:
+def _overlay_posterior(prior: Mapping[str, Any], posterior: Mapping[str, Any], scale: float) -> gv.BufferDict:
     """Carry all independent posteriors forward; widen only current model keys."""
     updated = gv.BufferDict({key: gv.gvar(gv.mean(value), gv.sdev(value)) for key, value in posterior.items()})
     for key, authored in prior.items():
@@ -391,8 +402,8 @@ def _matrix_sample0_plot_payload(
     if posterior is None:
         return None
     plots: list[dict[str, Any]] = []
-    self_ratio = "self_ratio" in fit_scope
-    if fit_scope in {"3pt_ratio", "3pt_ratio+FH", "self_ratio", "self_ratio+FH"}:
+    self_ratio = "3pt_over_3pt" in fit_scope
+    if fit_scope in {"3pt_over_2pt", "3pt_over_2pt+FH", "3pt_over_3pt", "3pt_over_3pt+FH"}:
         source_ratios = self_ratios if self_ratio else ratios
         for component in selected_components:
             series = []
@@ -407,7 +418,7 @@ def _matrix_sample0_plot_payload(
                     ["tau"],
                     {"tau": available_tau[mask].tolist()},
                 ).average(sample_error_mode)
-                # The 3pt_ratio fit uses the periodic two-point denominator.
+                # The 3pt_over_2pt fit uses the periodic two-point denominator.
                 # For the diagnostic figure, restore the legacy forward-
                 # denominator convention so its asymptotic band is directly
                 # comparable with O00/(2 E0). The self-ratio already carries its
@@ -454,7 +465,7 @@ def _matrix_sample0_plot_payload(
                 plateau = posterior[f"O00_{component}"]
             elif fitting_form == "NonBreit":
                 sign = -1.0 if float(gv.mean(posterior["z0_i"] * posterior["z0_f"])) < 0.0 else 1.0
-                plateau = sign * posterior[f"O00_{component}"] / (posterior["E0_i"] + posterior["E0_f"])
+                plateau = sign * posterior[f"O00_{component}"] / (2 * gv.sqrt(posterior["E0_i"] * posterior["E0_f"]))
             else:
                 plateau = posterior[f"O00_{component}"] / (2.0 * posterior["E0"])
             plots.append(
@@ -466,7 +477,7 @@ def _matrix_sample0_plot_payload(
                     "plateau_sdev": float(gv.sdev(plateau)),
                 }
             )
-    if fit_scope in {"FH", "3pt_ratio+FH", "self_ratio+FH"}:
+    if fit_scope in {"FH", "3pt_over_2pt+FH", "3pt_over_3pt+FH"}:
         summed = []
         for tsep in tsep_values:
             mask = (available_tau >= tau_min) & (available_tau <= tsep - tau_min)
@@ -549,6 +560,9 @@ def fit_matrix_element_samples(
     correlator_rescale: float,
     svdcut: float,
     posterior_prior_error_scale: float,
+    chained_prior_error_scale: float | None = None,
+    priors: Mapping[str, Any] | None = None,
+    sample_prior_mode: str = "center_posterior",
     sample_error_mode: str = "covariance",
     workers: int,
     tune_z: int | float | None = None,
@@ -557,14 +571,25 @@ def fit_matrix_element_samples(
     _parallel: _ParallelPool | None = None,
 ) -> tuple[EnsembleData | None, dict[str, Any]]:
     """Fit one ordinary three-point scope pipeline."""
+    transfer_scale = posterior_prior_error_scale if chained_prior_error_scale is None else chained_prior_error_scale
+    if not np.isfinite(transfer_scale) or transfer_scale <= 0:
+        raise ValueError("chained_prior_error_scale must be finite and positive")
     pipeline = parse_fit_scope(fit_scope)
     atom_counts = resolve_atom_n_states(n_states, pipeline)
+    replica_prior_scale = sample_prior_scale(sample_prior_mode, posterior_prior_error_scale)
+    model_prior_names = set(
+        matrix_element_prior(
+            atom_counts, form=fitting_form, scope=pipeline.atoms, components=("re", "im"), width_scale=1.0
+        ).keys()
+    )
+    validate_prior_overrides(priors)
+    conditioning = {key: np.sqrt(correlator_rescale) for key in model_prior_names if key.startswith("z")}
     if pipeline.is_qda or pipeline.is_spectrum or not pipeline.needs_pt3_data:
         raise ValueError("ordinary matrix-element fitting requires a three-point or FH fit_scope")
     if fitting_form not in {"Breit", "NonBreit"}:
         raise ValueError("fitting_form must be Breit or NonBreit")
-    if fitting_form == "NonBreit" and pipeline.atom_set - {"2pt", "3pt", "3pt_ratio", "self_ratio"}:
-        raise ValueError("NonBreit fitting supports only 2pt, 3pt, 3pt_ratio, and self_ratio")
+    if fitting_form == "NonBreit" and pipeline.atom_set - {"2pt", "3pt", "3pt_over_2pt", "3pt_over_3pt"}:
+        raise ValueError("NonBreit fitting supports only 2pt, 3pt, 3pt_over_2pt, and 3pt_over_3pt")
     if "FH" in pipeline.atom_set and atom_state_count(atom_counts, "FH") > 2:
         raise ValueError("FH fitting supports at most two states")
     selected_components = {"real": ("re",), "imag": ("im",), "both": ("re", "im")}.get(components)
@@ -609,9 +634,7 @@ def fit_matrix_element_samples(
         raise ValueError("matrix-element fitting requires the temporal extent")
     times = np.asarray(initial.coords["t"], dtype=int)
     pt2_mask = (times >= tmin) & (times < tmax)
-    pt2_n_states = (
-        atom_state_count(atom_counts, "2pt") if "2pt" in pipeline.atom_set else max(atom_counts.values())
-    )
+    pt2_n_states = atom_state_count(atom_counts, "2pt") if "2pt" in pipeline.atom_set else max(atom_counts.values())
     if np.count_nonzero(pt2_mask) < 2 * pt2_n_states:
         raise ValueError("the two-point window must contain at least 2*n_states points")
     available_tseps = np.asarray(three_point.coords["tsep"], dtype=int)
@@ -624,10 +647,10 @@ def fit_matrix_element_samples(
     three_values = np.asarray(three_point.values)
     z_values = list(three_point.coords["z"])
     origin_index = None
-    if "self_ratio" in pipeline.atom_set:
+    if "3pt_over_3pt" in pipeline.atom_set:
         origin = np.flatnonzero(np.isclose(np.asarray(z_values, dtype=float), 0.0, rtol=0.0, atol=1e-12))
         if origin.size != 1:
-            raise ValueError("self_ratio fitting requires exactly one z=0 coordinate")
+            raise ValueError("3pt_over_3pt fitting requires exactly one z=0 coordinate")
         origin_index = int(origin[0])
     ratios: dict[int, np.ndarray] = {}
     self_ratios: dict[int, np.ndarray] = {}
@@ -686,6 +709,9 @@ def fit_matrix_element_samples(
         fitted_samples[:, origin_index] = 1.0 + 0.0j
     center_metrics = []
     sample_failures = []
+    # A separate initial spectrum has identical data, priors, and resamples at
+    # every z in this call. Joint likelihoods remain z-dependent and are refit.
+    cached_initial_spectrum = None
     parallel = _parallel or _ParallelPool(min(workers, three_point.n_sample))
     try:
         fit_indices = track(
@@ -742,9 +768,13 @@ def fit_matrix_element_samples(
                         pieces.append(np.real(initial_values[:, pt2_mask]) * correlator_rescale)
                         if fitting_form == "NonBreit":
                             pieces.append(np.real(final_values[:, pt2_mask]) * correlator_rescale)
-                    elif atom in {"3pt", "3pt_ratio", "self_ratio"}:
+                    elif atom in {"3pt", "3pt_over_2pt", "3pt_over_3pt"}:
                         source_values = (
-                            selected_raw if atom == "3pt" else selected_self if atom == "self_ratio" else selected_ratio
+                            selected_raw
+                            if atom == "3pt"
+                            else selected_self
+                            if atom == "3pt_over_3pt"
+                            else selected_ratio
                         )
                         for component in selected_components:
                             component_parts = [
@@ -769,40 +799,44 @@ def fit_matrix_element_samples(
                     scope=atoms,
                     components=selected_components,
                     width_scale=prior_width,
+                    priors=priors,
+                    conditioning=conditioning,
                 )
                 fit_prior = (
                     authored_prior
                     if previous_posterior is None
-                    else _overlay_posterior(authored_prior, previous_posterior, posterior_prior_error_scale)
+                    else _overlay_posterior(authored_prior, previous_posterior, transfer_scale)
                 )
                 is_final = stage_index == len(pipeline.stages) - 1
                 sample_priors = (
                     [
-                        None
-                        if posterior is None
-                        else _overlay_posterior(authored_prior, posterior, posterior_prior_error_scale)
+                        None if posterior is None else _overlay_posterior(authored_prior, posterior, transfer_scale)
                         for posterior in previous_sample_posteriors
                     ]
                     if fit_samples and previous_sample_posteriors is not None
                     else None
                 )
-                result = nonlinear_fit(
-                    (x, fit_data),
-                    matrix_element_fcn,
-                    fit_prior,
-                    workers=workers,
-                    sample_prior_scale=(
-                        None if sample_priors is not None else posterior_prior_error_scale * prior_width
-                    ),
-                    sample_priors=sample_priors,
-                    sample_error_mode=sample_error_mode,
-                    mode="resamples" if fit_samples else "center",
-                    tolerate_sample_failures=fit_samples,
-                    capture_sample_posteriors=(0,) if is_final and fit_samples else (),
-                    _parallel=parallel if fit_samples else None,
-                    svdcut=svdcut,
-                    maxit=10000,
-                )
+                cacheable_spectrum = stage_index == 0 and atoms == ("2pt",)
+                if cacheable_spectrum and cached_initial_spectrum is not None:
+                    result = cached_initial_spectrum
+                else:
+                    result = nonlinear_fit(
+                        (x, fit_data),
+                        matrix_element_fcn,
+                        fit_prior,
+                        workers=workers,
+                        sample_prior_scale=(None if sample_priors is not None else replica_prior_scale),
+                        sample_priors=sample_priors,
+                        sample_error_mode=sample_error_mode,
+                        mode="resamples" if fit_samples else "center",
+                        tolerate_sample_failures=fit_samples,
+                        capture_sample_posteriors=(0,) if is_final and fit_samples else (),
+                        _parallel=parallel if fit_samples else None,
+                        svdcut=svdcut,
+                        maxit=10000,
+                    )
+                    if cacheable_spectrum:
+                        cached_initial_spectrum = result
                 previous_posterior = result.p
                 previous_sample_posteriors = _sample_posteriors_from_result(result) if fit_samples else None
                 stage_diagnostics.append(
@@ -814,6 +848,7 @@ def fit_matrix_element_samples(
                         "Q": result.Q,
                         "logGBF": result.logGBF,
                         "n_data": int(observations.shape[1]),
+                        **prior_diagnostics(fit_prior, priors),
                     }
                 )
             if result is None or fit_prior is None or observations is None:
@@ -846,10 +881,10 @@ def fit_matrix_element_samples(
                 )
                 energy_summary[f"{energy_key}_samples"] = energy_samples
             sample_diagnostics = _sample_diagnostic_records(result) if fit_samples else []
-            ratio_scope = "self_ratio" if origin_index is not None else "3pt_ratio"
+            ratio_scope = "3pt_over_3pt" if origin_index is not None else "3pt_over_2pt"
             plot_scope = (
                 f"{ratio_scope}+FH"
-                if "FH" in pipeline.final_stage and pipeline.atom_set & {"3pt", "3pt_ratio", "self_ratio"}
+                if "FH" in pipeline.final_stage and pipeline.atom_set & {"3pt", "3pt_over_2pt", "3pt_over_3pt"}
                 else "FH"
                 if "FH" in pipeline.final_stage
                 else ratio_scope
@@ -908,14 +943,14 @@ def fit_matrix_element_samples(
                         imag = float(parameters["O00_im"]) if "im" in selected_components else 0.0
                     else:
                         real = (
-                            float(parameters["O00_re"] / (parameters["E0_f"] + parameters["E0_i"]))
+                            float(parameters["O00_re"] / (2 * np.sqrt(parameters["E0_f"] * parameters["E0_i"])))
                             if fitting_form == "NonBreit" and "re" in selected_components
                             else float(parameters["O00_re"] / (2 * parameters["E0"]))
                             if "re" in selected_components
                             else 0.0
                         )
                         imag = (
-                            float(parameters["O00_im"] / (parameters["E0_f"] + parameters["E0_i"]))
+                            float(parameters["O00_im"] / (2 * np.sqrt(parameters["E0_f"] * parameters["E0_i"])))
                             if fitting_form == "NonBreit" and "im" in selected_components
                             else float(parameters["O00_im"] / (2 * parameters["E0"]))
                             if "im" in selected_components
@@ -953,6 +988,9 @@ def fit_matrix_element_samples(
                 "tau_min": tau_min,
                 "correlator_rescale": correlator_rescale,
                 "sample_error_mode": sample_error_mode,
+                "chained_prior_error_scale": float(transfer_scale),
+                "sample_prior_mode": sample_prior_mode,
+                "prior_width": prior_width,
             }
         )
         output = EnsembleData(
@@ -967,6 +1005,9 @@ def fit_matrix_element_samples(
     tuning_fit = center_metrics[0] if not fit_samples and tune_z is not None else None
     diagnostics = {
         "fit_scope": pipeline.as_list(),
+        "sample_prior_mode": sample_prior_mode,
+        "posterior_prior_error_scale": posterior_prior_error_scale,
+        "chained_prior_error_scale": transfer_scale,
         "fitting_form": fitting_form,
         "workers": workers,
         "min_Q": min(record["Q"] for record in center_metrics),
@@ -1064,13 +1105,19 @@ def fit_spectrum_samples(
     resample: str,
     prior_means: dict[str, float],
     prior_widths: dict[str, float],
+    priors: Mapping[str, Any] | None = None,
+    prior_width: float = 1.0,
+    sample_prior_mode: str = "original",
+    posterior_prior_error_scale: float = 10.0,
     sample_error_mode: str = "covariance",
     workers: int = 1,
     _parallel: _ParallelPool | None = None,
-) -> tuple[list[np.ndarray], dict[str, float]]:
+) -> tuple[list[np.ndarray], dict[str, Any]]:
     """Perform one correlated, prior-constrained multi-state spectral fit."""
     samples = np.asarray(values)
     times = np.asarray(times, dtype=float)
+    if isinstance(n_states, bool) or not isinstance(n_states, int) or n_states < 1:
+        raise ValueError("n_states must be a positive integer")
     if isinstance(extent, bool) or not isinstance(extent, int) or extent < 1:
         raise ValueError("spectrum fitting requires a positive temporal extent")
     if samples.ndim != 2 or samples.shape[1] != times.size or samples.shape[0] < 2 or times.size < 2 * n_states:
@@ -1083,8 +1130,18 @@ def fit_spectrum_samples(
     names = [*[f"E{index}" for index in range(n_states)], *[f"z{index}" for index in range(n_states)]]
     if set(prior_means) != set(names) or set(prior_widths) != set(names):
         raise ValueError(f"spectrum priors must contain exactly {names}")
-    mean = np.asarray([float(prior_means[name]) for name in names])
-    widths = np.asarray([float(prior_widths[name]) for name in names])
+    if any(
+        not np.isfinite(prior_means[name]) or not np.isfinite(prior_widths[name]) or prior_widths[name] <= 0
+        for name in names
+    ):
+        raise ValueError("spectrum priors require finite means and positive finite widths")
+    physical_prior = build_priors(
+        {name: gv.gvar(prior_means[name], prior_widths[name]) for name in names},
+        priors,
+        prior_width=prior_width,
+    )
+    mean = np.asarray([float(gv.mean(physical_prior[name])) for name in names])
+    widths = np.asarray([float(gv.sdev(physical_prior[name])) for name in names])
     energies = mean[:n_states]
     if (
         np.any(~np.isfinite(mean))
@@ -1110,6 +1167,7 @@ def fit_spectrum_samples(
         spectrum_fcn,
         prior,
         workers=workers,
+        sample_prior_scale=sample_prior_scale(sample_prior_mode, posterior_prior_error_scale),
         sample_error_mode=sample_error_mode,
         maxit=2000,
         _parallel=_parallel,
@@ -1121,6 +1179,10 @@ def fit_spectrum_samples(
             fitted_energies.append(fitted_energies[-1] + float(parameters[f"dE{state}"]))
         fitted_samples.append(np.asarray(fitted_energies))
     return fitted_samples, {
+        **prior_diagnostics(physical_prior, priors),
+        "fit_priors": prior_diagnostics(prior)["effective_priors"],
+        "prior_width": prior_width,
+        "sample_prior_mode": sample_prior_mode,
         "chi2": result.chi2,
         "dof": float(result.dof),
         "chi2_dof": result.chi2 / result.dof,
@@ -1163,6 +1225,13 @@ def fit_qda_samples(
     prior_width: float,
     svdcut: float,
     posterior_prior_error_scale: float,
+    priors: Mapping[str, Any] | None = None,
+    sample_prior_mode: str = "center_posterior",
+    chained_prior_error_scale: float | None = None,
+    qda_window: dict[str, int] | None = None,
+    qda_windows_by_z: Mapping[str, Any] | None = None,
+    qda_output: str = "ratio",
+    tmd_phase_rotation: bool = False,
     sample_error_mode: str = "covariance",
     workers: int = 1,
     tune_z: int | float | None = None,
@@ -1171,10 +1240,42 @@ def fit_qda_samples(
     _parallel: _ParallelPool | None = None,
 ) -> tuple[EnsembleData | None, dict[str, Any]]:
     """Fit one raw/ratio qDA scope pipeline and return normalized samples."""
+    if qda_output != "ratio":
+        from ._tmdwf import fit_tmdwf_samples
+
+        return fit_tmdwf_samples(
+            correlators,
+            qda_output=qda_output,
+            qda_window=qda_window,
+            qda_windows_by_z=qda_windows_by_z,
+            tmd_phase_rotation=tmd_phase_rotation,
+            fit_scope=fit_scope,
+            components=components,
+            tmin=tmin,
+            tmax=tmax,
+            n_states=n_states,
+            prior_width=prior_width,
+            svdcut=svdcut,
+            posterior_prior_error_scale=posterior_prior_error_scale,
+            priors=priors,
+            sample_prior_mode=sample_prior_mode,
+            sample_error_mode=sample_error_mode,
+            workers=workers,
+            tune_z=tune_z,
+            fit_samples=fit_samples,
+            show_progress=show_progress,
+            _parallel=_parallel,
+        )
+    if qda_window is not None or qda_windows_by_z or tmd_phase_rotation:
+        raise ValueError("qda_window, qda_windows_by_z and tmd_phase_rotation require an explicit TMD qda_output")
     pipeline = parse_fit_scope(fit_scope)
     atom_counts = resolve_atom_n_states(n_states, pipeline)
+    replica_prior_scale = sample_prior_scale(sample_prior_mode, posterior_prior_error_scale)
+    transfer_scale = posterior_prior_error_scale if chained_prior_error_scale is None else chained_prior_error_scale
+    if not np.isfinite(transfer_scale) or transfer_scale <= 0:
+        raise ValueError("chained_prior_error_scale must be finite and positive")
     if not pipeline.is_qda:
-        raise ValueError("qDA fitting requires a qda or qda_ratio atom")
+        raise ValueError("qDA fitting requires a qda or wf_over_2pt atom")
     selected_components = {"real": ("re",), "imag": ("im",), "both": ("re", "im")}.get(components)
     if selected_components is None:
         raise ValueError("components must be real, imag, or both")
@@ -1218,6 +1319,18 @@ def fit_qda_samples(
     if np.any(denominator_values[:, selected] == 0):
         raise ValueError("qDA denominator contains zero values in the fit window")
     raw_scale = _qda_correlator_rescale(np.real(denominator_values[:, selected]))
+    model_prior_names = set(
+        matrix_element_prior(
+            atom_counts,
+            form="Breit",
+            scope=pipeline.atoms,
+            components=selected_components,
+            width_scale=1.0,
+            denominator_kind=denominator_kind,
+        ).keys()
+    )
+    validate_prior_overrides(priors)
+    conditioning = {key: np.sqrt(raw_scale) for key in model_prior_names if key.startswith(("z", "O"))}
     plot_upper = float(extent) / 2.0
     plot_selected = np.flatnonzero((t >= 0.0) & (t <= plot_upper))
     plot_selected = plot_selected[np.all(denominator_values[:, plot_selected] != 0, axis=0)]
@@ -1265,7 +1378,7 @@ def fit_qda_samples(
                 for atom in atoms:
                     if atom == "2pt":
                         pieces.append(np.real(denominator_values[:, selected]) * raw_scale)
-                    elif atom in {"qda", "qda_ratio"}:
+                    elif atom in {"qda", "wf_over_2pt"}:
                         selected_values = (
                             source_values[:, selected, z_index] if atom == "qda" else window_ratios[:, :, z_index]
                         )
@@ -1287,18 +1400,18 @@ def fit_qda_samples(
                     components=selected_components,
                     width_scale=prior_width,
                     denominator_kind=denominator_kind,
+                    priors=priors,
+                    conditioning=conditioning,
                 )
                 fit_prior = (
                     authored_prior
                     if previous_posterior is None
-                    else _overlay_posterior(authored_prior, previous_posterior, posterior_prior_error_scale)
+                    else _overlay_posterior(authored_prior, previous_posterior, transfer_scale)
                 )
                 is_final = stage_index == len(pipeline.stages) - 1
                 sample_priors = (
                     [
-                        None
-                        if posterior is None
-                        else _overlay_posterior(authored_prior, posterior, posterior_prior_error_scale)
+                        None if posterior is None else _overlay_posterior(authored_prior, posterior, transfer_scale)
                         for posterior in previous_sample_posteriors
                     ]
                     if fit_samples and previous_sample_posteriors is not None
@@ -1309,9 +1422,7 @@ def fit_qda_samples(
                     matrix_element_fcn,
                     fit_prior,
                     workers=workers,
-                    sample_prior_scale=(
-                        None if sample_priors is not None else posterior_prior_error_scale * prior_width
-                    ),
+                    sample_prior_scale=(None if sample_priors is not None else replica_prior_scale),
                     sample_priors=sample_priors,
                     sample_error_mode=sample_error_mode,
                     mode="resamples" if fit_samples else "center",
@@ -1332,6 +1443,7 @@ def fit_qda_samples(
                         "Q": result.Q,
                         "logGBF": result.logGBF,
                         "n_data": int(observations.shape[1]),
+                        **prior_diagnostics(fit_prior, priors),
                     }
                 )
             if result is None or fit_prior is None or observations is None:
@@ -1357,7 +1469,7 @@ def fit_qda_samples(
             sample0_plot = None
             if fit_samples and result.sample_posteriors and result.sample_posteriors[0] is not None:
                 posterior = result.sample_posteriors[0]
-                qda_atom = next(atom for atom in pipeline.atoms if atom in {"qda", "qda_ratio"})
+                qda_atom = next(atom for atom in pipeline.atoms if atom in {"qda", "wf_over_2pt"})
                 final_n_states = atom_counts[qda_atom]
                 fit_t = (
                     np.asarray([float(t[selected][0]) - 0.5, float(t[selected][-1]) + 0.5])
@@ -1451,6 +1563,9 @@ def fit_qda_samples(
             parallel.close()
     diagnostics: dict[str, Any] = {
         "fit_scope": pipeline.as_list(),
+        "sample_prior_mode": sample_prior_mode,
+        "posterior_prior_error_scale": posterior_prior_error_scale,
+        "chained_prior_error_scale": transfer_scale,
         "denominator_kind": denominator_kind,
         "correlator_rescale": raw_scale,
         "min_Q": min(record["Q"] for record in fit_metrics),
@@ -1478,6 +1593,9 @@ def fit_qda_samples(
             "tmax": tmax,
             "denominator_kind": denominator_kind,
             "sample_error_mode": sample_error_mode,
+            "sample_prior_mode": sample_prior_mode,
+            "prior_width": prior_width,
+            "chained_prior_error_scale": transfer_scale,
         }
     )
     published_values = (
@@ -1510,7 +1628,7 @@ def matrix_element_samples(
     show_progress: bool = False,
     n_states: Mapping[str, int] | int = 1,
     prior_width: float = 1.0,
-    fit_scope: list[str] | tuple[str, ...] = ("qda_ratio",),
+    fit_scope: list[str] | tuple[str, ...] = ("wf_over_2pt",),
     _parallel: _ParallelPool | None = None,
 ) -> tuple[np.ndarray | None, list[float], dict[str, Any]]:
     """Extract ratio/summation-style matrix-element samples from correlators.
@@ -1524,8 +1642,8 @@ def matrix_element_samples(
     fits remain a constant plateau; multi-state fits use the periodic spectral
     ratio. Independent qDA fits use only the ratio, joint fits include the
     local denominator, and chained fits propagate a denominator-spectrum
-    posterior to the ratio fit. Sample fits always start from the sample-average
-    posterior of the current or preceding stage.
+    posterior to the ratio fit. Sample fits use the authored original or
+    center-posterior mode; chained stages transfer each sample's own posterior.
     """
     from lamet_agent.data import EnsembleData
 
@@ -1547,6 +1665,13 @@ def matrix_element_samples(
             prior_width=prior_width,
             svdcut=float(lsqfit["svdcut"]),
             posterior_prior_error_scale=float(lsqfit["posterior_prior_error_scale"]),
+            priors=lsqfit.get("priors"),
+            sample_prior_mode=lsqfit.get("sample_prior_mode", "center_posterior"),
+            chained_prior_error_scale=lsqfit.get("chained_prior_error_scale"),
+            qda_window=lsqfit.get("qda_window"),
+            qda_windows_by_z=lsqfit.get("qda_windows_by_z"),
+            qda_output=lsqfit.get("qda_output", "ratio"),
+            tmd_phase_rotation=lsqfit.get("tmd_phase_rotation", False),
             sample_error_mode=sample_error_mode,
             workers=workers,
             tune_z=tune_z,

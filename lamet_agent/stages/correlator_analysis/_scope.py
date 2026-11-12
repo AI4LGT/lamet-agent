@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from itertools import product
 
 
-FIT_SCOPE_ORDER = ("2pt", "3pt", "qda", "FH", "3pt_ratio", "self_ratio", "qda_ratio")
+FIT_SCOPE_ORDER = ("2pt", "3pt", "qda", "FH", "3pt_over_2pt", "3pt_over_3pt", "wf_over_2pt", "ff")
 FIT_SCOPE_ATOMS = frozenset(FIT_SCOPE_ORDER)
-QDA_ATOMS = frozenset({"qda", "qda_ratio"})
-ORDINARY_ATOMS = frozenset({"3pt", "3pt_ratio", "self_ratio", "FH"})
+QDA_ATOMS = frozenset({"qda", "wf_over_2pt"})
+ORDINARY_ATOMS = frozenset({"3pt", "3pt_over_2pt", "3pt_over_3pt", "FH"})
 
 
 @dataclass(frozen=True)
@@ -34,6 +34,10 @@ class FitScope:
     @property
     def is_spectrum(self) -> bool:
         return self.stages == (("2pt",),)
+
+    @property
+    def is_form_factor(self) -> bool:
+        return self.stages == (("ff",),)
 
     @property
     def needs_pt3_data(self) -> bool:
@@ -87,11 +91,13 @@ def parse_fit_scope(values: Sequence[str] | Iterable[str]) -> FitScope:
     if atoms.count("2pt") > 1 or ("2pt" in atoms and "2pt" not in stages[0]):
         raise ValueError("2pt may appear once and only in the first chained stage")
     atom_set = set(atoms)
+    if "ff" in atom_set and stages != (("ff",),):
+        raise ValueError("the two-current form-factor scope must be exactly ['ff']")
     if atom_set & QDA_ATOMS and atom_set & ORDINARY_ATOMS:
         raise ValueError("qDA and three-point/FH fit scopes cannot be mixed")
-    if {"qda", "qda_ratio"}.issubset(atom_set):
-        raise ValueError("raw qda and qda_ratio cannot be fitted in the same pipeline")
-    if len(atom_set & {"3pt", "3pt_ratio", "self_ratio"}) > 1:
+    if {"qda", "wf_over_2pt"}.issubset(atom_set):
+        raise ValueError("raw qda and wf_over_2pt cannot be fitted in the same pipeline")
+    if len(atom_set & {"3pt", "3pt_over_2pt", "3pt_over_3pt"}) > 1:
         raise ValueError("raw 3pt and the three-point ratios cannot be fitted in the same pipeline")
     if atom_set == {"2pt"} and stages != (("2pt",),):
         raise ValueError("a 2pt-only fit_scope must be exactly ['2pt']")
@@ -125,9 +131,7 @@ def nstate_key(nstate: Mapping[str, int] | int) -> tuple[tuple[str, int], ...]:
     return (("__scalar__", int(nstate)),)
 
 
-def nstate_combinations(
-    nstate: Mapping[str, Sequence[int]], fit_scope: Sequence[str]
-) -> list[dict[str, int]]:
+def nstate_combinations(nstate: Mapping[str, Sequence[int]], fit_scope: Sequence[str]) -> list[dict[str, int]]:
     """Expand one authored per-atom nstate grid into concrete count mappings."""
     atoms = parse_fit_scope(fit_scope).atoms
     if any("+" in str(key) for key in nstate):

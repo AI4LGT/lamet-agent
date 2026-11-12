@@ -76,11 +76,38 @@ def _valid_nstate_map(value: object) -> bool:
     return True
 
 
+def _time_window(value: dict) -> bool:
+    return (
+        set(value) == {"tmin", "tmax"}
+        and all(isinstance(v, int) and not isinstance(v, bool) for v in value.values())
+        and 0 <= value["tmin"] < value["tmax"]
+    )
+
+
 # ruff: disable[E501]
 # fmt: off
 PARAM_RULES = (
     Recommends("", "analysis_method", physics="Selects whether the job extracts the result with direct nonlinear least-squares or the Lanczos algorithm.", default="lsqfit"),
     Value("analysis_method", Literal["lsqfit", "lanczos"], physics="'lsqfit' fits authored correlator models with sample-wise nonlinear least-squares; 'lanczos' extracts the spectrum or matrix element through the Lanczos algorithm."),
+    Recommends("lsqfit", "qda_window", physics="An explicit independent source window is optional.", default=None),
+    Recommends("lsqfit", "qda_windows_by_z", physics="Optional static coordinate-specific source windows override qda_window for native TMD axial fits.", default={}),
+    Recommends("lsqfit", "qda_output", physics="The usual qDA amplitude convention remains the default.", default="ratio"),
+    Recommends("lsqfit", "tmd_phase_rotation", physics="Raw axial TMDWF phases are opt-in.", default=False),
+    Recommends("lsqfit", "ff_energy_gev", physics="Only the wall-current form factor needs a normalization energy.", default=None),
+    Recommends("lsqfit", "priors", physics="Optional scalar Gaussian overrides use each model's named parameters before numerical conditioning.", default={}),
+    Recommends("lsqfit", "sample_prior_mode", physics="Every correlator fit selects original priors or broadened center-posterior priors for replica fits.", default="center_posterior"),
+    Recommends("lsqfit", "tune_z_values", physics="Authored tuning coordinates make the recommendation optional.", default=None),
+    Recommends("lsqfit", "chained_prior_error_scale", physics="Independent width factor for transferring a preceding fit-stage posterior; omitted retains the legacy posterior_prior_error_scale fallback.", default=None),
+    Value("lsqfit.chained_prior_error_scale", (int, float), physics="Scale applied only when transferring a preceding fit-stage posterior. Omitted uses posterior_prior_error_scale for backward compatibility.", validator=_positive),
+    Value("lsqfit.qda_window", dict, physics="Optional independent nonlocal correlator time window, with inclusive tmin and exclusive tmax.", validator=_time_window),
+    Value("lsqfit.qda_windows_by_z", dict, physics="Native TMD axial fits may map numeric z coordinate strings to {tmin,tmax} windows. Endpoints are inclusive/exclusive; unspecified z use qda_window or the two-point window. Every replica uses the same authored window."),
+    Value("lsqfit.qda_output", Literal["ratio", "tmdwf", "amplitude"], physics="ratio retains the ordinary qDA convention; tmdwf publishes the physical axial matrix element O00/E0; amplitude fits an isolated zero-momentum periodic exponential."),
+    Value("lsqfit.tmd_phase_rotation", bool, physics="Rotate the native longitudinal axial qTMDWF by -i exp(-i P dot z / 2) exactly once before fitting."),
+    Value("lsqfit.ff_energy_gev", (int, float), physics="Pion energy in GeV in the two-current wall-source form-factor normalization.", validator=_positive),
+    Value("lsqfit.priors", dict, physics="Partial parameter-name overrides, each a gvar string such as 1.0(0.3) with finite mean and positive finite sdev, in raw fit-parameter units. log(...) keys use logarithmic means and widths; direct spectrum uses lattice-unit E0,E1,... and raw overlaps z0,z1,... before energy transformation."),
+    Value("lsqfit.sample_prior_mode", Literal["original", "center_posterior"], physics="original reuses the base/authored priors on every replica; center_posterior centers replica priors on the ensemble-center posterior and scales its widths by posterior_prior_error_scale. The covariance and paired resampling remain unchanged."),
+    List("lsqfit.tune_z_values", "z", physics="Authored tuning separations bypass the initial LLM recommendation when fit windows are supplied.", validator=_nonempty_unique),
+    Value("lsqfit.tune_z_values.z", (int, float), physics="A longitudinal lattice separation used to select the fit candidate.", validator=_finite),
     Provides("", "lsqfit", "analysis_method", physics="The least-squares branch owns spectral and matrix-element candidate fitting."),
     Provides("", "lanczos", "analysis_method", physics="The Lanczos algorithm owns Krylov analysis and nested resampling."),
     Depends("", "component", physics="The fit needs an explicit real, imaginary, or complex channel selection."),
@@ -88,19 +115,19 @@ PARAM_RULES = (
     Depends("lsqfit", "nstate", physics="Each correlator atom in fit_scope needs its own candidate state-count list so joint or chained stages can assign different truncations to different correlators."),
     Depends("lanczos", "nstate", physics="Lanczos uses one authored exported Ritz-state count and infers its internal order."),
     List("lsqfit.fit_scope", "scope", physics="The ordered entries form chained fit stages; atoms joined with '+' inside one entry share a correlated joint likelihood.", validator=_nonempty),
-    Value("lsqfit.fit_scope.scope", str, physics="Each list entry is one joint fit stage whose atoms are separated by '+'. List order denotes chained posterior propagation. Supported atoms are 2pt, 3pt, qda, FH, 3pt_ratio, self_ratio, and qda_ratio; a self_ratio scope uses the likelihood C3(z,Pz,t,tau)/C3(0,Pz,t,tau) and publishes h_B(z)/h_B(0).", validator=valid_scope_stage),
+    Value("lsqfit.fit_scope.scope", str, physics="Each list entry is one joint fit stage whose atoms are separated by '+'. List order denotes chained posterior propagation. Supported atoms are 2pt, 3pt, qda, FH, 3pt_over_2pt, 3pt_over_3pt, and wf_over_2pt; a 3pt_over_3pt scope uses the likelihood C3(z,Pz,t,tau)/C3(0,Pz,t,tau) and publishes h_B(z)/h_B(0).", validator=valid_scope_stage),
     Depends("lsqfit", "fitting_form", physics="The matrix-element model needs a forward or non-forward spectral decomposition selected by the kinematics."),
     Recommends("lsqfit", "prior_width", physics="A default prior scale is needed to set the uncertainty of underconstrained spectral and matrix-element parameters; the default is deliberately loose, and a self-ratio scope with no two-point block leaves the excited-state sector and the overall overlap scale weakly constrained.", default=[1.0]),
     Depends("lsqfit", "model_average", physics="At a fixed data window and fit-scope pipeline, false publishes the selected nstate/prior-width model; true forms per-resample, per-z logGBF-weighted means over those models."),
     Depends("lsqfit", "pt2_windows", physics="Two-point spectrum information needs candidate time windows chosen from the observed signal and uncertainty.", null_hook=recommend_pt2_windows),
     Depends("lsqfit", "pt3_windows", physics="Three-point, self-ratio, and Feynman-Hellmann observables need candidate source-sink and insertion-time windows.", null_hook=recommend_pt3_windows),
     Recommends("lsqfit", "svdcut", physics="Correlated fits need a relative covariance singular-value cutoff to suppress numerically unresolved directions.", default=1e-12),
-    Depends("lsqfit", "posterior_prior_error_scale", physics="The fit needs a scale for propagating prior uncertainty; chained fits also use it to widen the preceding spectrum posterior."),
+    Recommends("lsqfit", "posterior_prior_error_scale", physics="Width factor for center_posterior replica priors, independent of prior_width. Chained transfers use this only when chained_prior_error_scale is omitted.", default=10.0),
     Depends("lsqfit", "q_min", physics="Candidate comparison needs a preferred fit-quality probability; after recommendation retries are exhausted, selection falls back across all retained numerical candidates."),
-    Value("lsqfit.nstate", dict, physics="A mapping from each correlator atom in fit_scope to the positive state counts scanned for that correlator. Keys must be atoms such as 2pt, 3pt_ratio, or self_ratio, never a joint '+' stage string.", validator=_valid_nstate_map),
+    Value("lsqfit.nstate", dict, physics="A mapping from each correlator atom in fit_scope to the positive state counts scanned for that correlator. Keys must be atoms such as 2pt, 3pt_over_2pt, or 3pt_over_3pt, never a joint '+' stage string.", validator=_valid_nstate_map),
     List("lanczos.nstate", "state_count", physics="Lanczos exports one authored Ritz-state count.", validator=_nonempty),
     List("lsqfit.prior_width", "width", physics="Multiple prior widths let the candidate scan test prior sensitivity.", validator=_nonempty),
-    List("lsqfit.pt2_windows", "window", physics="Multiple two-point windows let the candidate scan test fit-range stability.", validator=_nonempty),
+    List("lsqfit.pt2_windows", "window", physics="Multiple two-point windows let the candidate scan test fit-range stability; the wall-current ff scope has no spectral two-point window."),
     Depends("lsqfit.pt2_windows.window", "tmin", physics="A two-point fit window requires a lower endpoint."),
     Value("lsqfit.pt2_windows.window.tmin", int, physics="The starting Euclidean lattice-time coordinate of the two-point correlator fit; it must be a nonnegative integer.", validator=_nonnegative),
     Depends("lsqfit.pt2_windows.window", "tmax", physics="A two-point fit window requires an upper endpoint."),
@@ -117,11 +144,11 @@ PARAM_RULES = (
     Recommends("lanczos", "final_iteration", physics="The published three-point matrix uses the final Lanczos iteration; omitted values follow korr_dev and select the second-to-last usable iteration.", default=None),
     Value("component", Literal["re", "im", "both"], physics="'re' selects the real channel, 'im' the imaginary channel, and 'both' fits both channels."),
     Value("lanczos.nstate.state_count", int, physics="The number of exported Ritz states; it must be a positive integer.", validator=_positive),
-    Value("lsqfit.prior_width.width", float, physics="The scale of Gaussian prior uncertainties for a fit candidate; it must be a positive floating-point value. It scales every authored prior: matrix elements and self-ratio denominators at 10x, spectral overlaps at 10x/3^state, log energy splittings at 1x, and log ground energies at 3x. It also multiplies the per-sample prior scale, so tightening it both raises the centre fit's cost on underconstrained directions and pins the resample fits closer to the centre posterior.", validator=_positive),
+    Value("lsqfit.prior_width.width", (int, float), physics="Positive factor applied exactly once to the sdev of every base or authored prior. It changes no means and does not additionally scale posterior-derived replica or chained priors.", validator=_positive),
     Value("lsqfit.model_average", bool, physics="false publishes the window-selected nstate/prior-width model; true forms per-resample, per-z normalized exp(logGBF-max(logGBF)) means over nstate and prior_width at that frozen window, strategy, and scope, without Q filtering. Between-model spread of center values is recorded separately and is not mixed into the resampled samples."),
     Value("lsqfit.fitting_form", Literal["Breit", "NonBreit"], physics="'Breit' is the equal-momentum forward decomposition; 'NonBreit' is the distinct source/sink momentum decomposition."),
     Value("lsqfit.svdcut", (int, float), physics="The relative covariance singular-value cutoff used to stabilize correlated fits; it must be finite and positive.", validator=_positive),
-    Value("lsqfit.posterior_prior_error_scale", (int, float), physics="The factor used to widen propagated posterior or prior uncertainties; it must be finite and positive.", validator=_positive),
+    Value("lsqfit.posterior_prior_error_scale", (int, float), physics="Finite positive factor for center_posterior replica prior widths. Also the legacy fallback when chained_prior_error_scale is omitted; prior_width never multiplies this factor.", validator=_positive),
     Value("lsqfit.q_min", (int, float), physics="The preferred fit-quality probability Q for acceptance; after recommendation retries are exhausted, a finite-Q candidate may be selected below it from all retained attempts.", validator=_unit_interval),
     Value("lanczos.scope", Literal["2pt_spectrum", "3pt_matrix"], physics="'2pt_spectrum' extracts a two-point spectrum; '3pt_matrix' extracts a three-point matrix element with the Lanczos algorithm."),
     Value("lanczos.inner_samples", int, physics="The number of inner bootstrap replicas used for each outer sample; it must be a positive integer.", validator=_positive),
@@ -157,7 +184,7 @@ def check_method_family(context: CheckContext) -> Issue | None:
         return Issue(
             "nstate",
             "keys must match the correlator atoms in fit_scope",
-            "Each atom such as 2pt or 3pt_ratio needs its own nstate list; joint stage strings are not keys.",
+            "Each atom such as 2pt or 3pt_over_2pt needs its own nstate list; joint stage strings are not keys.",
         )
     return None
 
@@ -170,19 +197,23 @@ def check_lsqfit_windows(context: CheckContext) -> Issue | None:
         scope = parse_fit_scope(lsqfit["fit_scope"])
     except (TypeError, ValueError):
         return None
-    if scope.needs_pt3_data and not lsqfit.get("pt3_windows"):
+    if not scope.is_form_factor and lsqfit.get("pt2_windows") == []:
+        return Issue(
+            "pt2_windows", "must contain at least one window", "This scope fits a time-dependent two-point spectrum."
+        )
+    if (scope.needs_pt3_data or scope.is_form_factor) and not lsqfit.get("pt3_windows"):
         return Issue(
             "pt3_windows",
             "is required for three-point, self-ratio, and FH fit scopes",
             "The matrix-element fitter needs authored source-sink and insertion-time candidates.",
         )
-    nonbreit_atoms = scope.atom_set & {"3pt", "3pt_ratio", "self_ratio"}
+    nonbreit_atoms = scope.atom_set & {"3pt", "3pt_over_2pt", "3pt_over_3pt"}
     if lsqfit["fitting_form"] == "NonBreit" and (
-        not nonbreit_atoms or scope.atom_set - {"2pt", "3pt", "3pt_ratio", "self_ratio"}
+        not nonbreit_atoms or scope.atom_set - {"2pt", "3pt", "3pt_over_2pt", "3pt_over_3pt"}
     ):
         return Issue(
             "fit_scope",
-            "NonBreit requires a raw 3pt, 3pt_ratio, or self_ratio path and permits only an accompanying 2pt atom",
+            "NonBreit requires a raw 3pt, 3pt_over_2pt, or 3pt_over_3pt path and permits only an accompanying 2pt atom",
             "qDA and FH models currently use the forward spectral decomposition.",
         )
     for index, window in enumerate(lsqfit.get("pt2_windows") or []):
@@ -208,6 +239,56 @@ def check_lsqfit_windows(context: CheckContext) -> Issue | None:
             "tau_cut values must be unique",
             "The fit tool identifies each authored three-point window by its insertion cut.",
         )
+    return None
+
+
+def check_tmd_modes(context: CheckContext) -> Issue | None:
+    params = context.params
+    if params.get("analysis_method") != "lsqfit":
+        return None
+    try:
+        scope = parse_fit_scope(params["fit_scope"])
+    except (TypeError, ValueError):
+        return None
+    mode = params.get("qda_output", "ratio")
+    from lamet_agent.stages.correlator_analysis._qda_windows import validate_qda_windows
+
+    try:
+        by_z = validate_qda_windows(params.get("qda_windows_by_z"))
+    except ValueError as exc:
+        return Issue("qda_windows_by_z", str(exc), "Each static override names one physical z coordinate.")
+    if by_z and mode == "ratio":
+        return Issue(
+            "qda_windows_by_z", "requires an explicit TMD qda_output",
+            "Coordinate-specific source windows currently apply to native axial TMD fits.",
+        )
+    if mode != "ratio" and not scope.is_qda:
+        return Issue("qda_output", "requires a qda fit scope", "TMD axial amplitudes use nonlocal two-point data.")
+    if mode == "tmdwf" and scope.stages != (("2pt", "qda"),) and scope.stages != (("qda", "2pt"),):
+        return Issue("fit_scope", "tmdwf requires a joint 2pt+qda fit", "A shared overlap fixes the axial amplitude.")
+    if mode == "amplitude" and (scope.stages != (("qda",),) or params["nstate"].get("qda") != [1]):
+        return Issue(
+            "fit_scope",
+            "amplitude requires qda with nstate={qda:[1]}",
+            "The p0 reference is a single periodic exponential.",
+        )
+    if scope.is_form_factor:
+        if params.get("model_average"):
+            return Issue(
+                "model_average",
+                "ff currently requires false",
+                "The central wall-current extraction selects one authored model.",
+            )
+        if params.get("component") != "re" or params["nstate"].get("ff") not in ([1], [2]):
+            return Issue(
+                "nstate", "ff requires component=re and one state-count choice [1] or [2]", "The wall ratio is real."
+            )
+        if params.get("ff_energy_gev") is None:
+            return Issue(
+                "ff_energy_gev", "is required for ff", "The wall-source normalization requires the pion energy."
+            )
+        if any(t % 2 for w in params.get("pt3_windows", []) for t in w["tsep_ls"]):
+            return Issue("pt3_windows", "ff requires even tsep", "The denominator is evaluated at t=tsep/2.")
     return None
 
 
@@ -248,6 +329,26 @@ def check_lanczos_branch(context: CheckContext) -> Issue | None:
     return None
 
 
+def check_prior_controls(context: CheckContext) -> Issue | None:
+    """Validate Gaussian definitions while allowing parameters unused by a candidate."""
+    if context.params.get("analysis_method") != "lsqfit":
+        return None
+    from lamet_agent.stages._priors import validate_prior_overrides
+
+    try:
+        validate_prior_overrides(context.params.get("priors"))
+    except ValueError as exc:
+        return Issue("priors", str(exc), "Each model parameter needs a finite scalar mean and positive scalar width.")
+    return None
+
+
 JOB_RULES = stage_job_rules(PARAM_RULES, INPUT_RULES)
 
-CHECKS = (check_method_family, check_lanczos_branch, check_lsqfit_windows, check_qda_scope)
+CHECKS = (
+    check_method_family,
+    check_lanczos_branch,
+    check_lsqfit_windows,
+    check_qda_scope,
+    check_tmd_modes,
+    check_prior_controls,
+)

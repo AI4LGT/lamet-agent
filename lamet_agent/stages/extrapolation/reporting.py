@@ -308,8 +308,9 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
                 "| `x_independent_terms` | Correction coefficients shared across the complete $x$ grid. |",
                 "| `x_dependent_terms` | Correction coefficients fitted independently at every $x$. |",
                 "| `x_covariance` | Whether cross-x covariance is retained within each ensemble source. |",
-                ("| `priors` | One common numerical Gaussian mean and width used for $h_0$ and all "
-                 "correction coefficients in their native units. |"),
+                ("| `priors` | Named Gaussian overrides for $h_0$ and correction coefficients; "
+                 "missing parameters use N(0,3²). A common "
+                 "gvar string such as `0.0(3.0)` applies to all parameters in their native units. |"),
                 ("| `posterior_prior_error_scale` | Multiplier applied to center-fit posterior widths "
                  "when seeding resample fits. |"),
                 ("| `pdep_gev` | Requested momenta for the post-fit diagnostic only; it does not select "

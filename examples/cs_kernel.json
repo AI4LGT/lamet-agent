@@ -1,0 +1,16 @@
+{
+  "analysis": "CS_kernel",
+  "two_point_h5": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+  "native_template": "c32p23_native_p4_p1_2_b1_agent.json",
+  "output_directory": "../runs/CS_kernel",
+  "b_lattice": [3],
+  "pairs": "all",
+  "matching": {
+    "mu": 2.0,
+    "alpha_s": 0.293,
+    "sign": 1,
+    "x_window": {"start": 0.3, "stop": 0.7},
+    "convention": "author",
+    "logarithm": "expanded"
+  }
+}

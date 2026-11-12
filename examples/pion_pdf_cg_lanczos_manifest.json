@@ -107,7 +107,7 @@
         }
       ]
     },
-    "perturbative_matching": {
+    "matching": {
       "defaults": {
         "order": "nlo",
         "resummation": "rgr",

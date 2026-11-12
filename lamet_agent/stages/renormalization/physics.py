@@ -6,22 +6,24 @@ import math
 import hashlib
 import json
 from dataclasses import dataclass
+from numbers import Real
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 import gvar as gv
 import numpy as np
 
-from lamet_agent.data import EnsembleData
+from lamet_agent.data import EnsembleData, align_sample_lineage, merge_sample_lineage
 from lamet_agent.kernels.implementation import HBAR_C_GEV_FM
 from lamet_agent.parallel import nonlinear_fit
+from lamet_agent.stages._priors import merge_priors, prior_diagnostics
 
 
 @dataclass(frozen=True)
 class _FactorFitResult:
     factor: EnsembleData
     plot_data: dict[str, Any]
-    fit_quality: dict[str, dict[str, float]]
+    fit_quality: dict[str, dict[str, Any]]
 
 
 def load_data(value: Any) -> EnsembleData:
@@ -47,19 +49,16 @@ def physical_z_coordinates(data: EnsembleData) -> EnsembleData:
         raise ValueError("renormalization input requires coord_unit='fm' or 'lattice'")
     if coord_unit == "fm":
         return data
-    spacing = float(data.ensemble.a_s)
+    spacing = float(attrs.get("bz_step_fm", data.ensemble.a_s))
+    if not math.isfinite(spacing) or spacing <= 0:
+        raise ValueError("the physical longitudinal displacement step must be positive")
     coords = data.coords
     coords["z"] = [float(value) * float(spacing) for value in coords["z"]]
     attrs.update({"coord_unit": "fm", "input_coord_unit": "lattice"})
-    return EnsembleData(
-        data.ensemble,
-        data.resample,
-        [np.asarray(sample) for sample in data.values],
-        data.dims,
-        coords,
-        attrs=attrs,
-        name=data.name,
-    )
+    converted = data.copy()
+    converted.array = converted.array.assign_coords(z=coords["z"])
+    converted.array.attrs.update(attrs)
+    return converted
 
 
 def divide_by_constant(target: EnsembleData, denominator: float) -> EnsembleData:
@@ -82,6 +81,11 @@ def divide_by_constant(target: EnsembleData, denominator: float) -> EnsembleData
 
 def ratio(target: EnsembleData, denominator: EnsembleData) -> EnsembleData:
     """Apply the pointwise complex ratio on the complete physical grid."""
+    if target.attrs.get("resample_lineage") or denominator.attrs.get("resample_lineage"):
+        lineage = merge_sample_lineage(target, denominator)
+        result = target.div(denominator).copy()
+        result.array.attrs.update(lineage)
+        return result
     if (
         target.attrs.get("resample_id")
         and denominator.attrs.get("resample_id")
@@ -91,6 +95,87 @@ def ratio(target: EnsembleData, denominator: EnsembleData) -> EnsembleData:
     if target.resample != denominator.resample or target.n_sample != denominator.n_sample:
         raise ValueError("target and denominator must use the same resampling mode and sample count")
     return target.div(denominator).copy()
+
+
+def tmd_ratio(
+    target: EnsembleData, denominator: EnsembleData, *, operation: str, projection: str = "preserve"
+) -> EnsembleData:
+    """Normalize fixed replicas, optionally projecting the resulting ratio onto its real part."""
+    if operation not in {"normalize_wf", "reference", "apply"}:
+        raise ValueError("unknown TMD ratio operation")
+    if projection not in {"preserve", "real"}:
+        raise ValueError("TMD ratio projection must be preserve or real")
+    target = physical_z_coordinates(target)
+    denominator = physical_z_coordinates(denominator)
+    if operation in {"normalize_wf", "reference"}:
+        momenta = []
+        for role, data in (("target", target), ("local", denominator)):
+            if data.attrs.get("observable") != "tmdwf":
+                raise ValueError(f"TMD {operation} requires attrs.observable='tmdwf' on the {role} input")
+            momentum = data.attrs.get("momentum_gev")
+            if isinstance(momentum, bool) or not isinstance(momentum, Real) or not np.isfinite(momentum):
+                raise ValueError(f"TMD {operation} requires finite numeric momentum_gev on the {role} input")
+            momenta.append(float(momentum))
+        if operation == "normalize_wf":
+            if any(momentum <= 0 for momentum in momenta) or not np.isclose(
+                momenta[0], momenta[1], rtol=1e-12, atol=1e-12
+            ):
+                raise ValueError("TMD wavefunction and local current require the same positive momentum")
+        elif any(not np.isclose(momentum, 0.0, rtol=0.0, atol=1e-12) for momentum in momenta):
+            raise ValueError("the TMD reference requires zero momentum on both target and local inputs")
+        if "z" in denominator.dims:
+            origins = [z for z in denominator.coords["z"] if np.isclose(z, 0.0, rtol=0.0, atol=1e-12)]
+            if len(origins) != 1:
+                raise ValueError("the local current requires exactly one z=0 coordinate")
+            denominator = denominator.at("z", origins[0])
+        if denominator.dims:
+            raise ValueError("the local-current normalization must be scalar at fixed bT")
+        if not np.isclose(float(denominator.attrs.get("bT_fm", 0.0)), 0.0, atol=1e-12):
+            raise ValueError("the local-current normalization requires bT=0")
+        # The centered pion's local axial matrix element is real. Retain its
+        # replica fluctuations, but do not rotate the nonlocal WF by the local
+        # imaginary noise when both components were fitted jointly.
+        denominator = denominator.real
+    if operation == "reference":
+        origins = [z for z in target.coords.get("z", []) if np.isclose(z, 0.0, rtol=0.0, atol=1e-12)]
+        if len(origins) != 1:
+            raise ValueError("the TMD reference requires exactly one z=0 coordinate")
+        target = target.at("z", origins[0])
+        target = target.real
+    if operation == "apply" and denominator.dims == ["bT"]:
+        b = float(target.attrs["bT_fm"])
+        coordinates = [value for value in denominator.coords["bT"] if np.isclose(value, b, atol=1e-12)]
+        if len(coordinates) != 1:
+            raise ValueError("TMD reference does not cover the target transverse displacement")
+        denominator = denominator.at("bT", coordinates[0])
+    if operation == "apply" and denominator.dims:
+        raise ValueError("the TMD ratio denominator must be scalar at fixed bT")
+    if operation == "apply" and "bT_fm" in denominator.attrs and "bT_fm" in target.attrs:
+        if not np.isclose(float(denominator.attrs["bT_fm"]), float(target.attrs["bT_fm"]), atol=1e-12):
+            raise ValueError("the TMD reference and target must have the same transverse displacement")
+    if not np.all(np.isfinite(denominator.values)) or np.any(np.abs(denominator.values) == 0):
+        raise ValueError("TMD ratio denominator contains a nonfinite or zero sample")
+    target, denominator = align_sample_lineage(target, denominator)
+    lineage = merge_sample_lineage(target, denominator)
+    result = target.div(denominator)
+    if not np.all(np.isfinite(result.values)):
+        raise ValueError("TMD ratio produced nonfinite samples")
+    if projection == "real":
+        # The packet's WF prescription discards Im only after the complex
+        # ratio. Preserve its complex storage with an exactly zero Im channel;
+        # the real samples and their full normalization covariance are intact.
+        result.array.data = result.values.real.astype(result.values.dtype)
+        result.array.attrs["output_component"] = "re"
+    result.array.attrs.update({
+        **lineage, "renormalization_scheme": "ratio", "strategy": "tmd_ratio",
+        "operation": operation, "coord_unit": "fm", "renormalization_projection": projection,
+        "minimum_denominator_absolute": float(np.min(np.abs(denominator.values))),
+        "units": json.dumps({"values": "dimensionless", **{dim: "fm" for dim in result.dims}}),
+    })
+    if operation in {"normalize_wf", "reference"}:
+        result.array.attrs["local_normalization_component"] = "re"
+    result.array.name = "tmd_reference" if operation == "reference" else "renormalized_matrix_element"
+    return result
 
 
 def normalize_at_origin(data: EnsembleData) -> EnsembleData:
@@ -252,6 +337,7 @@ def _fit_factor_result(
     zms_kernel: Callable[..., Any],
     kernel_id: str,
     svdcut: float,
+    priors: Mapping[str, Any] | None = None,
     kernel_parameters: Mapping[str, Any] | None = None,
     short_distance_min_fm: float = 0.0,
     lattice_spacing_range_fm: tuple[float, float] | None = None,
@@ -295,6 +381,7 @@ def _fit_factor_result(
     for coordinate in z:
         prior[f"g{coordinate}"] = gv.gvar(0.0, 20.0)
         prior[f"f1{coordinate}"] = gv.gvar(0.0, 5.0)
+    prior = merge_priors(prior, priors)
     fit_x = {"z": [], "a": []}
     for spacing in spacings:
         for coordinate in z:
@@ -353,6 +440,7 @@ def _fit_factor_result(
     m0_prior = gv.BufferDict()
     m0_prior["m0"] = gv.gvar(0.0, 20.0)
     m0_prior["b"] = gv.gvar(0.0, 100.0)
+    m0_prior = merge_priors(m0_prior, priors)
     m0_fit = nonlinear_fit(
         data=(short_z, short_g_data),
         prior=m0_prior,
@@ -468,6 +556,7 @@ def _fit_factor_result(
     }
     fit_quality = {
         "reference": {
+            **prior_diagnostics(prior, priors),
             "chi2": float(fit.chi2),
             "dof": float(fit.dof),
             "chi2_dof": float(fit.chi2 / fit.dof) if fit.dof else float("nan"),
@@ -475,6 +564,7 @@ def _fit_factor_result(
             "logGBF": float(fit.logGBF),
         },
         "m0_matching": {
+            **prior_diagnostics(m0_prior, priors),
             "chi2": float(m0_fit.chi2),
             "dof": float(m0_fit.dof),
             "chi2_dof": float(m0_fit.chi2 / m0_fit.dof) if m0_fit.dof else float("nan"),
@@ -497,6 +587,7 @@ def fit_factor(
     zms_kernel: Callable[..., Any],
     kernel_id: str,
     svdcut: float,
+    priors: Mapping[str, Any] | None = None,
     short_distance_min_fm: float = 0.0,
     lattice_spacing_range_fm: tuple[float, float] | None = None,
     sample_error_mode: str = "covariance",
@@ -513,6 +604,7 @@ def fit_factor(
         zms_kernel=zms_kernel,
         kernel_id=kernel_id,
         svdcut=svdcut,
+        priors=priors,
         short_distance_min_fm=short_distance_min_fm,
         lattice_spacing_range_fm=lattice_spacing_range_fm,
         sample_error_mode=sample_error_mode,

@@ -132,7 +132,16 @@ def _method_text(records: tuple[StageReportRecord, ...]) -> list[str]:
     blocks: list[str] = []
     for scheme, strategy in sorted(combinations):
         scheme_label = _SCHEME_LABELS.get(str(scheme), str(scheme))
-        if strategy == "self_renormalization":
+        if strategy == "tmd_ratio":
+            title = "Coulomb-gauge TMD ratio normalization"
+            formula = (
+                "Wavefunctions are divided by the local matrix element at the same momentum. "
+                "The transverse reference is the zero-momentum ratio at longitudinal separation z=0, "
+                "normalized by its bT=0 value. Reference application divides each replica by this "
+                "sample-bearing scalar. Shared bootstrap groups retain their correlations across all jobs; "
+                "independent groups use separate random streams within one common replica frame."
+            )
+        elif strategy == "self_renormalization":
             title = f"Self-renormalization ({scheme_label} prescription)"
             formula = _SELF_HYBRID if scheme == "hybrid" else _SELF_MSBAR if scheme == "msbar" else _SELF_RATIO
         else:
@@ -317,6 +326,8 @@ def _range_text(values: Any, symbol: str) -> str:
 
 
 def _coverage_text(record: StageReportRecord, diagnostics: dict[str, Any]) -> str:
+    if record.params.get("operation") == "reference":
+        return f"z = 0; bT = {format_value(output_attrs(record).get('bT_fm'))} fm"
     z_range = diagnostics.get("z_range_fm")
     z_count = diagnostics.get("z_count")
     if z_range is None and hasattr(record.output, "coords"):
@@ -333,6 +344,8 @@ def _coverage_text(record: StageReportRecord, diagnostics: dict[str, Any]) -> st
 
 
 def _operation_label(record: StageReportRecord) -> str:
+    if record.params.get("strategy") == "tmd_ratio":
+        return str(record.params["operation"])
     if record.params["type"] == "fit":
         return "Extract reusable self-renormalization factor"
     return "Renormalize target matrix element"
@@ -350,6 +363,8 @@ def _sample_count(record: StageReportRecord, diagnostics: dict[str, Any]) -> Any
 
 def _prescription_label(record: StageReportRecord) -> str:
     scheme = _SCHEME_LABELS.get(str(record.params.get("scheme")), str(record.params.get("scheme")))
+    if record.params.get("strategy") == "tmd_ratio":
+        return "CG TMD ratio"
     if record.params.get("strategy") == "self_renormalization":
         return f"Self-renormalization, {scheme}"
     return f"External denominator, {scheme}"

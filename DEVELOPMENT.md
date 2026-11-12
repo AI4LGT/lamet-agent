@@ -6,6 +6,13 @@ extension protocols, and ends with the expected change and verification
 workflow. Installation, command-line use, manifests, and data formats are
 documented in [`README.md`](README.md).
 
+Prior configuration, model parameter lists, and correlator-specific controls
+are documented in [Configurable fit priors](docs/fit-priors.md).
+`stages/_priors.py` parses gvar strings and merges named Gaussian overrides independently
+of the model. Stage code owns default priors, units, transformations, and
+posterior transfer; missing defaults retain their original covariance, while
+scalar overrides of array parameters create independent Gaussian elements.
+
 ## Contents
 
 - Understand the system: [Architecture](#architecture),
@@ -309,7 +316,7 @@ collisions, and record downstream mappings in `state`.
 
 ### Workflow and artifacts
 
-The five standard numerical stages are listed in `_WORKFLOW_STAGES` in
+The standard numerical stages are listed in `_WORKFLOW_STAGES` in
 `agent.py`. Their `workflow.py` exports:
 
 ```python
@@ -352,6 +359,95 @@ sequence is:
 
 The ordered keys under `manifest.stages` define execution order. No central
 stage registry owns that order, and a stage must not depend on a later job.
+
+Matching is owned by `stages/matching/` and uses `matching` consistently in
+manifests, systematics, provenance, and literature stage tags. The former
+`perturbative_matching` package and stage identifier have no compatibility alias.
+
+`soft_analysis` is an executable numerical stage with CS-kernel and intrinsic-soft
+job types. It consumes earlier Fourier/FF jobs, and intrinsic-soft jobs also
+consume an earlier CS job in the same stage. Matching can reuse all three
+branches without changes to ordered DAG scheduling. Empty soft job lists remain
+valid for compatibility.
+
+TMD conventions are owned by the relevant numerical stages. The generic target
+`tmd` enables per-job `tmdwf`/`tmdpdf` routing. The shared dispatcher
+`kernels/tmd/coefficients.py` selects the unchanged fixed-order `cg_nlo.py` or
+tree-boundary NLL `cg_nll.py`. Soft analysis and multiplicative TMD matching use
+the same validated coefficient provenance, including running coupling and
+infrared prescription; mismatched soft inputs fail instead of mixing orders.
+Keep transverse coordinates in fm and retain the underlying ensemble spacing:
+an off-axis displacement changes the coordinate step, not a_s.
+
+TMD Fourier jobs author their projection independently of perturbative order.
+`projection="real_even"` remains the default and preserves the previous
+centered-WF/valence-PDF calculation. PDF-only `projection="hermitian"` applies
+the full real-even/imaginary-odd completion, producing
+`Re(h) cos(x P z) + Im(h) sin(x P z)` for the declared negative Fourier phase.
+It requires input `attrs.output_component="both"`; a previously projected
+real-only artifact must fail rather than silently provide an absent imaginary
+channel. Preserve `fourier_projection`, `source_component`, phase sign and
+`sector` (`full` versus PDF `valence`) in downstream artifacts and reports.
+
+The saved TMD packet has different PDF projections across momenta: P3/P4 use
+the full Hermitian transform, whereas P5 uses the real-even projection. The
+NLL example therefore sets P3/P4 correlator `component="both"` and corresponding
+Fourier `projection="hermitian"`; P5 explicitly retains `real_even`. Keep those
+observable/sector distinctions when comparing or grouping outputs. A common
+`flavor_factor=2` does not make full-channel and valence projections identical;
+do not average those three momenta as interchangeable valence determinations.
+This projection choice does not change the 0.06 fm lattice spacing or the
+off-axis geometry, and the original NLO manifest remains unchanged.
+
+NLL uses the reference analytic NNLO running-coupling convention with three
+flavors, one-loop noncusp and two-loop cusp anomalous dimensions for the hard
+coefficient, and the Appendix A Sudakov integral. `infrared_policy="error"`
+rejects a running-coupling pole before integration. `freeze` requires an explicit
+`freeze_scale_gev` and floors the natural/evolution scale, including its boundary
+and logarithms; it is a declared model choice. `reference_quad` preserves the
+historical integration variable and QUADPACK tolerance, recording pole crossings,
+warnings and estimated errors. A finite historical quadrature return does not
+define a convergent infrared integral. Cache scalar Sudakov evaluations and the
+deterministic double-integration kernel; do not repeat them for every replica.
+
+Reference soft choices are explicit job parameters: `evolution_cs="quasi_ratio"`
+reconstructs the uncorrected ratio from the same CS replicas and saved hard
+correction; `sudakov_momentum="quasi"` chooses the source WF momentum independently
+of the FF target in rapidity evolution. `endpoint_fit_points_per_window` and
+`endpoint_central_points` request interpolation grids. The optional
+`endpoint_covariance="reference_cs_diagonal"` retains quasi covariance and adds
+the CS uncertainty diagonally **only in the fit metric**. Every fit and later
+stage still propagates the aligned shared jackknife rows, preserving CS/WF/soft
+cross-correlations. It does not discard correlations between correlator tsep
+blocks or create independent CS replicas.
+
+The original NLO example remains unchanged. The separate
+`examples/pion_tmd_cg_nll_manifest.json` authors the reference choices with 20
+points per shoulder (40 total), 100 central points, and `reference_quad`, and
+contains all 516 raw-data numerical jobs without a Review stage. Numerical
+order, statistical provenance, infrared diagnostics and reference-specific
+choices must remain visible in reports and artifacts.
+
+The TMD example uses the shared correlator prior controls. Priors are authored
+in physical parameter units and conditioned only by the fitter. Original-mode
+replica fits reuse those priors; a chained spectral posterior is a separate
+input with its own width scale. Keep reference-specific choices in job parameters
+and diagnostics, rather than adding a second prior API for TMD.
+
+Review audits the complete upstream provenance graph while sending bounded
+numerical evidence for the selected jobs. Each stage also exposes fit-quality
+totals across every job, including unselected jobs, with bounded affected-job
+lists and explicit missing-data counts. TMD evidence includes all center-fit
+quality counts, soft replica quantiles, endpoint-fit quality, quadrature
+convergence, and momentum consistency. The catalog classifies TMD under
+`kinematic_dependence`; Review must recognize that convention when the workflow
+target is `tmd`. Soft auxiliaries can join WF and PDF valence ensembles sharing
+lattice geometry, but a quasi distribution must retain its own operator and
+momentum through matching.
+
+The runner passes a per-stage `state["stage_shared"]` mapping to each job. The
+correlator stage uses it to prepare and cache explicit configuration-group masks
+before the first fit. This cache owns preprocessing metadata, not job outputs.
 
 ## LLM extension points
 
@@ -541,6 +637,36 @@ standard-deviation variables and reconstructed on load.
 - stage provenance belongs in JSON-compatible attrs and must be preserved when a
   transformation does not intentionally change it.
 
+Explicit TMD bootstrap groups derive independent seeds from the run seed and
+group name. `replica_frame_id` identifies the run-wide replica frame;
+`resample_lineage` maps each contributing group to its sampling-plan hash.
+`merge_sample_lineage` validates overlapping plans and retains correlations when
+a branch is reused. Do not redraw derived distributions or drop replicas.
+Group identity is distinct from valence-ensemble identity: two valence masses
+may share gauge configurations, while a smaller unknown subset is modeled as
+an independent group. Existing untracked workflows retain their prior behavior.
+
+Tracked jackknife groups retain their native delete-one rows during fitting.
+`align_sample_lineage` expands independent groups into sorted contiguous blocks
+only when their branches meet, holding absent groups at their native jackknife
+means and appending one central evaluation row. `jackknife_groups` records bin
+counts; `jackknife_layout` marks this combined representation. The central row
+is propagated through nonlinear operations and excluded from the covariance.
+For each group, covariance contributes `(N_g-1)/N_g` times the centered sum of
+outer products in that group's block. `sample_mean`, `sample_covariance`, and
+`sample_sdev` implement these conventions; downstream code must use them instead
+of a single total-replica jackknife factor. No bias correction or random redraw
+is applied. Review validates group counts, plan hashes and canonical block order
+across expansions. Native same-group and untracked workflows retain their
+existing representation. Percentile error bands are not defined for mixed
+jackknife blocks.
+
+TMD WF jobs may author `qda_windows_by_z`, a numeric-coordinate string mapping
+to half-open time windows, with `qda_window` as the fallback. The fitter and
+the common configuration preflight use the same resolved `(t,z)` domain.
+Each coordinate's actual window is recorded in its fit diagnostics. Fixed
+coordinate-specific windows do not imply per-replica adaptive window selection.
+
 Correlators selected together are resampled with one plan and carry a shared
 `resample_id`. Downstream code must not silently align unrelated replicas by
 array index. When a stage intentionally changes grids, units, schemes, or sample
@@ -551,6 +677,12 @@ The agent supplies one bounded process pool for a run. Stage workflows should
 pass it to shared fitting, Fourier, or Lanczos functions rather than create
 nested pools. `parallel/` owns no UI; the stage that knows the logical unit of
 work owns progress reporting.
+The pool bounds worker lifetime by recycling processes between completed
+maps. This prevents accumulated correlated gvar covariance blocks from
+slowing long fits. Recycling must happen only after results have returned
+to the parent; it must preserve task order, captured posterior covariance
+and chained priors. Do not replace this with an in-flight reset of a gvar
+factory, which can make existing GVars incompatible.
 
 Use `FitNumericalError` for a numerically attempted candidate that failed and
 may participate in an approved retry/selection policy. Use `ValueError` or
@@ -592,6 +724,141 @@ matching kernel has a pair:
 The Python signature defines accepted `kernel_parameters`; shared private
 helpers stay in `implementation.py`. Coordinate-space renormalization kernels
 such as `z_msbar_*` are loaded separately and need no paired document.
+
+### NNLO nonsinglet DGLAP building block
+
+`kernels/implementation.py` provides `_p_nnlo_ns_minus(x, nf=4)` for the
+unpolarized flavour-difference channel P_ns^(2)-. It implements the compact
+parametrization in Moch, Vermaseren and Vogt, hep-ph/0403192, Eq. (4.23),
+also used in `Code_Example_RGR.nb`. This is a parametrization, not the exact
+harmonic-polylogarithm expression. It is not the flavour-summed valence kernel
+P_ns^v = P_ns^- + P_ns^s, nor a helicity, transversity or singlet kernel.
+
+Normalization is d f / d ln(mu^2) = (a D0 + a^2 D1 + a^3 D2) f,
+where a = alpha_s/(4*pi). The function returns the off-diagonal density
+on 0 < x < 1, including the ordinary 1/(1-x) singular term; it returns
+zero outside that open interval. Endpoint values are implementation sentinels,
+not physical limits. The existing finite-grid column subtraction supplies
+the diagonal. Do not separately add the paper's delta coefficient to that
+matrix: the returned density is not the full continuum distribution.
+
+To build and evolve the matrices directly:
+
+```python
+from lamet_agent.kernels.implementation import (
+    _dglap_evolution_matrices, _evolution_operator,
+    _p_nlo_valence, _p_nnlo_ns_minus,
+)
+
+d0, d1, d2 = _dglap_evolution_matrices(
+    x_grid, _p_nlo_valence, p_nnlo=_p_nnlo_ns_minus,
+)
+u = _evolution_operator(mu_initial, mu_final, d0, d1, 160, evo_nnlo=d2)
+```
+
+Supplying `evo_nnlo` selects the existing three-loop running-coupling routine;
+omitting it retains two-loop running and the original two-matrix interface.
+The shared independent-scale `_rgr_from_fixed_order` also accepts an optional
+`p_nnlo` callable. The general nonsinglet workflow below uses the separate
+coupled block path instead of this legacy helper.
+
+The default nf=4 agrees with the existing lower-order splitting functions.
+The notebook's nf=3 coefficients can be evaluated explicitly, but combining
+them with unchanged nf=4 lower orders is not a consistent flavour choice.
+The existing running coupling crosses heavy-flavour thresholds while the
+splitting coefficients use a fixed nf; this policy has not been redesigned.
+The three-loop branch also does not upgrade fixed-order matching or the MSbar
+normalization factor. Public NNLO RGR uses NNLO GI hybrid matching with
+three-loop coupling; legacy suffixed NLO kernels retain their prior behavior.
+
+Reference: https://arxiv.org/html/hep-ph/0403192 (Eqs. 2.5, 2.6 and 4.23).
+
+### Proton isovector DGLAP from To_Jinxin
+
+The archive's `Proton_PDF.nb`, input cell 30 (zero-based), supplies both
+NNLO nonsinglet channels. `_p_nnlo_ns_plus(x, nf=4)` adds its Eq. (4.22)
+parametrization; `_p_nnlo_ns_minus` remains Eq. (4.23). The existing NLO
+unpolarized plus/minus helpers now accept an explicit nf without changing their
+default of 4. The new archive-specific matrix path defaults to nf=3 at all orders.
+
+`_dglap_nnlo_isovector_matrices(x_grid, nf=3, y_max=100)` returns the notebook's
+five matrices, in order: D0, D1qq, D1qqbar, D2qq, D2qqbar. At each higher order,
+Pqq=(Pplus+Pminus)/2 and Pqqbar=(Pplus-Pminus)/2. This is flavour-difference
+evolution for q=u-d and qbar=ubar-dbar, not full singlet evolution.
+
+This separate builder follows the notebook's diagonal prescription literally:
+off-diagonal entries are dx*P(x_i/x_j)/x_j for j>i; diagonal entries subtract
+dx*x_i*P(x_i/y)/y^2 over the higher grid nodes and the tail y=1+dx,...,y_max.
+The positive grid must be uniform and end at 1. Neither the existing column-plus
+builder nor its public NLO kernels are changed. Matching the notebook matrices
+does not establish the continuum accuracy of their subtraction or finite tail.
+
+`_dglap_nnlo_isovector_blocks` embeds those matrices in the coupled basis
+`[q(x_grid), qbar(x_grid)]` and returns three 2N-by-2N matrices:
+
+```python
+from lamet_agent.kernels.implementation import (
+    _dglap_nnlo_isovector_blocks, _evolution_operator,
+)
+
+d0, d1, d2 = _dglap_nnlo_isovector_blocks(x_grid)  # nf=3, y_max=100
+u = _evolution_operator(mu_initial, mu_final, d0, d1, 160, evo_nnlo=d2)
+state_final = u @ state_initial
+```
+
+The NNLO blocks include both quark-antiquark off-diagonal sectors, so q+qbar
+and q-qbar evolve with the plus and minus combinations respectively. Under the
+notebook's signed-PDF convention, qbar(x)=-f(-x), hence the signed output is
+`[-qbar[::-1], q]` on `[-x_grid[::-1], x_grid]`. Supply physical quark and
+antiquark arrays to the block solver, not the signed negative-x values directly.
+
+The archive's evolution loop uses sequential Euler updates: its antiquark
+update reads the already-updated quark array. The Python block solver instead
+uses simultaneous ordered evolution with three-loop coupling. The kernels and
+matrices reproduce the archive; the finite-step trajectory and interpolation
+are not claimed identical. Independent-scale matching remains the chosen policy.
+
+### General unpolarized flavor-difference RGR
+
+`_rgr_nonsinglet` supplies shared signed-grid validation, independent matching,
+coupled evolution, and interpolation for the unsuffixed public RGR kernels.
+NLO supports GI gamma-t/gamma-z hybrid and ratio, and CG gamma-t/gamma-z
+hybrid, ratio and MSbar. NNLO supports GI gamma-t hybrid only. Selection accepts
+source_component re/im/both for these channels without adding a parity suffix.
+Existing suffixed kernels remain directly loadable for reproducibility.
+
+The internal grid is 1/N,...,1 with N=evolution_points (default100). Matching
+is first computed as a square matrix on the quasi input grid, preserving its
+full plus-prescription subtraction and NNLO inverse convolution. Linear
+interpolation transfers the complete matched matrix to the signed evolution
+grid; the helper converts to [q,qbar], evolves, then
+converts back using f(-x)=-qbar(x). It independently evaluates the full matched
+state at each requested intrinsic scale 2*kappa*abs(x)*Pz, before selecting
+that output row. It does not recursively assemble an intrinsic-scale PDF.
+The positive and negative sectors use the same infrared cutoff. Output points
+can be nonuniform; active radii below 1/N are rejected rather than extrapolated.
+
+NLO uses P0/P1 and two-loop coupling. NNLO uses P0/P1/P2 and three-loop coupling
+both in matching and evolution. Splitting nf=3 and the existing threshold-matched
+coupling follow the package convention, not variable-flavor splitting evolution.
+CG MSbar NLO retains the existing multiplicative Zpsi factor. No CG NNLO,
+polarized general nonsinglet, singlet/gluon mixing, or total valence P_ns_v
+implementation is implied. The latter differs from flavor-difference P_ns_minus
+at NNLO. The supplied finite-grid diagonal/tail prescription is preserved;
+production convergence and continuum sum-rule validation remain analysis tasks.
+
+The NNLO wrapper reuses `_prepare_nnlo_rgr_matching` from the fixed NNLO module,
+an explicit exception to the shared-implementation-only import pattern. This
+avoids copying its two-loop formulas. It precomputes matching's polynomial in
+log(mu^2/Pz^2) at three scales, then evaluates that polynomial at each mu0.
+Tests compare this with the direct three-loop-coupling matching formula at
+independent scales. Other public wrappers use the shared implementation module.
+Tests also check charge-conjugation sectors, signed support, the no-evolution
+limit, and the complete stage including real/complex NetCDF round trips.
+Independent grid-transfer regression tests assemble the NLO column subtraction
+without the production matching builders on the 200-point Fourier grid, check
+every new kernel against square matching followed by NumPy interpolation, and
+compare evolved transferred states with a separate ODE solve at both orders.
 
 ## Development workflow
 
@@ -713,3 +980,42 @@ that only fail after installation from a wheel.
 When behavior changes, update the narrowest authoritative source first, then any
 user or developer documentation that describes that behavior. Avoid copying the
 same rule into several prompts and documents.
+
+## Combined RGR and LRR
+
+GI gamma-t hybrid nonsinglet PDF matching accepts `order: "nlo"` or `"nnlo"` with `resummation: "rgr_lrr"`. It preserves independent matching and the signed quark/antiquark convention. Parameters are the existing RGR controls plus `eps_m` (positive, default 0.005 GeV); NNLO retains `quadrature_order`. Input grids must be uniform, nonzero and span [-1,1]. See the paired public kernel documents for subtraction formulas and the need for consistent upstream mass renormalization.
+
+
+## NLO threshold resummation
+
+GI gamma-t hybrid nonsinglet matching supports `resummation: "rgr_tr"` at
+NLO only. The implementation follows the supplied To_Jinxin notebook hard/soft
+factorization and cut-factor product subtraction; independent matching and
+DGLAP evolution are unchanged. The soft boundary is evaluated analytically at
+eta0=0 instead of finite differences at eta0=0.01. Tests cover independent
+high-precision star distributions, soft derivatives, NLO double-counting,
+signed reflection, switch continuity, rectangular transfer, domain rejection,
+and stage publication. See the companion kernel document for controls and
+scientific scope. Never infer production-grid convergence from these tests.
+
+
+## NNLO notebook threshold prescription
+
+`quark_pdf_gi_gt_hybrid_nnlo_rgr_tr` extends the public `rgr_tr` selector to NNLO.
+Analytic fourth-order eta derivatives replace notebook finite differences;
+fractional-cell cut weights are the NNLO default, with pointwise comparison
+available. All existing NLO numerical code is unchanged. Fresh Mathematica
+fixtures cover hard/soft functions, evolution, and both full cut compositions.
+Tests also pin the observed finite-cut O(alpha_s^2) residual rather than
+incorrectly asserting cubic onset. Resolving that matching limitation would
+require a separate subtraction prescription decision, not just grid refinement.
+
+
+### Combined LRR and threshold resummation
+
+GI gamma-t hybrid nonsinglet PDFs support `order: "nlo"` or `"nnlo"` with
+`resummation: "rgr_lrr_tr"`. This includes notebook LRR in fixed matching,
+hard modulus/phase, and soft matrices before the cut product and signed DGLAP.
+Both new modes default to fractional sharp-cut cell integration; `point` is
+available for reference comparisons. See the companion kernel documents for
+regulator defaults, scale guards, and the finite-cut matching limitation.
