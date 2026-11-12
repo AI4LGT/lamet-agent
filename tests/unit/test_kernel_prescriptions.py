@@ -21,6 +21,10 @@ from lamet_agent.kernels import list_kernel_ids, load_kernel
 
 COLUMN_PLUS = frozenset(
     {
+        "quark_da_cg_gtg5_hybrid_nlo",
+        "quark_da_cg_gtg5_ratio_nlo",
+        "quark_da_cg_gzg5_hybrid_nlo",
+        "quark_da_cg_gzg5_ratio_nlo",
         "quark_da_gi_gtg5_hybrid_nlo_lrr",
         "quark_da_gi_gtg5_hybrid_nlo",
         "quark_da_gi_gtg5_ratio_nlo",

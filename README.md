@@ -292,6 +292,17 @@ threshold policy. Check numerical convergence for a production analysis.
 Legacy suffixed RGR kernels remain available directly. See each kernel's
 companion Markdown for its formula and numerical prescription.
 
+### Sudakov kernel for the intrinsic soft function
+
+The standalone `lamet_agent.kernels.tmd.coefficients.form_factor_kernel`
+evaluates the multiplicative coefficient `H_F(x1, x2)` with `order="nlo"`,
+the paper's tree-boundary `order="nll"`, or `order="nnll"` with a one-loop
+matching boundary (Collins–Rogers, arXiv:1705.07167). It supports NumPy
+broadcasting; use `x[:, None]` and `y[None, :]` for a two-dimensional grid.
+See the [formulas and usage example](lamet_agent/kernels/tmd/sudakov.md),
+including the explicit NLL/NNLL infrared-scale options. Soft Analysis uses the
+same form-factor coefficient in its intrinsic-soft integral.
+
 ## Intermediate Data (NetCDF)
 
 Stage-to-stage numerical artifacts are stored as NetCDF files. Every array has:
