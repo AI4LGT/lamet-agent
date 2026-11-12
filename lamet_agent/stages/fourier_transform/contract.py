@@ -77,6 +77,13 @@ def _nonzero(value: int) -> bool:
 # ruff: disable[E501]
 # fmt: off
 PARAM_RULES = (
+    Depends("tmdwf", "tmdwf_projection", physics="Select the midpoint component before endpoint rotation."),
+    Value("tmdwf.tmdwf_projection", Literal["real", "imag"], physics="Two paired jobs retain the complex TMDWF."),
+    Depends("tmdwf", "negative_z", physics="Explicit negative-z convention of the midpoint amplitude."),
+    Value("tmdwf.negative_z", Literal["even_both_notebook"], physics="Both midpoint components are assumed even."),
+    Provides("", "tmdwf", "$.metadata.target_observable", physics="Explicit reuse of the native DA tail for each real even midpoint component at fixed transverse separation."),
+    Depends("tmdwf", "tmdwf_profile", physics="Requires two separately prepared midpoint components; this is a tail ansatz choice, not DA matching."),
+    Value("tmdwf.tmdwf_profile", Literal["pion_da_components"], physics="Fit each even midpoint component with the existing light-light DA tail. Supply real_projection to the imaginary job to publish the complex quasi-TMDWF."),
     Depends("", "quasi_y_ls", physics="Dimensionless quasi momentum-fraction grid y for P_z/(2 pi hbar c) sum_z w_z exp(+i y P_z z/(hbar c)) h(z), with z and w_z in fm and full endpoint weights on a uniform grid; it becomes the downstream matching input grid, so its range and spacing set numerical coverage but add no lattice information."),
     Depends("", "zmin_fm", physics="Candidate lower separations for the long-distance tail fit in fm; positive-z data with zmin <= z <= zmax constrain the tail, and one common range is selected from the sample-average data before resample fits.", null_hook=recommend_zmin_fm),
     Depends("", "zmax_fm", physics="Candidate upper separations of measured data entering the tail fit in fm; varying zmax tests the balance between large-|z| asymptotic validity and deteriorating lattice signal, independently of the later extension endpoint.", null_hook=recommend_zmax_fm),
@@ -121,6 +128,8 @@ PARAM_RULES = (
 )
 
 INPUT_RULES = (
+    Recommends("", "real_projection", physics="For a TMDWF imaginary projection, combine with its paired real Fourier output.", default=None),
+    Value("real_projection", str, physics="Earlier native real-projection Fourier job ID."),
     Depends("", "input", physics="One coordinate-space matrix element on a nonnegative-z or signed-z grid supplies the resampled signal and provenance; PDF/DA nonnegative data use real-even/imaginary-odd completion, while a non-forward GPD can use an exchanged-flow partner for explicit signed-z completion."),
     Recommends("", "hermitian_partner", physics="Optional exchanged-flow input for a non-forward GPD; its source and sink momenta are reversed relative to input so Hermiticity supplies the negative-z branch.", default=None),
     Value("hermitian_partner", (str, dict), physics="Upstream job id or external-file object for the exchanged GPD flow; the data must share ensemble, resampling, fm z grid, and compatible samples with input."),
@@ -161,7 +170,7 @@ def check_observable_sector(context: CheckContext) -> Issue | None:
     if scan is None:
         return None
     observable = str(context.manifest["metadata"]["target_observable"]).lower()
-    if observable == "da" and scan["sector"] != "full":
+    if observable in {"da", "tmdwf"} and scan["sector"] != "full":
         return Issue(
             "scheme_scan.sector",
             "must be full for a DA",

@@ -170,11 +170,45 @@ manifest 包含运行元数据以及按顺序排列的 stage job 列表映射。
 1. `correlator_analysis`
 2. `renormalization`
 3. `fourier_transform`
-4. `perturbative_matching`
-5. `extrapolation`
-6. `review`
+4. `soft_analysis`（TMD）
+5. `matching`
+6. `extrapolation`
+7. `review`
 
 部分工作流可以省略不需要的 stages。`stages` 下各键的顺序就是执行顺序；不存在单独的 `metadata.stages` 列表。
+
+Matching 的 Python 包、manifest 和 systematics key，以及新运行的产物目录均使用 `matching`。
+已有 manifest 需要将 `perturbative_matching` 改为 `matching`；旧标识不再受支持。
+
+Soft Analysis 支持从 quasi-TMDWF 和四夸克 form factor 提取 CS kernel 与 intrinsic
+soft function；matching 再结合这些结果输出 TMDWF 和 TMDPDF。混合分析使用
+`target_observable: "tmd"`，由每个 job 声明具体 observable。空的
+`soft_analysis.jobs` 仍可用于占位，不生成产物。
+
+`examples/pion_tmd_cg_manifest.json` 从 `data_pion_tmd_cg` 的原始 correlator 出发，
+定义使用 NLL 系数、包含 **516 个数值 jobs** 的完整链路及最终 Review，输出统计误差。
+PDF 的 P3/P4/P5 均显式设置 Fourier `projection="real_even"`，
+只让矩阵元实部通过 `Re(h) cos(x P z)` 贡献到 Fourier，统一输出 valence sector。
+数据包中的 quasi、matching 的 x 分布、横向 PDF 曲线及论文导出结果采用一致的实部约定。
+参考 x 分布由原分析仓库输入计算，中心值与误差均通过 153 个横向参考点的核对。
+NLL 的 soft 显式采用参考的未做 hard 修正的比值 CS 演化、源 WF 动量的
+Sudakov kernel、40 个端点肩部拟合点、100 个中央插值点，以及
+`reference_cs_diagonal` 拟合权重。该选项只改变端点拟合的协方差度量，
+最终误差仍逐 replica 传播原始关联，不重新生成独立 CS 样本。
+NLL 示例显式选择 `infrared_policy="reference_quad"`，用于复现并诊断历史积分；
+穿越耦合 pole 的数值返回会记录警告，不能据此宣称红外积分受控。
+另可显式选择带尺度下限的 `freeze`，默认 `error` 会拒绝穿越 pole。
+示例通过[统一 prior 接口](docs/fit-priors.md)显式指定 Gaussian prior，
+每个 jackknife 拟合复用原始 prior，并显式指定与数据包中间结果对应的历史逐 z WF 时间窗。
+所有 ensemble 格距保持 `0.06 fm`；off-axis 信息由动量向量和分离方向描述。
+配置组内共享 leave-one-out 样本，独立组以分块 jackknife 传播误差，保留共享因子的关联。
+此前固定阶 NLO 原始数据验证已完成全部 516 个数值 jobs 和科学 Review，
+并补做锁定本地 v5 论文的审查。
+FF 低 Q、soft 动量依赖和大横向距离误差仍是明确保留的限制。
+此前 bootstrap 在 `bT/a=18` 的对数定义域问题作为历史诊断保留。
+归一化约定、输出范围及逐 stage 调试方法见 [TMD 分析说明](docs/tmd-analysis.md)。
+与 `data_pion_tmd_cg` 原始保存结果的逐阶段对照及 NLL 限制见
+[参考结果比较](docs/tmd-reference-comparison.md)。
 
 架构、文件所有权和贡献者工作流记录在 [`DEVELOPMENT.md`](DEVELOPMENT.md) 中。
 
@@ -272,6 +306,8 @@ loader 接受 JSON 和 JSONC 注释。当前 manifest envelope 为：
 
 对于使用 descriptor JSON record 的关联函数输入，请参阅[标准关联函数 HDF5 格式](#标准关联函数-hdf5-格式)中的输入文件约定。
 
+各拟合步骤均支持按参数名配置 gvar 字符串先验（如 `"priors": {"E0": "0.3(0.1)"}`）：缺项沿用原有默认值，多余项忽略。各模型的参数名、单位、重采样先验模式和完整两点拟合示例统一见[可配置拟合先验](docs/fit-priors.md)。
+
 未知字段、无效选项、损坏的 input roles、重复 id、向前 job 引用、缺失路径以及跨参数不一致都会被拒绝。
 
 全局运行 metadata 字段包括：
@@ -281,7 +317,7 @@ loader 接受 JSON 和 JSONC 注释。当前 manifest envelope 为：
 - `samples`，仅在 bootstrap 模式下必填；
 - `parameter_recommendation_retries`，默认为每个 job 额外尝试一次。
 
-`target_observable` 接受 `pdf`、`da` 和 `gpd`。`sample_error_mode` 接受 `covariance`、`variance` 以及仅用于 bootstrap 的 `one_sigma`。
+`target_observable` 接受 `pdf`、`da`、`gpd` 和 `tmd`。`sample_error_mode` 接受 `covariance`、`variance` 以及仅用于 bootstrap 的 `one_sigma`。
 
 目前 Fourier、matching 和 extrapolation 支持系统学变体。这些变体会在执行前展开为具体 jobs，并保存到 `resolved_manifest.json`。
 

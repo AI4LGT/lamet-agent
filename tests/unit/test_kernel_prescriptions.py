@@ -130,7 +130,7 @@ def _builders_used(kernel_id: str, grid: np.ndarray) -> set[str]:
 
 def test_every_kernel_declares_one_plus_prescription() -> None:
     assert not COLUMN_PLUS & ROW_PLUS
-    assert set(list_kernel_ids()) == COLUMN_PLUS | ROW_PLUS | GENERAL_RGR | THRESHOLD_RGR
+    assert set(list_kernel_ids()) == COLUMN_PLUS | ROW_PLUS | GENERAL_RGR | THRESHOLD_RGR | {"tmdwf_gi_unlo"}
 
 
 @pytest.mark.parametrize("kernel_id", sorted(COLUMN_PLUS | ROW_PLUS))

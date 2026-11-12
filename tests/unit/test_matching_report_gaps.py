@@ -6,7 +6,7 @@ import pytest
 
 from lamet_agent.data import EnsembleData
 from lamet_agent.stages._reporting import StageReportRecord, grid_segments, stage_overlay_lines
-from lamet_agent.stages.perturbative_matching.reporting import _diagnostics, write_stage_report
+from lamet_agent.stages.matching.reporting import _diagnostics, write_stage_report
 
 
 def data(x, values):
@@ -55,6 +55,30 @@ def test_contiguous_grid_keeps_full_interval_and_isolated_points_add_no_area(tmp
     np.testing.assert_allclose(_diagnostics(record(tmp_path, np.linspace(-.8, .8, 9))), [3.2, 3.2, 0], atol=1e-14)
     x = [-.9, -.8, -.7, .3]
     np.testing.assert_allclose(_diagnostics(record(tmp_path, x)), [.24, .24, 0], atol=1e-14)
+
+
+def test_mixed_report_resolves_only_collinear_inputs(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    item = record(tmp_path, [-.9, -.8, -.7, .3, .4, .5])
+    external = tmp_path / "quasi.nc"
+    item.inputs["quasi"].to_netcdf(external)
+    collinear = replace(item, inputs={"quasi": external})
+    tmd = replace(item, job_id="tmd", params={"observable": "tmdwf"}, inputs={"quasi": ["q1", "q2"]})
+    seen = []
+
+    def report_lines(records, directory):
+        seen.extend(records)
+        assert directory == tmp_path
+        return ["TMD report retained"]
+
+    monkeypatch.setitem(sys.modules, "lamet_agent.stages.matching.tmd", SimpleNamespace(report_lines=report_lines))
+    report = write_stage_report(records=(collinear, tmd), artifact_directory=tmp_path).read_text(encoding="utf-8")
+    assert "quasi partial integral" in report
+    assert "TMD report retained" in report
+    assert len(seen) == 1 and seen[0] is tmd
+    assert collinear.inputs["quasi"] == external
 
 
 def test_segments_do_not_impose_a_fixed_small_x_cutoff():

@@ -98,7 +98,7 @@ def test_combined_invalid_regulator(order, eps_m):
 
 
 def test_combined_reporting_names_both_resummations():
-    from lamet_agent.stages.perturbative_matching.reporting import _kernel_structure
+    from lamet_agent.stages.matching.reporting import _kernel_structure
     assert _kernel_structure("quark_pdf_gi_gt_hybrid_nnlo_rgr_lrr")["resummation"] == "RGR+LRR"
 
 
@@ -107,8 +107,8 @@ def test_combined_reporting_names_both_resummations():
 def test_combined_stage_publishes_samples_and_provenance(tmp_path, complex_samples, order):
     from lamet_agent.agent import ToolContext
     from lamet_agent.data import EnsembleData
-    from lamet_agent.stages.perturbative_matching._apply import run
-    from lamet_agent.stages.perturbative_matching._inspection import run as inspect_kernel
+    from lamet_agent.stages.matching._apply import run
+    from lamet_agent.stages.matching._inspection import run as inspect_kernel
 
     grid = Y
     output_grid = np.array([-0.5, 0.5, 1.])
@@ -137,7 +137,7 @@ def test_combined_stage_publishes_samples_and_provenance(tmp_path, complex_sampl
     context = ToolContext(
         {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
         tmp_path / "manifest.json",
-        "perturbative_matching",
+        "matching",
         "match",
         {
             "order": order,

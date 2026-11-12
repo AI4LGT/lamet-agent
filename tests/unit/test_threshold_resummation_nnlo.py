@@ -125,8 +125,8 @@ def test_nnlo_tr_stage_publishes_samples_and_provenance(tmp_path, complex_sample
     order = "nnlo"
     from lamet_agent.agent import ToolContext
     from lamet_agent.data import EnsembleData
-    from lamet_agent.stages.perturbative_matching._apply import run
-    from lamet_agent.stages.perturbative_matching._inspection import run as inspect_kernel
+    from lamet_agent.stages.matching._apply import run
+    from lamet_agent.stages.matching._inspection import run as inspect_kernel
 
     grid = np.linspace(-2, 2, 8)
     output_grid = np.array([-0.7, 0.3, 0.7])
@@ -155,7 +155,7 @@ def test_nnlo_tr_stage_publishes_samples_and_provenance(tmp_path, complex_sample
     context = ToolContext(
         {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
         tmp_path / "manifest.json",
-        "perturbative_matching",
+        "matching",
         "match",
         {
             "order": order,

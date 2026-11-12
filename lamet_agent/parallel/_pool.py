@@ -9,6 +9,12 @@ from contextlib import contextmanager
 from typing import Any, Callable, Iterable
 
 
+# A run can otherwise retain millions of expired gvar covariance blocks in
+# long-lived workers. Recreate processes only after complete maps, when all
+# returned objects have crossed the serialization boundary into the parent.
+_MAX_MAPS_PER_EXECUTOR = 128
+
+
 @contextmanager
 def _single_threaded_worker_environment():
     """Temporarily constrain OpenMP while spawn workers inherit their environment."""
@@ -52,6 +58,7 @@ class _ParallelPool:
             raise ValueError("workers must be a positive integer")
         self.workers = workers
         self._executor: ProcessPoolExecutor | None = None
+        self._completed_maps = 0
 
     def _start(self) -> ProcessPoolExecutor:
         if self._executor is None:
@@ -88,12 +95,16 @@ class _ParallelPool:
             for future in futures:
                 future.cancel()
             raise
+        self._completed_maps += 1
+        if self._completed_maps >= _MAX_MAPS_PER_EXECUTOR:
+            self.close()
         return results
 
     def close(self) -> None:
         """Close any started workers."""
         executor = self._executor
         self._executor = None
+        self._completed_maps = 0
         if executor is not None:
             executor.shutdown()
 

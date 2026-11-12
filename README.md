@@ -216,12 +216,53 @@ Implemented stage families, normally authored in this order, are:
 1. `correlator_analysis`
 2. `renormalization`
 3. `fourier_transform`
-4. `perturbative_matching`
-5. `extrapolation`
-6. `review`
+4. `soft_analysis` (TMD)
+5. `matching`
+6. `extrapolation`
+7. `review`
 
 A partial workflow may omit unneeded stages. The order of keys under `stages`
 is the execution order; there is no separate `metadata.stages` list.
+
+Matching uses `matching` for its Python package, manifest and systematics keys,
+and new artifact directories. Existing manifests must rename
+`perturbative_matching` to `matching`; the old identifier is no longer supported.
+
+Soft Analysis extracts the Collins–Soper kernel and intrinsic soft function from
+quasi-TMD wave functions and four-quark form factors. TMD matching consumes
+both soft outputs alongside a quasi-TMDWF or quasi-TMDPDF. The mixed TMD
+workflow uses `target_observable: "tmd"` and job-specific observables.
+An empty `soft_analysis.jobs` remains valid and produces no artifacts.
+
+`examples/pion_tmd_cg_manifest.json` provides the full raw-correlator-to-matching
+chain and final Review using `data_pion_tmd_cg`, with **516 numerical jobs**,
+NLL coefficients and statistical errors. All three PDF momenta explicitly use
+Fourier `projection="real_even"`: only `Re(h) cos(x P z)` contributes, giving
+the same valence sector at P3/P4/P5. This matches the packet's transverse PDF
+curves, paper exports, and real-even quasi/matched x-space reference files.
+Reference preparation uses the original analysis repository inputs and validates
+both centers and uncertainties against all 153 saved transverse points.
+The example's explicit soft settings
+select the reference's uncorrected-ratio CS evolution, source-WF Sudakov momentum,
+40 shoulder-fit points, 100 central interpolation points, and
+`reference_cs_diagonal` endpoint-fit metric. That metric changes fit weights;
+propagated errors still use the original correlated jackknife replicas.
+The NLL example explicitly selects `infrared_policy="reference_quad"` to diagnose
+the historical integral. Pole-crossing quadrature returns are flagged and do not
+establish controlled infrared accuracy. An explicit `freeze` scale-floor policy
+is available as an alternative; strict `error` remains the default.
+Its explicit Gaussian priors use the [shared prior interface](docs/fit-priors.md)
+and are reused for every jackknife fit. Historical WF time windows corresponding
+to the packet's saved intermediate results are authored per longitudinal separation. Independent configuration groups
+use block jackknife propagation while shared factors retain their correlations.
+The fixed-order NLO raw-data validation completed all 516 numerical jobs and scientific Review,
+including a separate review pinned to the supplied v5 paper. Low-Q FF fits,
+soft momentum dependence and large-distance uncertainties remain documented limitations.
+The earlier bootstrap domain failure is retained as historical validation evidence.
+See [TMD analysis](docs/tmd-analysis.md) for normalization, sampling lineage,
+off-axis geometry, numerical domains, and stage-by-stage debugging, and
+[reference comparison](docs/tmd-reference-comparison.md) for stage-by-stage
+comparisons with the saved `data_pion_tmd_cg` results and the stated NLL limitations.
 
 Architecture, file ownership, and contributor workflows are documented in
 [`DEVELOPMENT.md`](DEVELOPMENT.md).
@@ -366,6 +407,12 @@ For correlator inputs that use a descriptor JSON record, see
 [Standard Correlator HDF5 Format](#standard-correlator-hdf5-format) for the
 input-file conventions.
 
+All fitting stages accept partial named Gaussian overrides as gvar strings
+(e.g. `"priors": {"E0": "0.3(0.1)"}`); missing parameters
+keep their existing defaults and unused names are ignored. See
+[Configurable fit priors](docs/fit-priors.md) for stage-specific names and units,
+replica-prior choices, and fully authored two-point fit examples.
+
 Unknown fields, invalid choices, broken input roles, duplicate ids, forward job
 references, missing paths, and cross-parameter inconsistencies are rejected.
 
@@ -378,7 +425,7 @@ Run-wide metadata fields include:
 - `samples`, required only for bootstrap mode;
 - `parameter_recommendation_retries`, defaulting to one extra attempt per job.
 
-`target_observable` accepts `pdf`, `da`, and `gpd`. `sample_error_mode` accepts
+`target_observable` accepts `pdf`, `da`, `gpd`, and `tmd`. `sample_error_mode` accepts
 `covariance`, `variance`, and bootstrap-only `one_sigma`.
 
 Systematic variants are currently supported for Fourier, matching, and
@@ -513,7 +560,6 @@ If you find this work useful in your research, you can refer to the following te
 ## Related Links
 
 - [LQCD_Master](https://github.com/sjtu-sai-agents/LQCD_Master) ([arXiv:2607.15001](https://arxiv.org/abs/2607.15001))
-- test
 
 
 ### NLO threshold resummation (GI gamma-t hybrid PDF)

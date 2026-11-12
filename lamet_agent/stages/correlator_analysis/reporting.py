@@ -6,6 +6,7 @@ import re
 from collections.abc import Mapping
 from pathlib import Path
 
+from lamet_agent.stages._priors import validate_prior_overrides
 from lamet_agent.stages._reporting import (
     StageReportRecord,
     artifact_rows,
@@ -79,6 +80,27 @@ nonlocal correlator; explicit `wf_over_2pt` scopes fit the derived ratio. Both
 paths retain ratio diagnostics. A `+` joins likelihoods in one correlated fit,
 while successive list entries propagate widened posteriors.
 The selected time window is applied to every production sample.
+""".strip()
+
+_TMDWF_METHOD = r"""
+The axial TMDWF fit uses independent authored SS and nonlocal time windows.
+Its periodic spectral terms are $C_{SS}=\sum_n Z_n^2 D_n/(2E_n)$ and
+$C_{SP}=\sum_n Z_n\Phi_n D_n/2$, so the published amplitude is
+$\Phi_0=O_{00}/E_0$. Numerical conditioning multiplies SS by $s$ and SP by
+$\sqrt{s}$, preserving this amplitude. Native longitudinal axial data are
+rotated by $-i\exp(-i\mathbf P\cdot\mathbf z/2)$ when explicitly requested.
+The zero-momentum reference instead fits one periodic exponential and publishes
+its unnormalized amplitude; the later ratio stage performs the local division.
+""".strip()
+
+_FF_METHOD = r"""
+Each of the four wall-source currents X/X, Y/Y, X5/X5, and Y5/Y5 is divided
+samplewise by $\operatorname{Re}[C_{Z5}(t/2)+C_{X5}(t/2)]^2$ and fitted to
+$f[1+c_1(e^{-\Delta E\tau}+e^{-\Delta E(t-\tau)})]/[1+c_2e^{-\Delta E t/2}]$.
+The aligned fitted samples are averaged over the four currents, then multiplied
+by $-6L_s^3/[(P^2+E^2)/(2P^2)]$. The authored energy is in GeV and momentum
+is derived from the lattice geometry. Fit-quality diagnostics retain every
+current separately.
 """.strip()
 
 
@@ -210,8 +232,16 @@ def _method_lines(records: tuple[StageReportRecord, ...]) -> list[str]:
         lines.extend([_BREIT_METHOD, ""])
     if "NonBreit" in forms:
         lines.extend([_NONBREIT_METHOD, ""])
-    if scopes & {"qda", "wf_over_2pt"}:
+    if any(
+        record.params.get("qda_output", "ratio") == "ratio"
+        and set("+".join(record.params.get("fit_scope", [])).split("+")) & {"qda", "wf_over_2pt"}
+        for record in lsq_records
+    ):
         lines.extend([_QDA_METHOD, ""])
+    if any(record.params.get("qda_output") in {"tmdwf", "amplitude"} for record in lsq_records):
+        lines.extend([_TMDWF_METHOD, ""])
+    if "ff" in scopes:
+        lines.extend([_FF_METHOD, ""])
     if "FH" in scopes:
         lines.extend([_FH_METHOD, ""])
     if "3pt_over_3pt" in scopes:
@@ -448,8 +478,79 @@ def _selection_policy_lines(records: tuple[StageReportRecord, ...]) -> list[str]
     return lines
 
 
+def _prior_control_lines(record: StageReportRecord) -> list[str]:
+    """Expose authored priors and distinguish their scales from posterior transfers."""
+    params = record.params
+    mode = params.get("sample_prior_mode", "center_posterior")
+    posterior_scale = params.get("posterior_prior_error_scale", 10.0)
+    chain_scale = params.get("chained_prior_error_scale")
+    if chain_scale is None:
+        chain_scale = posterior_scale
+    lines = [
+        "",
+        "### Prior Controls",
+        "",
+        f"- Candidate prior widths: {format_value(params.get('prior_width', [1.0]))}; "
+        "each factor multiplies base/authored Gaussian standard deviations once.",
+        f"- Replica prior mode: `{mode}`.",
+    ]
+    if mode == "center_posterior":
+        lines.append(f"- Center-posterior replica width factor: {format_value(posterior_scale)}.")
+    else:
+        lines.append("- Replica fits reuse the base/authored priors; posterior replica widening is inactive.")
+    scope = params.get("fit_scope", [])
+    if len(scope) > 1:
+        lines.append(
+            f"- Chained posterior width factor: {format_value(chain_scale)}; "
+            "preceding-stage posteriors replace shared parameters separately in each replica."
+        )
+    overrides = validate_prior_overrides(params.get("priors"))
+    if overrides:
+        lines.extend([
+            "",
+            "Authored overrides before width scaling and numerical conditioning. "
+            "`log(...)` keys use logarithmic means and widths; direct spectrum `E` keys use lattice energies "
+            "and `z` keys use raw overlap amplitudes.",
+            "",
+            "| parameter | mean | sdev |",
+            "|---|---:|---:|",
+            *[
+                f"| `{name}` | {format_value(value['mean'])} | {format_value(value['sdev'])} |"
+                for name, value in sorted(overrides.items())
+            ],
+        ])
+    else:
+        lines.append("- No per-parameter overrides; the model's default priors are used.")
+    lines.extend([
+        "",
+        "Fit diagnostics record the effective priors after conditioning and chained transfers, "
+        "including overrides inactive in lower-state candidates.",
+    ])
+    return lines
+
+
 def _application_summary_lines(record: StageReportRecord) -> list[str]:
     diagnostics = record.summary.get("diagnostics", {})
+    if record.params.get("fit_scope") == ["ff"]:
+        rows = []
+        threshold = float(record.params.get("q_min", 0.05))
+        for fit in diagnostics.get("fits", []):
+            samples = fit.get("sample_diagnostics", [])
+            below = sum(sample["Q"] < threshold for sample in samples)
+            rows.append(
+                f"| {fit['current']} | {format_value(fit['Q'])} | {format_value(fit['chi2_dof'])} | "
+                f"{below}/{len(samples)} | {format_value(fit['ff'])} | {format_value(fit['ff_sdev'])} |"
+            )
+        return [
+            "### Four-current Application Fit Summary",
+            "",
+            "The job summary shows the smallest current Q and largest current chi2/dof. "
+            "Every aligned fitted sample is retained in the four-current average.",
+            "",
+            "| current | center Q | center chi2/dof | sample Q < threshold | bare amplitude | center uncertainty |",
+            "|---|---:|---:|---:|---:|---:|",
+            *rows,
+        ]
     application = diagnostics.get("selected_application_fit", {}) if isinstance(diagnostics, Mapping) else {}
     fits = application.get("fits", []) if isinstance(application, Mapping) else []
     quality = diagnostics.get("sample_fit_quality", {}) if isinstance(diagnostics, Mapping) else {}
@@ -534,6 +635,7 @@ def _dispersion_lines(records: tuple[StageReportRecord, ...], artifact_directory
 
     from lamet_agent.data import EnsembleData
     from lamet_agent.kernels.implementation import HBAR_C_GEV_FM
+    from lamet_agent.stages._priors import merge_priors, prior_diagnostics
     from lamet_agent.plotting import configure_plot, errorband, errorline, line, save_figure, series_color, start_plot
 
     points = []
@@ -569,6 +671,7 @@ def _dispersion_lines(records: tuple[StageReportRecord, ...], artifact_directory
                 "mode": mode,
                 "resample": str(record.output.resample),
                 "resample_id": attrs.get("resample_id"),
+                "priors": record.params.get("priors") or {},
             }
         )
     if len(points) < 2:
@@ -623,10 +726,31 @@ def _dispersion_lines(records: tuple[StageReportRecord, ...], artifact_directory
             }
         )
         try:
+            overrides = {}
+            definitions = {}
+            for point in group:
+                for name, value in validate_prior_overrides(point["priors"]).items():
+                    if name not in prior:
+                        continue
+                    if name in definitions and not np.allclose(
+                        list(definitions[name].values()), list(value.values()), rtol=1e-12, atol=0.0
+                    ):
+                        raise ValueError(f"conflicting dispersion prior for {name!r} across jobs")
+                    definitions[name] = value
+                    overrides[name] = point["priors"][name]
+            prior = merge_priors(prior, overrides)
             fit = lsqfit.nonlinear_fit(data=(design, values), fcn=_dispersion_model, prior=prior, maxit=2000)
         except (FloatingPointError, OverflowError, RuntimeError, ValueError) as exc:
             notes.append(f"`{label}` dispersion fit failed: {type(exc).__name__}: {exc}")
             continue
+        notes.append(
+            f"`{label}` dispersion effective priors: "
+            + "; ".join(
+                f"`{name}` = {value['mean']:g} ± {value['sdev']:g}"
+                for name, value in prior_diagnostics(prior)["effective_priors"].items()
+            )
+            + "."
+        )
         line_design = np.column_stack([p2_line, p2_line**2 * np.full_like(p2_line, float(np.mean(a2)))])
         errorband(p2_line, _dispersion_model(line_design, fit.p), color=color)
     line(p2_line, p2_line, color="0.65", label=r"$E^2=p^2$", linestyle="dashed")
@@ -649,10 +773,23 @@ def _dispersion_lines(records: tuple[StageReportRecord, ...], artifact_directory
 
 
 def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_directory: Path) -> Path:
+    scan_axis = next(
+        (
+            axis
+            for axis in ("Q2", "Pz")
+            if records and all(getattr(record.output, "dims", None) == [axis] for record in records)
+        ),
+        None,
+    )
     lines = [
         "# Correlator Analysis Stage Report",
         "",
-        "This report summarizes the selected correlator fits and their full-z production-sample results.",
+        (
+            "This report summarizes the selected correlator fits of local z=0 matrix elements; "
+            "the stage overview uses Q^2 for form factors and Pz for moments."
+            if scan_axis is not None
+            else "This report summarizes the selected correlator fits and their full-z production-sample results."
+        ),
         "",
     ]
     lines.extend(_method_lines(records))
@@ -704,9 +841,15 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
             *stage_overlay_lines(
                 records,
                 artifact_directory,
-                coordinate="z",
-                stem="correlator_overview",
-                xlabel=r"$z~/~a$",
+                coordinate=scan_axis or "z",
+                stem="local_observable" if scan_axis is not None else "correlator_overview",
+                xlabel=(
+                    r"$Q^2\,[\mathrm{GeV}^2]$"
+                    if scan_axis == "Q2"
+                    else r"$P_z\,[\mathrm{GeV}]$"
+                    if scan_axis == "Pz"
+                    else r"$z~/~a$"
+                ),
                 ylabel="bare matrix element",
             ),
             "",
@@ -767,6 +910,7 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
             ]
         )
         if params.get("analysis_method") == "lsqfit":
+            lines.extend(_prior_control_lines(record))
             lines.extend(
                 [
                     "",
@@ -838,16 +982,17 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
                         f"{_window_text(candidate)} | {z_value} | {format_value(fit.get('Q'))} | "
                         f"{format_value(fit.get('chi2_dof'))} | {format_value(fit.get('logGBF'))} |"
                     )
-            lines.extend(
-                [
-                    "",
-                    "### Per-tuning-z Fit Summary",
-                    "",
-                    "| fit method | selected window | z | Q | chi2/dof | logGBF |",
-                    "|---|---|---:|---:|---:|---:|",
-                    *(tune_rows or ["| n/a | n/a | n/a | n/a | n/a | n/a |"]),
-                ]
-            )
+            if params.get("fit_scope") != ["ff"]:
+                lines.extend(
+                    [
+                        "",
+                        "### Per-tuning-z Fit Summary",
+                        "",
+                        "| fit method | selected window | z | Q | chi2/dof | logGBF |",
+                        "|---|---|---:|---:|---:|---:|",
+                        *(tune_rows or ["| n/a | n/a | n/a | n/a | n/a | n/a |"]),
+                    ]
+                )
             lines.extend(["", *_application_summary_lines(record)])
             if diagnostics.get("fallback_no_q_passing"):
                 lines.extend(

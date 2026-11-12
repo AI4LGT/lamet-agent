@@ -200,6 +200,34 @@ def _range_records(record: StageReportRecord) -> list[dict[str, object]]:
 
 
 def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_directory: Path) -> Path:
+    if any(record.params.get("strategy") == "tmd" for record in records):
+        lines = [
+            "# TMD Fourier Transform Stage Report",
+            "",
+            "The real centered wave function is transformed with x−1/2. The PDF projection is explicit: "
+            "real_even keeps Re(h) cos, while hermitian keeps Re(h) cos + Im(h) sin with exp(−i xPz) and "
+            "requires both fitted input channels. The PDF "
+            "uses x and a linear taper. The longitudinal physical displacement includes the off-axis "
+            "direction; the ensemble lattice spacing is unchanged. Each statistical replica is transformed "
+            "without resampling. Flavor normalization is applied by matching.",
+            "",
+            "| job | observable | bT [fm] | P [GeV] | method | projection | sector | samples |",
+            "|---|---|---:|---:|---|---|---|---:|",
+        ]
+        for record in records:
+            attrs = output_attrs(record)
+            lines.append(
+                f"| `{record.job_id}` | {attrs.get('observable')} | "
+                f"{format_value(attrs.get('bT_fm'))} | {format_value(attrs.get('momentum_gev'))} | "
+                f"{attrs.get('fourier_strategy')} | {attrs.get('fourier_projection', 'real_even')} | "
+                f"{attrs.get('sector')} | {record.output.n_sample} |"
+            )
+        for record in records:
+            lines.extend(["", f"## {record.job_id}", "", *figure_lines(record, artifact_directory)])
+        lines.extend(["", "## Artifacts", "", "| job | artifact |", "|---|---|"])
+        for record in records:
+            lines.extend(artifact_rows(record, artifact_directory))
+        return write_report(artifact_directory, lines)
     lines = [
         "# Fourier Transform Stage Report",
         "",

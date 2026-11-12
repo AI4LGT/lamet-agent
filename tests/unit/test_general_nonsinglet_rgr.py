@@ -211,8 +211,8 @@ def test_rejects_invalid_input_grids(y):
 def test_general_rgr_stage_publishes_samples_and_provenance(tmp_path, complex_samples, order):
     from lamet_agent.agent import ToolContext
     from lamet_agent.data import EnsembleData
-    from lamet_agent.stages.perturbative_matching._apply import run
-    from lamet_agent.stages.perturbative_matching._inspection import run as inspect_kernel
+    from lamet_agent.stages.matching._apply import run
+    from lamet_agent.stages.matching._inspection import run as inspect_kernel
 
     grid = Y
     output_grid = np.array([-0.5, 0.5, 1.])
@@ -241,7 +241,7 @@ def test_general_rgr_stage_publishes_samples_and_provenance(tmp_path, complex_sa
     context = ToolContext(
         {"metadata": {"workers": 1, "sample_error_mode": "covariance"}},
         tmp_path / "manifest.json",
-        "perturbative_matching",
+        "matching",
         "match",
         {
             "order": order,

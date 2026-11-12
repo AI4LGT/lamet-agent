@@ -1,4 +1,4 @@
-"""Stage-level perturbative-matching reporting."""
+"""Stage-level matching reporting."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import numpy as np
 
 from lamet_agent.data import EnsembleData
 from lamet_agent.kernels import load_kernel_document
-from lamet_agent.stages.perturbative_matching.physics import is_even_about_zero, load_data, select_output_component
+from lamet_agent.stages.matching.physics import is_even_about_zero, load_data, select_output_component
 from lamet_agent.stages._reporting import (
     StageReportRecord,
     artifact_rows,
@@ -135,11 +135,11 @@ def _resolved_record(record: StageReportRecord) -> StageReportRecord:
     return replace(record, inputs={**record.inputs, "quasi": load_data(quasi)})
 
 
-def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_directory: Path) -> Path:
+def _collinear_report_lines(*, records: tuple[StageReportRecord, ...], artifact_directory: Path) -> list[str]:
     records = tuple(_resolved_record(record) for record in records)
     kernel_ids = list(dict.fromkeys(_record_kernel_id(record) for record in records))
     lines = [
-        "# Perturbative Matching Stage Report",
+        "# Matching Stage Report",
         "",
         "This stage applies the selected perturbative matching kernel sample by sample to convert quasi-distributions "
         "into light-cone distributions.",
@@ -301,4 +301,15 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
                 *artifact_rows(record, artifact_directory),
             ]
         )
+    return lines
+
+
+def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_directory: Path) -> Path:
+    tmd = tuple(record for record in records if record.params.get("observable") in {"tmdwf", "tmdpdf"})
+    collinear = tuple(record for record in records if record not in tmd)
+    lines = _collinear_report_lines(records=collinear, artifact_directory=artifact_directory) if collinear else []
+    if tmd:
+        from lamet_agent.stages.matching.tmd import report_lines
+
+        lines.extend(["", *report_lines(tmd, artifact_directory)])
     return write_report(artifact_directory, lines)
