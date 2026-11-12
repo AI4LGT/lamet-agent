@@ -1,46 +1,57 @@
-<!-- lamet-agent formula cache; kernel=quark_da_gi_gtg5_hybrid_nlo_lrr; arxiv=2305.05212; equations=Eqs. (12)-(17); digest=74ae10e71ca9cc53; paper_used=true -->
-$$M_{\mathrm{LRR}} = \left(M_{\mathrm{fix}} + r_0\, M_{C_z}\right) \exp\!\left(-M_{C_z}\, r_{\mathrm{sumPV}}\right),$$
+# NLO hybrid matching with LRR
 
-where $M_{\mathrm{fix}}$ is the fixed-order hybrid-scheme kernel for the $\gamma^t\gamma_5$ meson-DA operator, discretized as
+Kernel: `quark_da_gi_gtg5_hybrid_nlo_lrr`.
 
-$$M_{\mathrm{fix}} = \mathbb{1} - \frac{\alpha_s C_F}{2\pi}\, \mathcal{M}, \qquad \mathcal{M}_{xy} = \frac{1}{2} V_{qq,h}^{(1)}(x,y)\, dy + \frac{3\,\mathrm{Si}\!\left(z_s P_z (y-x)\right)}{\pi (y-x)}\, dy,$$
+This kernel maps a quasi-distribution column vector to its matched distribution.
+The fixed-order operator is defined in `quark_da_gi_gtg5_hybrid_nlo.md`.
 
-with the plus prescription applied column-wise so that each $y$-column of $\mathcal{M}$ integrates to zero over the $x$ grid. The fixed-order coefficient is
+Let Y be the uniform nonzero input grid and P(X,Y) its linear interpolation
+matrix. Assemble all factors on Y before transferring to output points X:
 
-$$V_{qq,h}^{(1)}(x,y) = \frac{|x|}{y}\left(l_x - 1\right) + \frac{|1-x|}{1-y}\left(l_{\bar x} - 1\right) + \frac{|x-y|}{y(y-1)}\left(l_{xy} - 1\right) + V_{qq,t}^{(1)}(x,y),$$
+$$M_{\rm LRR}(X,Y)=P(X,Y)\,[M_{\rm NLO}(Y,Y)+r_0 S(Y,Y)]
+\exp[-R_{\rm PV}S(Y,Y)].$$
 
-with
+For identical input/output grids the original square matrix is returned directly.
+The input grid must cover every output point; extrapolation is rejected. Finite,
+nonempty one-dimensional grids are required. The existing fixed-order builder
+also checks uniform spacing and excludes input zero.
 
-$$V_{qq,t}^{(1)}(x,y) = \frac{|x|}{y(y-x)}\left(l_x - 1\right) + \frac{|1-x|}{(1-y)(x-y)}\left(l_{\bar x} - 1\right) + \frac{x+y-2xy}{|x-y|\,y(1-y)}\left(l_{xy} - 1\right),$$
+The shape has no factor of $N_m\mu$ inside it. For $p_z=|y|P_z$ and
+$z_s=\mathtt{zs\_fm}/(\hbar c)$, its off-diagonal expression is the Abel-regulated
+Fourier integral
 
-and the logarithms are
+$$C_z(\xi)={p_z\over\pi}\operatorname{Re}\int_{z_s}^{\infty} dz\,
+ e^{i(\xi-1)p_z z}[z e^{-\epsilon_m z}-z_s e^{-\epsilon_m z_s}].$$
 
-$$l_x = \ln\!\left(\frac{4P_z^2 x^2}{\mu^2}\right), \qquad l_{\bar x} = \ln\!\left(\frac{4P_z^2 (1-x)^2}{\mu^2}\right), \qquad l_{xy} = \ln\!\left(\frac{4P_z^2 (x-y)^2}{\mu^2}\right).$$
+Here $\epsilon_m=0.005$ GeV. The square discretization is
+$S_{ij}=\Delta y\,C_z(y_i/y_j)/|y_j|$ for $i\ne j$, with
+$S_{jj}=-\sum_{i\ne j}S_{ij}$. This is a finite-domain column-plus prescription;
+continuum and regulator convergence must be assessed separately.
 
-The plus prescription is the paper’s bracket, defined as
+The scalar factors use $n_f=3$ and the existing two-loop running coupling:
 
-$$[f(x)]_+ = f(x) - \delta(1-x)\int_0^1 f(\nu)\,d\nu,$$
+$$r_0=r_{\rm asym}(0,1,\mu,n_f)\alpha_s
+=N_m\mu(1+c_1+c_2)\alpha_s,$$
 
-applied here at $x=y$ with the subtraction integrated over the full quasi grid $y\in[0,1]$.
+$$R_{\rm PV}=N_m\mu e^w{-2\pi\over\beta_0}\operatorname{Re}
+ [E_{1+b}(w)+c_1E_b(w)+c_2E_{b-1}(w)],\qquad
+ w={-2\pi\over\beta_0\alpha_s},\quad b={\beta_1\over2\beta_0^2}.$$
 
-The leading-renormalon resummation uses the universal Wilson-line shape (Eq. (17) of the paper, with $\xi = x/y$ only inside the shape, not in the overall kernel):
+The $c_1,c_2$ terms and $N_m=0.5749687262865643$ are retained from the existing
+implementation. The $r_0$ term cancels the order-alpha_s contribution of the
+exponential, preserving NLO matching. The ordering of these generally
+noncommuting matrix factors is unchanged.
 
-$$C_z(\xi) = \frac{e^{-\epsilon_m z_s} p_z \left(1 + \epsilon_m z_s + \epsilon_m^2 z_s^2\right)}{\epsilon_m^2 \pi} \quad \text{at } \xi=1,$$
+[Zhang et al., arXiv:2305.05212](https://arxiv.org/abs/2305.05212), Eqs. (12)-(17),
+provides the renormalon coefficients, PV prescription and regulated hybrid
+correction. The finite-grid matrix exponential is the package's existing
+resummation choice; it is not a claim of an exact continuum or notebook
+reproduction. Consistent mass renormalization is needed for a physical LRR
+prediction. NNLO LRR and combined RGR+LRR are not provided by this kernel.
 
-and for $\xi\neq 1$,
+The grid-transfer regressions independently assemble the square plus matrix;
+separate tests check the shape via its complex Fourier integral and the PV sum
+via integration-by-parts Borel quadrature. These checks do not constitute a full
+physical-data or continuum-convergence validation.
 
-$$C_z(\xi) = -\frac{e^{-\epsilon_m z_s} z_s \sin\!\left(p_z z_s (1-\xi)\right)}{\pi (1-\xi)} + \frac{e^{-\epsilon_m z_s} p_z}{\pi \left(\epsilon_m^2 + p_z^2 (1-\xi)^2\right)^2} \left[ \left(\epsilon_m^2 - p_z^2 (1-\xi)^2 + \epsilon_m^3 z_s + \epsilon_m p_z^2 (1-\xi)^2 z_s\right) \cos\!\left(p_z z_s (1-\xi)\right) + p_z (1-\xi) \left(2\epsilon_m + \epsilon_m^2 z_s + p_z^2 (1-\xi)^2 z_s\right) \sin\!\left(p_z z_s (1-\xi)\right) \right],$$
-
-where $p_z = |y| P_z$, $z_s = z_s$ (the hybrid cutoff), $\epsilon_m = 0.005$ GeV, and the matrix $M_{C_z}$ is built from $C_z(x/y)/|y|$ with the same plus prescription. The scalar coefficients are
-
-$$r_0 = N_m\, |z\mu|\, \frac{\Gamma(1+b)}{\Gamma(1+b)} \left(1 + \frac{b c_1}{b}\right) \alpha_s(\mu) = N_m\, \alpha_s(\mu),$$
-
-and the principal-value Borel sum
-
-$$r_{\mathrm{sumPV}} = N_m\, |z\mu|\, e^{w} \left(-\frac{2\pi}{\beta_0}\right) \mathrm{Re}\!\left[ E_{1+b}(w) + c_1 E_b(w) + c_2 E_{-1+b}(w) \right], \qquad w = -\frac{2\pi}{\alpha_s(\mu)\beta_0},$$
-
-with $N_m(n_f=3)=0.575$, $\beta_0 = 9$, $b = \beta_1/(2\beta_0^2)$, $c_1 = (\beta_1^2 - \beta_0\beta_2)/(4b\beta_0^3)$, $c_2$ as in the code, and $E_\nu$ the exponential integral. The matrix exponential $\exp(-M_{C_z} r_{\mathrm{sumPV}})$ acts on the quasi (column) index, contracting with $M_{\mathrm{fix}}$ from the right.
-
-#### Consistency check
-
-The code implements Eqs. (12)–(17) of arXiv:2305.05212 as follows: Eq. (12) ($r_n$) matches the paper’s form with $N_m=0.575$ for $n_f=3$; Eq. (13) ($r_{\mathrm{sumPV}}$) matches the PV Borel integral with the exponential-integral evaluation; Eq. (17) ($C_z$) matches the paper’s Fourier transform of the regularized linear-$z$ tail, including the $\epsilon_m$ regulator and the plus-function structure. The fixed-order kernel $V_{qq,h}^{(1)}$ is taken from arXiv:2212.14415 (Eq. (4.15)), not from 2305.05212, and the hybrid Wilson-line term $3\,\mathrm{Si}(z_s P_z (y-x))/(\pi(y-x))$ is the paper’s scheme-specific correction. The code’s plus prescription (column-sum-to-zero over the full quasi grid) matches the paper’s bracket definition with the subtraction domain $[0,1]$. No discrepancies were found between the code and the paper for the renormalon resummation; the fixed-order DA coefficient is from a different reference, which the code states explicitly.
+For this DA wrapper the shape density is active only for input 0 < y < 1 (with the existing epsilon cutoff). The PDF paper above does not independently validate the full DA matching prescription.

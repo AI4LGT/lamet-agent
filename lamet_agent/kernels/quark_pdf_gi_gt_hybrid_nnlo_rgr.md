@@ -36,3 +36,15 @@ The fixed-order matching formula and its prescription are documented in
 Legacy suffixed RGR kernels remain available for reproducibility.
 
 NNLO matching uses three-loop alpha_s and precomputes its exact quadratic scale-log polynomial; quadrature_order controls the two-loop integral.
+
+NNLO preparation separates constant, log and log-squared coefficient tables.
+Special-function and smooth-conversion terms are computed once per grid pair
+and reused at every scale. The original scalar 40-digit evaluation remains
+available as a reference. Prepared MSbar coefficients use the same formula
+code in an isolated machine-precision context for 0.01 < |xi| < 10, away
+from xi=+/-1 by more than 0.01; seams, small xi and tails retain high precision.
+The full smooth conversion and its quadrature convergence checks are retained.
+
+The machine context uses isolated copies of the same analytical function code;
+it does not replace the scalar backend or mutate the formula globals. Quadrature checks cover the three
+scale-basis values used in preparation.

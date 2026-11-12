@@ -275,6 +275,12 @@ hybrid. Upstream `source_component` may be `re`, `im`, or `both`.
 These are flavor differences such as u-d and ubar-dbar; singlet/gluon mixing
 and total flavor-summed valence evolution are not included.
 
+For GI gamma-t hybrid matching, set `resummation: "rgr_lrr"` with either
+`order: "nlo"` or `order: "nnlo"` to combine RGR and LRR. Matching remains
+independent at each intrinsic scale. The additional `eps_m` control defaults
+to 0.005 GeV. This selector does not refit upstream mass renormalization;
+use a consistent renormalization prescription for a physical LRR analysis.
+
 The signed convention is f(-x)=-antiquark(x). Input x must be uniform,
 increasing, nonzero and cover [-1,1]. Output x may be nonuniform within [-1,1].
 `kernel_parameters` accepts `kappa`, `mu_min_gev`, `evolution_points` (default
