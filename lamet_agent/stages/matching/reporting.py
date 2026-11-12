@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import replace
 
 import numpy as np
 
 from lamet_agent.data import EnsembleData
 from lamet_agent.kernels import load_kernel_document
-from lamet_agent.stages.matching.physics import is_even_about_zero, select_output_component
+from lamet_agent.stages.matching.physics import is_even_about_zero, load_data, select_output_component
 from lamet_agent.stages._reporting import (
     StageReportRecord,
     artifact_rows,
@@ -117,10 +118,7 @@ def _kernel_structure(kernel_id: str) -> dict[str, object]:
         "scheme": scheme_tokens[0],
         "order": next((token.upper() for token in reversed(tokens) if token in {"lo", "nlo", "nnlo"}), "not encoded"),
         "component": next((token for token in tokens if token in {"re", "im"}), "full"),
-        "resummation": next(
-            (token.upper() for token in ("rgr", "lrr") if token in tokens),
-            "none",
-        ),
+        "resummation": "+".join(token.upper() for token in ("rgr", "lrr") if token in tokens) or "none",
     }
 
 
@@ -128,7 +126,17 @@ def _has_interior_gap(data: EnsembleData) -> bool:
     return len(grid_segments(data.coords["x"])) > 1
 
 
+def _resolved_record(record: StageReportRecord) -> StageReportRecord:
+    quasi = record.inputs.get("quasi")
+    if isinstance(quasi, list):
+        if len(quasi) != 1:
+            raise ValueError("matching accepts one quasi source")
+        quasi = quasi[0]
+    return replace(record, inputs={**record.inputs, "quasi": load_data(quasi)})
+
+
 def _collinear_report_lines(*, records: tuple[StageReportRecord, ...], artifact_directory: Path) -> list[str]:
+    records = tuple(_resolved_record(record) for record in records)
     kernel_ids = list(dict.fromkeys(_record_kernel_id(record) for record in records))
     lines = [
         "# Matching Stage Report",
@@ -172,7 +180,7 @@ def _collinear_report_lines(*, records: tuple[StageReportRecord, ...], artifact_
             "| `kernel_id` | Runtime-derived public kernel filename stem built from upstream "
             "renormalization and operator provenance, "
             "`order`, and resummation options. |",
-            "| `resummation` | Empty selects fixed-order matching; NNLO GI gamma-t hybrid also supports rgr. "
+            "| `resummation` | Empty selects fixed order; GI gamma-t hybrid supports rgr_lrr at NLO/NNLO. "
             "Unpolarized nonsinglet `rgr` accepts `re`, `im`, or `both` without a suffix. "
             "Legacy polarized RGR derives its suffix from `source_component`; `lrr` has no suffix. |",
             "| `mu` | MSbar renormalization/matching scale in GeV. |",

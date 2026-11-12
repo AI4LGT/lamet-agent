@@ -46,6 +46,7 @@ COLUMN_PLUS = frozenset(
         "quark_pdf_cg_gzg5_ratio_nlo",
         "quark_pdf_gi_gt_hybrid_nlo_lrr",
         "quark_pdf_gi_gt_hybrid_nlo",
+        "quark_pdf_gi_gt_hybrid_nnlo",
         "quark_pdf_gi_gt_ratio_nlo",
         "quark_pdf_gi_gtg5_hybrid_nlo_lrr",
         "quark_pdf_gi_gtg5_hybrid_nlo",
@@ -78,6 +79,24 @@ ROW_PLUS = frozenset(
     }
 )
 
+GENERAL_RGR = frozenset(
+    [
+        "quark_pdf_cg_gt_hybrid_nlo_rgr",
+        "quark_pdf_cg_gt_msbar_nlo_rgr",
+        "quark_pdf_cg_gt_ratio_nlo_rgr",
+        "quark_pdf_cg_gz_hybrid_nlo_rgr",
+        "quark_pdf_cg_gz_msbar_nlo_rgr",
+        "quark_pdf_cg_gz_ratio_nlo_rgr",
+        "quark_pdf_gi_gt_hybrid_nlo_rgr",
+        "quark_pdf_gi_gt_ratio_nlo_rgr",
+        "quark_pdf_gi_gz_hybrid_nlo_rgr",
+        "quark_pdf_gi_gz_ratio_nlo_rgr",
+        "quark_pdf_gi_gt_hybrid_nnlo_rgr",
+        "quark_pdf_gi_gt_hybrid_nlo_rgr_lrr",
+        "quark_pdf_gi_gt_hybrid_nnlo_rgr_lrr",
+    ]
+)
+
 BUILDERS = ("build_matching_matrix_column_plus", "build_matching_matrix_row_plus")
 
 
@@ -106,10 +125,9 @@ def _builders_used(kernel_id: str, grid: np.ndarray) -> set[str]:
     return used
 
 
-def test_every_kernel_declares_its_prescription() -> None:
+def test_every_kernel_declares_one_plus_prescription() -> None:
     assert not COLUMN_PLUS & ROW_PLUS
-    # C42's TMDWF hard-only kernel is diagonal, with no plus prescription.
-    assert set(list_kernel_ids()) == COLUMN_PLUS | ROW_PLUS | {"tmdwf_gi_unlo"}
+    assert set(list_kernel_ids()) == COLUMN_PLUS | ROW_PLUS | GENERAL_RGR | {"tmdwf_gi_unlo"}
 
 
 @pytest.mark.parametrize("kernel_id", sorted(COLUMN_PLUS | ROW_PLUS))

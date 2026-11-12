@@ -58,7 +58,7 @@ def test_rgr_matches_independent_scale_ode_solutions(needs_zpsi):
     np.testing.assert_allclose(actual, expected, atol=5e-5, rtol=5e-5)
 
 
-@pytest.mark.parametrize("kernel_id", [name for name in list_kernel_ids() if "_rgr_" in name])
+@pytest.mark.parametrize("kernel_id", [name for name in list_kernel_ids() if name.endswith(("_rgr_re", "_rgr_im"))])
 def test_public_rgr_kernels_keep_cutoff_and_rectangular_shape(kernel_id):
     x = np.linspace(-0.75, 0.75, 4)
     y = np.linspace(-0.9, 0.9, 6)

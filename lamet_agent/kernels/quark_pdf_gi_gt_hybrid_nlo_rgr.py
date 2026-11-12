@@ -7,6 +7,8 @@ from lamet_agent.kernels.implementation import (
     GEV_FM,
     _pdf_density,
     build_matching_matrix_column_plus,
+    _gi_gt_hybrid_nlo_tables,
+    alpha_s,
 )
 
 
@@ -43,12 +45,12 @@ def kernel(
     if isinstance(zs_fm, bool) or not np.isfinite(zs_fm) or zs_fm <= 0:
         raise ValueError("zs_fm must be finite and positive.")
     def prepare(x, y):
+        identity = np.eye(len(y))
+        constant, slope = _gi_gt_hybrid_nlo_tables(y, zs_fm * momentum_gev / GEV_FM, eps)
+
         def at_scale(mu):
-            matrix = _fixed_order(
-                x, y, momentum_gev=momentum_gev, scale_gev=mu, eps=eps,
-                zs_fm=zs_fm,
-            )
-            return matrix
+            a = alpha_s(2, mu, "running") / (2 * np.pi)
+            return identity - a * (constant + 2 * np.log(mu / momentum_gev) * slope)
         return at_scale
 
     return _rgr_nonsinglet(
