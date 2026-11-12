@@ -48,14 +48,7 @@ def _sine_integral(value: float) -> float:
     integrand[1:] = np.sin(grid[1:]) / grid[1:]
     h = upper / n_steps
     return sign * float(
-        h
-        / 3.0
-        * (
-            integrand[0]
-            + integrand[-1]
-            + 4.0 * np.sum(integrand[1:-1:2])
-            + 2.0 * np.sum(integrand[2:-2:2])
-        )
+        h / 3.0 * (integrand[0] + integrand[-1] + 4.0 * np.sum(integrand[1:-1:2]) + 2.0 * np.sum(integrand[2:-2:2]))
     )
 
 
@@ -71,6 +64,25 @@ def _gpd_abs_log_piece(value: float, momentum_gev: float, mu: float, eps: float)
     return float(magnitude * (_gpd_log(value, momentum_gev, mu, eps) - 1.0))
 
 
+def _abs_log_divided_difference(
+    a: float,
+    b: float,
+    momentum_gev: float,
+    mu: float,
+    eps: float,
+) -> float:
+    if a == b:
+        if abs(a) <= eps:
+            raise ValueError("divided difference at the logarithmic cusp is undefined")
+        return float(np.sign(a) * (_gpd_log(a, momentum_gev, mu, eps) + 1.0))
+    if a * b > 0.0 and min(abs(a), abs(b)) > eps and abs(a - b) < 0.01 * abs(b):
+        ratio = (a - b) / b
+        return float(
+            np.sign(b) * (_gpd_log(b, momentum_gev, mu, eps) - 1.0 + 2.0 * (1.0 + ratio) * np.log1p(ratio) / ratio)
+        )
+    return (_gpd_abs_log_piece(a, momentum_gev, mu, eps) - _gpd_abs_log_piece(b, momentum_gev, mu, eps)) / (a - b)
+
+
 def _c_gpd_gt_hybrid(
     x: float,
     y: float,
@@ -81,37 +93,35 @@ def _c_gpd_gt_hybrid(
     eps: float,
 ) -> float:
     delta = x - y
-    x1 = skewness + x
-    x2 = skewness - x
-    y1 = skewness + y
-    y2 = skewness - y
-    log_delta = _gpd_log(delta, momentum_gev, mu, eps)
-    x1_piece = _gpd_abs_log_piece(x1, momentum_gev, mu, eps)
-    x2_piece = _gpd_abs_log_piece(x2, momentum_gev, mu, eps)
-    delta_piece = _gpd_abs_log_piece(delta, momentum_gev, mu, eps)
-
-    term1 = x1_piece / (y1 * (y1 + y2))
-    term2 = x2_piece / (y2 * (y1 + y2))
-    term3 = -delta_piece / (y1 * y2)
-    term_transversity = (
-        x1_piece / (y1 * (y1 - x1))
-        + x2_piece / (y2 * (y2 - x2))
-        + (x1 / y1 + x2 / y2) * (log_delta - 1.0) / abs(delta)
-    )
-    term_hybrid = 6.0 * _sine_integral(delta * zspz) / (np.pi * delta)
+    if abs(delta) <= eps:
+        raise ValueError("off-diagonal coefficient requires |x-y| > eps")
+    d1 = _abs_log_divided_difference(x + skewness, delta, momentum_gev, mu, eps)
+    d2 = _abs_log_divided_difference(skewness - x, -delta, momentum_gev, mu, eps)
+    scalar = (d1 + d2) / (2.0 * skewness)
+    transversity = (d2 - d1) / delta + 2.0 * _gpd_abs_log_piece(delta, momentum_gev, mu, eps) / delta**2
+    hybrid = 6.0 * _sine_integral(delta * zspz) / (np.pi * delta)
     alpha_s = _alphas_nloop(mu, order=1, nf=3)
-    return float(alpha_s * CF / (4.0 * np.pi) * (term1 + term2 + term3 + term_transversity + term_hybrid))
+    return float(alpha_s * CF / (4.0 * np.pi) * (scalar + transversity + hybrid))
 
 
 def _lo_interp_matrix(x_grid: np.ndarray, y_grid: np.ndarray) -> np.ndarray:
     order = np.argsort(y_grid)
     ys = y_grid[order]
-    lo_sorted = np.column_stack(
-        [np.interp(x_grid, ys, unit, left=0.0, right=0.0) for unit in np.eye(len(y_grid))]
-    )
+    lo_sorted = np.column_stack([np.interp(x_grid, ys, unit, left=0.0, right=0.0) for unit in np.eye(len(y_grid))])
     lo = np.empty_like(lo_sorted)
     lo[:, order] = lo_sorted
     return lo
+
+
+def _basis_weights(value: float, grid: np.ndarray) -> np.ndarray:
+    result = np.zeros(grid.size)
+    if value < grid[0] or value > grid[-1]:
+        return result
+    right = min(max(int(np.searchsorted(grid, value, side="right")), 1), grid.size - 1)
+    left = right - 1
+    fraction = (value - grid[left]) / (grid[right] - grid[left])
+    result[left], result[right] = 1.0 - fraction, fraction
+    return result
 
 
 def _build_matrix(
@@ -122,35 +132,63 @@ def _build_matrix(
     zspz: float,
     skewness: float,
     eps: float,
+    epsilon2: float,
+    hierarchy_ratio: float,
+    quad_epsabs: float,
+    quad_epsrel: float,
 ) -> np.ndarray:
-    x_grid = np.asarray(x_out, dtype=float)
-    y_grid = np.asarray(x_in, dtype=float)
-    if x_grid.ndim != 1 or y_grid.ndim != 1 or y_grid.size < 2:
-        raise ValueError("x_out and x_in must be one-dimensional grids with at least two input points")
+    from scipy.integrate import quad_vec
+
+    x_grid, y_grid = np.asarray(x_out, dtype=float), np.asarray(x_in, dtype=float)
+    if x_grid.ndim != 1 or y_grid.ndim != 1 or x_grid.size == 0 or y_grid.size < 2:
+        raise ValueError("nonempty one-dimensional grids and at least two input points are required")
+    if not np.all(np.isfinite(x_grid)) or not np.all(np.isfinite(y_grid)):
+        raise ValueError("grids must contain finite values")
+    if np.any(np.diff(y_grid) <= 0.0):
+        raise ValueError("x_in must be strictly increasing; nonuniform spacing is supported")
     if abs(skewness) <= eps:
         raise ValueError("skewness must be non-zero for this GPD kernel")
-    if np.any(np.isclose(y_grid, skewness, atol=eps, rtol=0.0)) or np.any(
-        np.isclose(y_grid, -skewness, atol=eps, rtol=0.0)
-    ):
-        raise ValueError("x_in must avoid y = +/-skewness")
-    steps = np.diff(y_grid)
-    dy = float(abs(steps[0]))
-    if dy <= eps or not np.allclose(steps, steps[0], rtol=0.0, atol=eps):
-        raise ValueError("x_in must be uniformly spaced")
+    if epsilon2 <= 100.0 * eps:
+        raise ValueError("epsilon2 must exceed 100*eps; eps is a numerical tolerance, not the cutoff")
+    if not 0.0 < hierarchy_ratio <= 0.01:
+        raise ValueError("hierarchy_ratio must lie in (0, 0.01]")
+    distances = np.minimum(abs(x_grid - skewness), abs(x_grid + skewness))
+    if np.any(distances <= eps):
+        raise ValueError("x_out must avoid +/-skewness; use one-sided limits after cutoff convergence")
+    if epsilon2 > hierarchy_ratio * float(np.min(distances)):
+        raise ValueError("epsilon2 must be <= hierarchy_ratio * min_x |x +/- skewness|")
+    if np.any(x_grid - epsilon2 <= y_grid[0]) or np.any(x_grid + epsilon2 >= y_grid[-1]):
+        raise ValueError("x_out +/- epsilon2 must lie strictly inside the x_in range")
 
-    nlo = np.zeros((len(x_grid), len(y_grid)), dtype=float)
-    identity = _lo_interp_matrix(x_grid, y_grid)
-    diagonal_rows = np.abs(x_grid[:, None] - y_grid[None, :]).argmin(axis=0)
-    for row, x_value in enumerate(x_grid):
-        for column, y_value in enumerate(y_grid):
-            if abs(x_value - y_value) <= eps * max(1.0, abs(y_value)):
-                continue
-            nlo[row, column] = _c_gpd_gt_hybrid(
-                x_value, y_value, skewness, momentum_gev, mu, zspz, eps
+    matrix = _lo_interp_matrix(x_grid, y_grid)
+    for row, x in enumerate(x_grid):
+        interpolation = matrix[row].copy()
+
+        def integrand(y, x=x, interpolation=interpolation):
+            real = _c_gpd_gt_hybrid(x, y, skewness, momentum_gev, mu, zspz, eps)
+            virtual = _c_gpd_gt_hybrid(y, x, skewness, momentum_gev, mu, zspz, eps)
+            return real * _basis_weights(y, y_grid) - virtual * interpolation
+
+        for lower, upper in ((y_grid[0], x - epsilon2), (x + epsilon2, y_grid[-1])):
+            points = np.unique(np.concatenate((y_grid, [-skewness, skewness])))
+            points = points[(points > lower) & (points < upper)]
+            correction, _, info = quad_vec(
+                integrand,
+                lower,
+                upper,
+                points=points,
+                norm="max",
+                epsabs=quad_epsabs / 2.0,
+                epsrel=quad_epsrel,
+                limit=max(10000, 4 * (len(points) + 1)),
+                full_output=True,
             )
-    for column, diagonal_row in enumerate(diagonal_rows):
-        nlo[int(diagonal_row), column] -= np.sum(nlo[:, column])
-    return identity - nlo * dy
+            if not info.success:
+                raise RuntimeError(f"matching quadrature failed at x={x}: {info.message}")
+            matrix[row] -= correction
+    if not np.all(np.isfinite(matrix)):
+        raise RuntimeError("matching produced nonfinite coefficients")
+    return matrix
 
 
 def kernel(
@@ -162,7 +200,28 @@ def kernel(
     zs_fm: float,
     skewness: float,
     eps: float = 1e-12,
+    epsilon2: float = 1e-5,
+    hierarchy_ratio: float = 0.01,
+    quad_epsabs: float = 1e-8,
+    quad_epsrel: float = 1e-6,
 ) -> np.ndarray:
+    controls = {
+        "momentum_gev": momentum_gev,
+        "scale_gev": scale_gev,
+        "zs_fm": zs_fm,
+        "eps": eps,
+        "epsilon2": epsilon2,
+        "quad_epsabs": quad_epsabs,
+        "quad_epsrel": quad_epsrel,
+    }
+    for name, value in controls.items():
+        if not np.isfinite(value) or value <= 0.0:
+            raise ValueError(f"{name} must be finite and positive")
+    if not np.isfinite(skewness) or not np.isfinite(hierarchy_ratio):
+        raise ValueError("skewness and hierarchy_ratio must be finite")
+    coupling = _alphas_nloop(float(scale_gev))
+    if not np.isfinite(coupling) or coupling <= 0.0:
+        raise ValueError("scale_gev is outside the supported perturbative coupling domain")
     zspz = float(zs_fm) * float(momentum_gev) / GEV_FM
     return _build_matrix(
         x_out,
@@ -172,19 +231,24 @@ def kernel(
         zspz,
         float(skewness),
         float(eps),
+        float(epsilon2),
+        float(hierarchy_ratio),
+        float(quad_epsabs),
+        float(quad_epsrel),
     )
 
 
 kernel.matching_structure = {
     "factorization": (
-        r"F(x,\xi,t,\mu)=\int dy\,C^{-1}\!\left(x,y,\xi,\frac{\mu}{P_z},z_sP_z\right)"
+        r"F(x,\xi,t,\mu)=\int dy\,C^{-1}(x,y,\xi,\mu/P_z,z_sP_z)"
         r"\widetilde F(y,\xi,t,P_z)+O(\alpha_s^2)."
     ),
     "result_noun": "light-cone GPD",
     "source_noun": "quasi-GPD",
     "notation": (
-        "This is a genuine two-variable coefficient at fixed skewness; the "
-        "off-diagonal coefficient is plus-prescribed column by column, and "
-        "the returned matrix acts as lightcone = matrix @ quasi."
+        "Piecewise-linear quasi-GPD interpolation on a nonuniform input grid; "
+        "real and virtual terms share |y-x|>=epsilon2 and the finite input window. "
+        "The cutoff must be much smaller than the distance to +/-skewness. "
+        "lightcone = matrix @ quasi."
     ),
 }
