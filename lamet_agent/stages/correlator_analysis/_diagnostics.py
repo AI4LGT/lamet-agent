@@ -112,7 +112,9 @@ def _sample0_ylim(payload: Mapping[str, Any]) -> tuple[float, float] | None:
     )
 
 
-def _write_sample0_plot(path: Path, payload: Mapping[str, Any], *, job_id: str) -> None:
+def _write_sample0_plot(
+    path: Path, payload: Mapping[str, Any], *, job_id: str, kinematic_label: str = ""
+) -> None:
     series = payload.get("series", [])
     if not isinstance(series, list) or not series:
         raise ValueError("sample-0 plot payload requires at least one series")
@@ -123,11 +125,14 @@ def _write_sample0_plot(path: Path, payload: Mapping[str, Any], *, job_id: str) 
         x = np.asarray(item["x"], dtype=float)
         fit_x = np.asarray(item["fit_x"], dtype=float)
         fit_x_values.extend(fit_x.tolist())
+        series_label = str(item["label"])
+        if kinematic_label:
+            series_label = f"{series_label}, {kinematic_label}"
         errorline(
             x,
             gv.gvar(np.asarray(item["y"], dtype=float), np.asarray(item["yerr"], dtype=float)),
             color=color,
-            label=str(item["label"]),
+            label=series_label,
         )
         errorband(
             fit_x,
@@ -136,6 +141,11 @@ def _write_sample0_plot(path: Path, payload: Mapping[str, Any], *, job_id: str) 
         )
     if fit_x_values:
         plateau_x = np.asarray([min(fit_x_values), max(fit_x_values)], dtype=float)
+        plateau_label = (
+            f"Sample-0 fit matrix element, {kinematic_label}"
+            if kinematic_label
+            else "Sample-0 fit matrix element"
+        )
         errorband(
             plateau_x,
             gv.gvar(
@@ -143,7 +153,7 @@ def _write_sample0_plot(path: Path, payload: Mapping[str, Any], *, job_id: str) 
                 np.full(2, float(payload["plateau_sdev"])),
             ),
             color="0.2",
-            label="Sample-0 fit matrix element",
+            label=plateau_label,
         )
     component = str(payload["component"])
     kind = str(payload["kind"])
@@ -153,7 +163,11 @@ def _write_sample0_plot(path: Path, payload: Mapping[str, Any], *, job_id: str) 
         ylabel=ylabel,
         ylim=_sample0_ylim(payload),
         legend=True,
-        title=f"{job_id}: sample 0, z={payload['z']:g}",
+        title=(
+            f"{job_id}: sample 0, z={payload['z']:g}, {kinematic_label}"
+            if kinematic_label
+            else f"{job_id}: sample 0, z={payload['z']:g}"
+        ),
     )
     save_figure(path)
 
@@ -202,6 +216,7 @@ def write_fit_artifacts(
     artifact_directory: Path,
     component: str,
     q_min: float,
+    kinematic_label: str = "",
     model_average: bool = False,
     fit_model_weights: list[float] | None = None,
     averaged_ids: list[str] | None = None,
@@ -287,7 +302,12 @@ def write_fit_artifacts(
                     / "plots"
                     / f"{stem}_z{_slug(z_value)}_sample0_{plot['kind']}_{plot['component']}.pdf"
                 )
-                _write_sample0_plot(artifact_directory / relative, {**plot, "z": float(z_value)}, job_id=job_id)
+                _write_sample0_plot(
+                    artifact_directory / relative,
+                    {**plot, "z": float(z_value)},
+                    job_id=job_id,
+                    kinematic_label=kinematic_label,
+                )
                 plot_artifacts.append(relative.as_posix())
     for failure in application_fit.get("sample_failures", []):
         if isinstance(failure, Mapping):

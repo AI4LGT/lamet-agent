@@ -9,7 +9,7 @@ import numpy as np
 
 from lamet_agent.agent import ToolContext
 from lamet_agent.data import EnsembleData
-from lamet_agent.stages._reporting import grid_segments
+from lamet_agent.stages._reporting import grid_segments, kinematic_series_label
 from lamet_agent.plotting import (
     configure_plot,
     errorband,
@@ -116,10 +116,15 @@ def run(context: ToolContext) -> dict[str, object]:
     plot_max = -np.inf
     plotted_x: list[float] = []
     sample_error_mode = str(context.manifest["metadata"]["sample_error_mode"])
-    quasi_label = rf"quasi, $P_z={round(float(momentum), 2):g}\,\mathrm{{GeV}}$"
+    kinematic_label = kinematic_series_label(
+        data.attrs,
+        spacing_fm=data.ensemble.a_s,
+        fallback=context.job_id,
+    )
+    quasi_label = f"quasi, {kinematic_label}"
     base_series = (
         (data, x_in, quasi_label),
-        (result, x_out, "light-cone"),
+        (result, x_out, f"light-cone, {kinematic_label}"),
     )
     if is_even_about_zero(data):
         base_series = tuple(

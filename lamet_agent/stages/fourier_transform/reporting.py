@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
-from numbers import Real
 from pathlib import Path
 
 from lamet_agent.stages._reporting import (
@@ -13,30 +11,11 @@ from lamet_agent.stages._reporting import (
     describe_grid,
     figure_lines,
     format_value,
+    kinematic_series_label,
     output_attrs,
     stage_overlay_lines,
     write_report,
 )
-
-
-def _momentum_series_label(record: StageReportRecord) -> str | None:
-    value = output_attrs(record).get("momentum_gev")
-    if isinstance(value, Real) and not isinstance(value, bool) and math.isfinite(float(value)):
-        return rf"$P_z={round(float(value), 2):g}\,\mathrm{{GeV}}$"
-    return None
-
-
-def _spacing_series_label(record: StageReportRecord) -> str | None:
-    ensemble = getattr(record.output, "ensemble", None)
-    spacing = getattr(ensemble, "a_s", None)
-    if (
-        isinstance(spacing, Real)
-        and not isinstance(spacing, bool)
-        and math.isfinite(float(spacing))
-        and float(spacing) > 0
-    ):
-        return rf"$a={float(spacing):.4g}\,\mathrm{{fm}}$"
-    return None
 
 
 def _variation_series_label(record: StageReportRecord) -> str | None:
@@ -51,11 +30,15 @@ def _variation_series_label(record: StageReportRecord) -> str | None:
 
 
 def _combined_series_label(record: StageReportRecord) -> str:
+    attrs = output_attrs(record)
     parts = [
         label
         for label in (
-            _momentum_series_label(record),
-            _spacing_series_label(record),
+            kinematic_series_label(
+                attrs,
+                spacing_fm=getattr(getattr(record.output, "ensemble", None), "a_s", None),
+                fallback="",
+            ),
             _variation_series_label(record),
         )
         if label

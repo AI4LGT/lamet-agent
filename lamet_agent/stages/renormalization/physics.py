@@ -212,7 +212,22 @@ def hybrid_ratio(
     """
     if "z" not in target.dims:
         raise ValueError("hybrid renormalization requires a z dimension")
-    base = ratio(target, denominator)
+    fixed_denominator = denominator.attrs.get("uncertainty_mode") == "fixed"
+    if fixed_denominator:
+        denominator_reference = np.mean(np.asarray(denominator.values), axis=0)
+        denominator_samples = [denominator_reference] * target.n_sample
+        base = EnsembleData(
+            target.ensemble,
+            target.resample,
+            [np.asarray(sample) / denominator_reference for sample in target.values],
+            target.dims,
+            target.coords,
+            attrs={**target.attrs, "external_denominator_uncertainty": "fixed_central"},
+            name=target.name,
+        )
+    else:
+        base = ratio(target, denominator)
+        denominator_samples = denominator.values
     z = np.asarray(base.coords["z"], dtype=float)
     switch = float(zs_fm)
     positive = np.flatnonzero(np.isclose(z, switch, rtol=0.0, atol=1e-12))
@@ -226,7 +241,7 @@ def hybrid_ratio(
     shape[z_axis] = len(z)
     long_weight = exponent.reshape(shape)
     values = []
-    for target_sample, denominator_sample, short_sample in zip(target.values, denominator.values, base.values):
+    for target_sample, denominator_sample, short_sample in zip(target.values, denominator_samples, base.values):
         positive_anchor = np.take(denominator_sample, int(positive[0]), axis=z_axis)
         positive_long = target_sample / np.expand_dims(positive_anchor, axis=z_axis)
         if len(negative) == 1:

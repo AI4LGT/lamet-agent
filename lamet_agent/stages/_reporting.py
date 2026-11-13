@@ -6,6 +6,7 @@ import json
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from numbers import Real
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,38 @@ def format_value(value: Any) -> str:
 def output_attrs(record: StageReportRecord) -> Mapping[str, Any]:
     attrs = getattr(record.output, "attrs", {})
     return attrs if isinstance(attrs, Mapping) else {}
+
+
+def kinematic_series_label(
+    attrs: Mapping[str, Any],
+    *,
+    spacing_fm: Any,
+    fallback: str = "",
+    coordinate: str | None = None,
+) -> str:
+    """Format one common kinematic label for PDF/DA and GPD stage plots."""
+    spacing = float(spacing_fm) if isinstance(spacing_fm, Real) and not isinstance(spacing_fm, bool) else float("nan")
+    if not math.isfinite(spacing) or spacing <= 0.0:
+        return fallback
+    spacing_label = rf"$a={spacing:.2f}\,\mathrm{{fm}}$"
+    target = str(attrs.get("target_observable", attrs.get("observable", ""))).lower()
+    is_gpd = target == "gpd" or str(attrs.get("fitting_form", "")).lower() == "nonbreit"
+    if is_gpd:
+        xi = attrs.get("xi")
+        if not isinstance(xi, Real) or isinstance(xi, bool) or not math.isfinite(float(xi)):
+            return fallback
+        if coordinate == "Q2":
+            return rf"$\xi={float(xi):.2f}$, {spacing_label}"
+        t_value = attrs.get("t_gev2")
+        if not isinstance(t_value, Real) or isinstance(t_value, bool) or not math.isfinite(float(t_value)):
+            return fallback
+        q2 = 0.0 if float(t_value) == 0.0 else -float(t_value)
+        return rf"$Q^2={q2:.2f}\,\mathrm{{GeV}}^2$, $\xi={float(xi):.2f}$, {spacing_label}"
+    momentum = attrs.get("momentum_gev")
+    if isinstance(momentum, Real) and not isinstance(momentum, bool) and math.isfinite(float(momentum)):
+        symbol = r"P_z" if attrs.get("longitudinal_direction") is not None else "P"
+        return rf"${symbol}={float(momentum):.2f}\,\mathrm{{GeV}}$, {spacing_label}"
+    return fallback
 
 
 def artifact_rows(record: StageReportRecord, stage_directory: Path) -> list[str]:
@@ -161,7 +194,15 @@ def stage_overlay_lines(
                 average = data.average(mode)
                 x = np.asarray(data.coords[coordinate])
                 segments = grid_segments(x) if split_gaps else [np.arange(len(x))]
-                label = series_label(record) if series_label is not None else record.job_id
+                if series_label is not None:
+                    label = series_label(record)
+                else:
+                    label = kinematic_series_label(
+                        output_attrs(record),
+                        spacing_fm=record.output.ensemble.a_s,
+                        fallback=record.job_id,
+                        coordinate=coordinate,
+                    )
                 for segment_index, indices in enumerate(segments):
                     draw(x[indices], average[indices], color=series_color(series_index),
                          label=label if segment_index == 0 else None)
