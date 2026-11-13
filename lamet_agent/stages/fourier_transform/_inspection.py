@@ -55,7 +55,7 @@ def derive_conventions(attrs: Mapping[str, object], *, target_observable: str, s
             raise ValueError("GPD Fourier input must carry supported polarization provenance")
         if sector not in {"sea", "valence", "singlet", "full"}:
             raise ValueError("GPD Fourier sector must be sea, valence, singlet, or full")
-        source_component, output_scale = "both", 1.0
+        source_component, output_scale = str(attrs.get("fitting_component", "both")), 1.0
     else:
         raise ValueError("the migrated Fourier conventions support PDF, DA, and GPD targets")
     return {
@@ -188,12 +188,10 @@ def prepare(context: ToolContext) -> tuple[Any, float]:
         partner_value = context.inputs.get("hermitian_partner")
         source_momentum = _momentum_vector(data, "source_momentum")
         sink_momentum = _momentum_vector(data, "sink_momentum")
-        delta_momentum = float(data.ensemble.k_s) * (sink_momentum[2] - source_momentum[2])
-        initial_pz = float(source_momentum[2]) * float(data.ensemble.k_s)
-        final_pz = float(sink_momentum[2]) * float(data.ensemble.k_s)
-        average_momentum = (
-            0.5 * float(data.ensemble.k_s) * (np.linalg.norm(source_momentum) + np.linalg.norm(sink_momentum))
-        )
+        initial_pz = float(source_momentum[2] * data.ensemble.k_s)
+        final_pz = float(sink_momentum[2] * data.ensemble.k_s)
+        delta_momentum = float((sink_momentum[2] - source_momentum[2]) * data.ensemble.k_s)
+        average_momentum = 0.5 * (final_pz + initial_pz)
         initial_energy = float(
             np.sqrt(float(data.ensemble.m_pi) ** 2 + (float(data.ensemble.k_s) * np.linalg.norm(source_momentum)) ** 2)
         )
@@ -203,6 +201,8 @@ def prepare(context: ToolContext) -> tuple[Any, float]:
         delta_spatial_sq = (float(data.ensemble.k_s) ** 2) * sum(
             (sink - source) ** 2 for sink, source in zip(sink_momentum, source_momentum)
         )
+        xi_value = data.attrs.get("xi")
+        t_value = data.attrs.get("t_gev2")
         attrs = dict(data.attrs)
         attrs.update(
             {
@@ -213,10 +213,12 @@ def prepare(context: ToolContext) -> tuple[Any, float]:
                 "delta_momentum_gev": delta_momentum,
                 "phase_momentum_source": "ensemble_discrete_momentum",
                 "momentum_gev": average_momentum,
-                "xi": (final_pz - initial_pz) / (final_pz + initial_pz)
-                if not np.isclose(final_pz + initial_pz, 0.0)
-                else float("nan"),
-                "t_gev2": (final_energy - initial_energy) ** 2 - delta_spatial_sq,
+                "xi": float(xi_value)
+                if isinstance(xi_value, (int, float))
+                else (final_pz - initial_pz) / (final_pz + initial_pz),
+                "t_gev2": float(t_value)
+                if isinstance(t_value, (int, float))
+                else (final_energy - initial_energy) ** 2 - delta_spatial_sq,
             }
         )
         from lamet_agent.data import EnsembleData
@@ -231,26 +233,47 @@ def prepare(context: ToolContext) -> tuple[Any, float]:
             name=data.name,
         )
         if partner_value is None:
-            if source_momentum != sink_momentum:
+            z = np.asarray(data.coords["z"], dtype=float)
+            if z.size > 1 and z[0] < 0.0 and np.allclose(z, -z[::-1], rtol=0.0, atol=1e-12):
+                attrs = dict(data.attrs)
+                attrs.update(
+                    {
+                        "symmetry": json.dumps({"real": "explicit", "imag": "explicit"}, sort_keys=True),
+                        "gpd_completion_mode": "measured_signed_z",
+                        "hermitian_partner_id": "",
+                        "phase_transfer_gpd": str(context.params["phase_transfer_gpd"]),
+                    }
+                )
+                data = EnsembleData(
+                    data.ensemble,
+                    data.resample,
+                    [sample for sample in data.values],
+                    data.dims,
+                    data.coords,
+                    attrs=attrs,
+                    name=data.name,
+                )
+            elif source_momentum != sink_momentum:
                 raise ValueError("non-forward GPD input requires hermitian_partner")
-            data = complete_signed_z(data, conventions["symmetry"])
-            attrs = dict(data.attrs)
-            attrs.update(
-                {
-                    "gpd_completion_mode": "single_flow",
-                    "hermitian_partner_id": "",
-                    "phase_transfer_gpd": str(context.params["phase_transfer_gpd"]),
-                }
-            )
-            data = EnsembleData(
-                data.ensemble,
-                data.resample,
-                [sample for sample in data.values],
-                data.dims,
-                data.coords,
-                attrs=attrs,
-                name=data.name,
-            )
+            else:
+                data = complete_signed_z(data, conventions["symmetry"])
+                attrs = dict(data.attrs)
+                attrs.update(
+                    {
+                        "gpd_completion_mode": "single_flow",
+                        "hermitian_partner_id": "",
+                        "phase_transfer_gpd": str(context.params["phase_transfer_gpd"]),
+                    }
+                )
+                data = EnsembleData(
+                    data.ensemble,
+                    data.resample,
+                    [sample for sample in data.values],
+                    data.dims,
+                    data.coords,
+                    attrs=attrs,
+                    name=data.name,
+                )
         else:
             partner = load_data(partner_value)
             if partner.attrs.get("coord_unit") != "fm":

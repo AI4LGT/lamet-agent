@@ -23,6 +23,7 @@ from lamet_agent.plotting import (
     series_color,
     start_plot,
 )
+from lamet_agent.stages._reporting import kinematic_series_label
 
 Z_FM_LABEL = r"$z\,[\mathrm{fm}]$"
 INVERSE_LATTICE_SPACING_LABEL = r"$a^{-1}\,[\mathrm{GeV}]$"
@@ -39,7 +40,7 @@ def lattice_spacing_label(spacing_fm: object, *, default: str | None = None) -> 
     if isinstance(spacing_fm, Real) and not isinstance(spacing_fm, bool):
         spacing = float(spacing_fm)
         if math.isfinite(spacing) and spacing > 0:
-            return rf"$a={spacing:.4g}\,\mathrm{{fm}}$"
+            return rf"$a={spacing:.2f}\,\mathrm{{fm}}$"
     if default is not None:
         return default
     raise ValueError("spacing_fm must be a finite positive real number")
@@ -55,7 +56,7 @@ def momentum_label(
     if isinstance(momentum_gev, Real) and not isinstance(momentum_gev, bool):
         value = float(momentum_gev)
         if math.isfinite(value):
-            return rf"$P_z={round(value, 2):g}\,\mathrm{{GeV}}$"
+            return rf"$P_z={value:.2f}\,\mathrm{{GeV}}$"
     if isinstance(momentum, str):
         match = re.fullmatch(r"PX(-?\d+)PY(-?\d+)PZ(-?\d+)", momentum.upper())
         if match is not None:
@@ -177,16 +178,23 @@ def render_result(
 ) -> tuple[str, str]:
     """Render one renormalized matrix element with explicit components."""
     mode = sample_error_mode or str(data.attrs.get("sample_error_mode", "covariance"))
+    base_label = kinematic_series_label(
+        data.attrs,
+        spacing_fm=data.ensemble.a_s,
+        fallback=str(data.name or "result"),
+    )
     start_plot()
     if np.iscomplexobj(data.values):
-        errorline(data.coords["z"], data.real.average(mode), color=series_color(0), label="real")
-        errorline(data.coords["z"], data.imag.average(mode), color=series_color(1), marker="s", label="imaginary")
+        errorline(data.coords["z"], data.real.average(mode), color=series_color(0), label=f"{base_label}, Re")
+        errorline(
+            data.coords["z"], data.imag.average(mode), color=series_color(1), marker="s", label=f"{base_label}, Im"
+        )
         ylabel = RENORMALIZED_MATRIX_ELEMENT_LABELS["both"]
         legend = True
     else:
-        errorline(data.coords["z"], data.average(mode), color=series_color(0))
+        errorline(data.coords["z"], data.average(mode), color=series_color(0), label=base_label)
         ylabel = RENORMALIZED_MATRIX_ELEMENT_LABELS["real"]
-        legend = False
+        legend = True
     hline(0.0, color="0.3", linestyle="dashed")
     configure_plot(xlabel=Z_FM_LABEL, ylabel=ylabel, legend=legend)
     save_figure(*_output_paths(directory, stem, formats))

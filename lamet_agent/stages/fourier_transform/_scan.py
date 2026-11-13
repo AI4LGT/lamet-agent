@@ -19,6 +19,7 @@ from lamet_agent.plotting import (
     start_plot,
     vline,
 )
+from lamet_agent.stages._reporting import kinematic_series_label
 from lamet_agent.stages.fourier_transform.physics import scan_fourier_transform
 from lamet_agent.stages.fourier_transform._inspection import effective_zmin_fm
 
@@ -229,19 +230,29 @@ def publish(context: ToolContext, result: dict[str, object]) -> dict[str, object
     ]
     sample_error_mode = str(context.manifest["metadata"]["sample_error_mode"])
     momentum = float(source.attrs["momentum_gev"])
-    pz_label = rf"$P_z={round(momentum, 2):g}\,\mathrm{{GeV}}$"
+    source_attrs = {
+        **source.attrs,
+        "target_observable": source.attrs.get(
+            "target_observable", context.manifest["metadata"]["target_observable"]
+        ),
+    }
+    kinematic_label = kinematic_series_label(
+        source_attrs,
+        spacing_fm=source.ensemble.a_s,
+        fallback=context.job_id,
+    )
     source_component = str(scan["source_component"])
     if output.attrs["output_component"] == "re":
         source_label = {
-            "re": rf"from $\mathrm{{Re}}\,h$, {pz_label}",
-            "im": rf"from $\mathrm{{Im}}\,h$, {pz_label}",
-            "both": rf"from $\mathrm{{Re}}\,h$ and $\mathrm{{Im}}\,h$, {pz_label}",
+            "re": rf"from $\mathrm{{Re}}\,h$, {kinematic_label}",
+            "im": rf"from $\mathrm{{Im}}\,h$, {kinematic_label}",
+            "both": rf"from $\mathrm{{Re}}\,h$ and $\mathrm{{Im}}\,h$, {kinematic_label}",
         }[source_component]
         component_series = (("real", source_label, 1 if source_component == "im" else 0),)
     else:
         component_series = (
-            ("real", "Re", 0),
-            ("imag", "Im", 1),
+            ("real", f"Re, {kinematic_label}", 0),
+            ("imag", f"Im, {kinematic_label}", 1),
         )
     start_plot()
     for data_component, label, color_index in component_series:
@@ -284,13 +295,13 @@ def publish(context: ToolContext, result: dict[str, object]) -> dict[str, object
             input_lambda,
             getattr(input_segment, component).average(sample_error_mode),
             color=series_color(0),
-            label="input",
+            label=f"input, {kinematic_label}",
         )
         errorband(
             extension_lambda,
             getattr(extension_segment, component).average(sample_error_mode),
             color=series_color(1),
-            label="extrapolation",
+            label=f"extrapolation, {kinematic_label}",
         )
         vline(lambda_min, color="black", linestyle="dashed")
         vline(lambda_max, color="black", linestyle="dashed")

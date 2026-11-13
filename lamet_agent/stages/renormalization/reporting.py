@@ -12,6 +12,7 @@ from lamet_agent.stages._reporting import (
     StageReportRecord,
     describe_grid,
     format_value,
+    kinematic_series_label,
     output_attrs,
     stage_overlay_lines,
     write_report,
@@ -175,7 +176,11 @@ def _load_plot_data(record: StageReportRecord) -> dict[str, object] | None:
 
 def _record_momentum_label(record: StageReportRecord) -> str:
     attrs = output_attrs(record)
-    return momentum_label(attrs.get("momentum_gev"), momentum=attrs.get("momentum"), default=record.job_id)
+    value = attrs.get("momentum_gev")
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value)):
+        momentum_symbol = r"P_z" if attrs.get("longitudinal_direction") is not None else "P"
+        return rf"${momentum_symbol}={float(value):.2f}\,\mathrm{{GeV}}$"
+    return momentum_label(value, momentum=attrs.get("momentum"), default=record.job_id)
 
 
 def _record_spacing_label(record: StageReportRecord) -> str:
@@ -183,6 +188,14 @@ def _record_spacing_label(record: StageReportRecord) -> str:
 
 
 def _combined_series_label(record: StageReportRecord) -> str:
+    attrs = output_attrs(record)
+    label = kinematic_series_label(
+        attrs,
+        spacing_fm=record.output.ensemble.a_s,
+        fallback="",
+    )
+    if label:
+        return label
     momentum = _record_momentum_label(record)
     spacing = record.output.ensemble.a_s
     if isinstance(spacing, (int, float)) and not isinstance(spacing, bool) and math.isfinite(float(spacing)):
@@ -399,7 +412,7 @@ def _grouped_overlay_lines(records: tuple[StageReportRecord, ...], artifact_dire
                     tuple(group), artifact_directory, coordinate="z",
                     stem=f"renormalized_a{_float_slug(spacing)}fm",
                     ylabel=RENORMALIZED_MATRIX_ELEMENT_LABELS, xlabel=Z_FM_LABEL,
-                    series_label=_record_momentum_label,
+                    series_label=_combined_series_label,
                 )
             )
 
@@ -427,7 +440,7 @@ def _grouped_overlay_lines(records: tuple[StageReportRecord, ...], artifact_dire
                     tuple(group), artifact_directory, coordinate="z",
                     stem=f"discrete_effect_{_momentum_stem(group[0])}",
                     ylabel=RENORMALIZED_MATRIX_ELEMENT_LABELS, xlabel=Z_FM_LABEL,
-                    series_label=_record_spacing_label,
+                    series_label=_combined_series_label,
                 )
             )
     return lines

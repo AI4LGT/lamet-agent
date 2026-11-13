@@ -45,10 +45,21 @@ def run(context: ToolContext) -> dict[str, object]:
     context.params["kernel_id"] = kernel_id
     scheme = str(data.attrs["renormalization_scheme"]).strip().lower()
     kernel = load_kernel(kernel_id, root=root)
+    kernel_signature = inspect.signature(kernel)
+    kernel_parameters = kernel_signature.parameters
     parameter_values = dict(context.params["kernel_parameters"])
     if "zs_fm" in parameter_values:
         raise ValueError("kernel_parameters.zs_fm is supplied by upstream renormalization attrs")
-    kernel_uses_zs = "zs_fm" in inspect.signature(kernel).parameters
+    if "skewness" in kernel_parameters:
+        parameter_values["skewness"] = float(data.attrs["xi"])
+        context.params["kernel_parameters"] = {
+            **context.params["kernel_parameters"],
+            "skewness": parameter_values["skewness"],
+        }
+    elif str(data.attrs.get("target_observable", "")).lower() == "gpd" and kernel_id.startswith("quark_pdf_"):
+        parameter_values.pop("skewness", None)
+        context.params["kernel_parameters"] = parameter_values
+    kernel_uses_zs = "zs_fm" in kernel_parameters
     scheme_uses_zs = scheme == "hybrid"
     if kernel_uses_zs != scheme_uses_zs:
         expected = "include" if scheme_uses_zs else "omit"

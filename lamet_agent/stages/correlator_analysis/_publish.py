@@ -7,8 +7,10 @@ import numpy as np
 
 from lamet_agent.agent import ToolContext
 from lamet_agent.data import EnsembleData
+from lamet_agent.kernels.implementation import HBAR_C_GEV_FM
 from lamet_agent.parallel import FitNumericalError
 from lamet_agent.plotting import configure_plot, errorline, save_figure, start_plot
+from lamet_agent.stages._reporting import kinematic_series_label
 from lamet_agent.ui import log
 from lamet_agent.stages.correlator_analysis._diagnostics import write_fit_artifacts
 from lamet_agent.stages.correlator_analysis.physics import (
@@ -301,8 +303,40 @@ def run(context: ToolContext, *, candidate_id: str) -> dict[str, object]:
             if primary_quality.get(key) is not None:
                 selected[key] = primary_quality[key]
     context.state["correlator_result"] = data
-    if context.manifest["metadata"].get("target_observable") == "tmd":
-        data.array.attrs["target_observable"] = "tmd"
+    target_observable = str(context.manifest["metadata"].get("target_observable", "")).lower()
+    if target_observable:
+        data.array.attrs["target_observable"] = target_observable
+    fitting_form = str(settings["fitting_form"])
+    data.array.attrs["fitting_form"] = fitting_form
+    data.array.attrs["fitting_component"] = str(context.params["component"])
+    has_nonforward_kinematics = target_observable == "gpd" or fitting_form.lower() == "nonbreit"
+    if has_nonforward_kinematics:
+        source_momentum = np.asarray(json.loads(data.attrs["source_momentum"]), dtype=float)
+        sink_momentum = np.asarray(json.loads(data.attrs["sink_momentum"]), dtype=float)
+        initial_pz = float(source_momentum[2] * data.ensemble.k_s)
+        final_pz = float(sink_momentum[2] * data.ensemble.k_s)
+        data.array.attrs["xi"] = (final_pz - initial_pz) / (final_pz + initial_pz)
+        fits = selected.get("application_fit", {}).get("fits", [])
+        energy_fits = [fit for fit in fits if fit.get("E0_i") is not None and fit.get("E0_f") is not None]
+        if energy_fits:
+            reference = min(energy_fits, key=lambda fit: (abs(float(fit["z"])), float(fit["z"])))
+            energy_scale = HBAR_C_GEV_FM / float(data.ensemble.a_t)
+            initial_energy = float(reference["E0_i"]) * energy_scale
+            final_energy = float(reference["E0_f"]) * energy_scale
+            delta_momentum = (sink_momentum - source_momentum) * float(data.ensemble.k_s)
+            data.array.attrs["initial_energy_gev"] = initial_energy
+            data.array.attrs["final_energy_gev"] = final_energy
+            data.array.attrs["t_gev2"] = (final_energy - initial_energy) ** 2 - float(
+                np.dot(delta_momentum, delta_momentum)
+            )
+        elif np.array_equal(source_momentum, sink_momentum):
+            data.array.attrs["t_gev2"] = 0.0
+    kinematic_label = kinematic_series_label(
+        data.attrs,
+        spacing_fm=data.ensemble.a_s,
+        fallback=context.job_id,
+    )
+    if target_observable == "tmd":
         data.array.attrs["output_component"] = str(context.params["component"])
     data.to_netcdf(context.artifact_directory / "output.nc")
     candidate_table = [
@@ -364,6 +398,7 @@ def run(context: ToolContext, *, candidate_id: str) -> dict[str, object]:
             artifact_directory=context.artifact_directory,
             component=str(context.params["component"]),
             q_min=float(settings["q_min"]),
+            kinematic_label=kinematic_label,
             model_average=model_average,
             fit_model_weights=mean_weights,
             averaged_ids=averaged_ids,
@@ -416,9 +451,17 @@ def run(context: ToolContext, *, candidate_id: str) -> dict[str, object]:
     if plot_artifact is None:
         sample_error_mode = str(context.manifest["metadata"]["sample_error_mode"])
         start_plot()
-        errorline(data.coords[plot_dim], plot_data.average(sample_error_mode))
+        errorline(
+            data.coords[plot_dim],
+            plot_data.average(sample_error_mode),
+            label=kinematic_label,
+        )
         xlabel = r"$z~/~a$" if plot_dim == "z" else plot_dim
-        configure_plot(xlabel=xlabel, ylabel=str(data.name or "result").replace("_", " "))
+        configure_plot(
+            xlabel=xlabel,
+            ylabel=str(data.name or "result").replace("_", " "),
+            legend=has_nonforward_kinematics or target_observable in {"pdf", "da"},
+        )
         save_figure(context.artifact_directory / "plots" / "result.pdf")
         plot_artifact = "plots/result.pdf"
     artifacts = (
