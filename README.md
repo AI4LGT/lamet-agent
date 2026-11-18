@@ -11,6 +11,8 @@
 `lamet-agent` is a Python-first framework for reproducible **La**rge **M**omentum **E**ffective **T**heory (LaMET) and lattice QCD
 analysis workflows.
 
+test
+
 ## Quick Start
 
 Requires a logged-in Codex CLI on this machine. Codex does not use
