@@ -1,6 +1,11 @@
 # Coulomb-gauge pion TMD analysis
 
-The canonical example starts from the raw HDF5 correlators in `data_pion_tmd_cg` and runs
+This note describes the pion TMD workflow merged in PR #31. Current `main`
+uses different Fourier and Soft Analysis contracts. Its `soft_analysis`
+stage extracts a Collins–Soper kernel from a momentum pair, and the
+example's intrinsic-soft job requires the earlier contract.
+
+The PR #31 example starts from the raw HDF5 correlators in `data_pion_tmd_cg` and runs
 correlator analysis, ratio renormalization, Fourier transformation, soft analysis
 and matching:
 
@@ -130,7 +135,7 @@ two-point posterior with its original width (`chained_prior_error_scale=1`).
 the explicit chain scale overrides its fallback role. Existing collinear
 examples keep their own settings and defaults.
 
-The example uses the common [prior interface](fit-priors.md) to specify
+The example uses the common [prior interface](../docs/fit-priors.md) to specify
 reference priors whose model parameters agree exactly: moving-WF
 `log(dE1)=-1±0.3`, raw `log(overlap0)=-25±5`, both `phi0` components `0±0.5`; the raw
 rest amplitude `0±0.5`; the PDF log gap `0±10`; and the four FF priors.
