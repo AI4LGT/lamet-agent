@@ -259,7 +259,7 @@ The fixed-order NLO raw-data validation completed all 516 numerical jobs and sci
 including a separate review pinned to the supplied v5 paper. Low-Q FF fits,
 soft momentum dependence and large-distance uncertainties remain documented limitations.
 The earlier bootstrap domain failure is retained as historical validation evidence.
-See [TMD analysis](docs/tmd-analysis.md) for normalization, sampling lineage,
+See [TMD analysis](notes/tmd-analysis.md) for normalization, sampling lineage,
 off-axis geometry, numerical domains, and stage-by-stage debugging, and
 [reference comparison](docs/tmd-reference-comparison.md) for stage-by-stage
 comparisons with the saved `data_pion_tmd_cg` results and the stated NLL limitations.
@@ -418,9 +418,9 @@ For correlator inputs that use a descriptor JSON record, see
 [Standard Correlator HDF5 Format](#standard-correlator-hdf5-format) for the
 input-file conventions.
 
-All fitting stages accept partial named Gaussian overrides as gvar strings
-(e.g. `"priors": {"E0": "0.3(0.1)"}`); missing parameters
-keep their existing defaults and unused names are ignored. See
+Correlator, self-renormalization, and extrapolation fits accept partial named
+Gaussian overrides as gvar strings, for example `"priors": {"E0": "0.3(0.1)"}`.
+Missing parameters keep their defaults and unused names are ignored. See
 [Configurable fit priors](docs/fit-priors.md) for stage-specific names and units,
 replica-prior choices, and fully authored two-point fit examples.
 
