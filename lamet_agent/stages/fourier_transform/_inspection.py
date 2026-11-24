@@ -18,11 +18,22 @@ from lamet_agent.stages.fourier_transform.physics import (
 )
 
 
+GPD_MIN_ZMIN_FM = 0.5
+
+
+def shifted_zmin_fm(value: float, shift_fm: float) -> float:
+    return round(float(value) + shift_fm, 12)
+
+
 def effective_zmin_fm(context: ToolContext, data: Any) -> list[float]:
     """Apply the job's lattice-site offset to its current lower-range candidates."""
     offset = int(context.params["tail_window_step_offset"])
     spacing = float(data.ensemble.a_s)
-    return [round(float(value) + offset * spacing, 12) for value in context.params["zmin_fm"]]
+    lower = [shifted_zmin_fm(value, offset * spacing) for value in context.params["zmin_fm"]]
+    target = str(context.manifest["metadata"]["target_observable"]).lower()
+    if target == "gpd" and any(value < GPD_MIN_ZMIN_FM for value in lower):
+        raise ValueError("GPD tail fits require effective zmin_fm >= 0.5 fm after tail_window_step_offset")
+    return lower
 
 
 def derive_conventions(attrs: Mapping[str, object], *, target_observable: str, sector: str) -> dict[str, object]:

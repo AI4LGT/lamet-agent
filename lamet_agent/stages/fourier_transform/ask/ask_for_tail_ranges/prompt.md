@@ -53,8 +53,10 @@ supplied positive-z grid. Follow this selection policy in order of priority:
    Recommend about 4--5 successive zmin grid points when the input coverage
    allows it, rather than only one or two. Never recommend raw zmin_fm below
    0.5 fm. Runtime later applies `tail_window_step_offset * a_s`; effective
-   zmin values must remain nonnegative and lie on the input grid. Authored
-   runtime ranges may include zero even though this recommendation does not.
+   zmin values must remain nonnegative and lie on the input grid. For GPD,
+   effective zmin values must be at least 0.5 fm, including authored ranges
+   and systematic variations. Choose raw GPD starts from `eligible_raw_zmin_fm` when supplied.
+   Other observables may use authored runtime ranges including zero.
 3. Prefer candidate pairs with the same large zmax and ordered increasing
    zmin values. Recommend 2--3 zmax grid points when the input coverage allows
    it, with the largest valid zmax first and carrying the largest-zmax choice

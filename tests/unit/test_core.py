@@ -3069,19 +3069,19 @@ def test_spectrum_recommendation_describes_its_initial_request(tmp_path: Path) -
     assert "z_n^2/(2 E_n)" in backend.calls[0][0][0].content
 
 
-def test_fourier_tail_range_recommendation_reuses_context_and_obeys_job_budget(tmp_path: Path) -> None:
+@pytest.mark.parametrize(("target", "offset"), [("pdf", 0), ("gpd", -1)])
+def test_fourier_tail_range_recommendation_reuses_context_and_obeys_job_budget(tmp_path: Path, target, offset) -> None:
     from lamet_agent.data import EnsembleData, EnsembleInfo
     from lamet_agent.stages.fourier_transform.ask import initial, revise
 
+    grid = np.arange(-8, 9) / 10
+    center = np.exp(-np.abs(grid)).astype(complex)
     data = EnsembleData(
         EnsembleInfo("test", "test", 0.1, 0.1, 32, 64, 0.14),
         "bootstrap",
-        [
-            np.asarray([0.3, 0.5, 0.7, 0.9, 1.0, 0.9, 0.7, 0.5, 0.3], dtype=complex),
-            np.asarray([0.28, 0.48, 0.68, 0.88, 1.0, 0.88, 0.68, 0.48, 0.28], dtype=complex),
-        ],
+        [center, center * 0.98],
         ["z"],
-        {"z": [-0.8, -0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6, 0.8]},
+        {"z": grid.tolist()},
         attrs={"coord_unit": "fm", "momentum_gev": 2.0},
     )
     backend = _ScriptedBackend(
@@ -3091,17 +3091,18 @@ def test_fourier_tail_range_recommendation_reuses_context_and_obeys_job_budget(t
         ]
     )
     context = ToolContext(
-        {"metadata": {"sample_error_mode": "covariance"}},
+        {"metadata": {"sample_error_mode": "covariance", "target_observable": target}},
         tmp_path / "manifest.json",
         "fourier_transform",
         "fourier",
         {
+            "tail_window_step_offset": offset,
             "scheme_scan": {"order": ["LA"], "posterior_prior_error_scale": [3.0]},
             "zmax_ext_fm": 1.0,
         },
         {},
         {},
-        {"fourier_input": data, "tail_inspection": {"z_grid_step_fm": 0.2}},
+        {"fourier_input": data, "tail_inspection": {"z_grid_step_fm": 0.1}},
         tmp_path,
         np.random.default_rng(1),
     )
@@ -3126,6 +3127,11 @@ def test_fourier_tail_range_recommendation_reuses_context_and_obeys_job_budget(t
             "zmin_fm",
         ]
     )
+    for request, contract in zip((first_payload["request"], second_payload), backend.response_schemas):
+        assert request["evidence"]["tail_window_step_offset"] == offset
+        if target == "gpd":
+            assert request["evidence"]["eligible_raw_zmin_fm"] == [0.6, 0.7, 0.8]
+            assert contract["schema"]["properties"]["zmin_fm"]["items"]["enum"] == [0.6, 0.7, 0.8]
     assert first_payload["context"][0]["key"] == "fourier_tail_fit_data"
     assert isinstance(first_payload["context"][0]["content"]["components"]["real"], str)
     assert "context" not in second_payload
