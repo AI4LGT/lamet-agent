@@ -737,7 +737,7 @@ from the top-level collinear convolution-matrix discovery. Soft Analysis
 uses the same form-factor coefficient in its intrinsic-soft integral. See
 [`kernels/tmd/sudakov.md`](lamet_agent/kernels/tmd/sudakov.md) for formulas,
 provenance, input conventions and an example. Focused tests live in
-`test_tmd_sudakov.py`, `test_tmd_nll_kernels.py` and `test_tmd_nnll_kernels.py`.
+`test_tmd_sudakov.py`, `test_tmd_nll_kernels.py`, `test_tmd_nnll_kernels.py` and `test_tmd_nnnll_kernels.py`. NNNLL adds a two-loop boundary, four-loop cusp, three-loop noncusp and numerical four-loop running for the standalone H_F API, with its own pole calculation; see `cg_nnnll.md`. Pipeline order controls remain unchanged.
 
 ### NNLO nonsinglet DGLAP building block
 
