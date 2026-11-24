@@ -55,7 +55,7 @@ supplied positive-z grid. Follow this selection policy in order of priority:
    0.5 fm. Runtime later applies `tail_window_step_offset * a_s`; effective
    zmin values must remain nonnegative and lie on the input grid. For GPD,
    effective zmin values must be at least 0.5 fm, including authored ranges
-   and systematic variations. Account for negative offsets when choosing them.
+   and systematic variations. Choose raw GPD starts from `eligible_raw_zmin_fm` when supplied.
    Other observables may use authored runtime ranges including zero.
 3. Prefer candidate pairs with the same large zmax and ordered increasing
    zmin values. Recommend 2--3 zmax grid points when the input coverage allows
