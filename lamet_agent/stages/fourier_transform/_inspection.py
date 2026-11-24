@@ -22,7 +22,11 @@ def effective_zmin_fm(context: ToolContext, data: Any) -> list[float]:
     """Apply the job's lattice-site offset to its current lower-range candidates."""
     offset = int(context.params["tail_window_step_offset"])
     spacing = float(data.ensemble.a_s)
-    return [round(float(value) + offset * spacing, 12) for value in context.params["zmin_fm"]]
+    lower = [round(float(value) + offset * spacing, 12) for value in context.params["zmin_fm"]]
+    target = str(context.manifest["metadata"]["target_observable"]).lower()
+    if target == "gpd" and any(value < 0.5 for value in lower):
+        raise ValueError("GPD tail fits require effective zmin_fm >= 0.5 fm after tail_window_step_offset")
+    return lower
 
 
 def derive_conventions(attrs: Mapping[str, object], *, target_observable: str, sector: str) -> dict[str, object]:
