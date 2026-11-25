@@ -1195,6 +1195,11 @@ def fit_spectrum_samples(
 def _qda_two_point_source(records: list[EnsembleData], source: EnsembleData) -> tuple[EnsembleData | None, str]:
     """Prefer one compatible explicit two-point correlator, else use qDA z=0."""
     explicit = [value for value in records if value.attrs.get("correlator_type") == "two_point"]
+    reference_local = source.attrs.get("partition_reference_local_dataset")
+    if reference_local is not None and (
+        len(explicit) != 1 or explicit[0].attrs.get("local_dataset") != reference_local
+    ):
+        raise ValueError("a partition-averaged ratio requires its declared reference local correlator")
     if not explicit:
         return None, "qda_z0"
     if len(explicit) != 1:
@@ -1290,6 +1295,8 @@ def fit_qda_samples(
     if len(sources) != 1 or sources[0].dims != ["t", "z"]:
         raise ValueError("qDA fitting requires exactly one qDA correlator with dimensions ['t', 'z']")
     source = sources[0]
+    if "momentum_partitions" in source.attrs and pipeline.as_list() != ["wf_over_2pt"]:
+        raise ValueError("a partition-averaged numerator is defined only for the wf_over_2pt ratio fit")
     if source.ensemble is None:
         raise ValueError("qDA fitting requires the temporal extent")
     extent = int(source.ensemble.L_t)

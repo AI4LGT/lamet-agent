@@ -1,0 +1,884 @@
+{
+  "metadata": {
+    "run_id": "pion_tmd_gi_p5_average",
+    "root_directory": "..",
+    "artifacts_directory": "runs/pion_tmd_gi_p5_average/artifacts",
+    "random_seed": 1984,
+    "workers": 4,
+    "target_observable": "tmdwf",
+    "parton": "quark",
+    "resample_mode": "bootstrap",
+    "bin_size": 1,
+    "sample_error_mode": "variance",
+    "samples": 1000,
+    "parameter_recommendation_retries": 0
+  },
+  "stages": {
+    "correlator_analysis": {
+      "defaults": {
+        "analysis_method": "lsqfit",
+        "component": "both",
+        "fit_scope": [
+          "wf_over_2pt"
+        ],
+        "nstate": {
+          "wf_over_2pt": [
+            1
+          ]
+        },
+        "fitting_form": "Breit",
+        "model_average": false,
+        "pt3_windows": [],
+        "svdcut": 0.001,
+        "prior_width": [
+          1.0
+        ],
+        "posterior_prior_error_scale": 10.0,
+        "q_min": 0.05,
+        "sample_prior_mode": "center_posterior",
+        "tune_z_values": [
+          1,
+          6,
+          12
+        ]
+      },
+      "jobs": [
+        {
+          "id": "fit_gtg5_d0_p4_b1",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d0_p4_b1_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d0_p4_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 9,
+              "tmax": 12
+            }
+          ]
+        },
+        {
+          "id": "fit_gtg5_d1_p4_b1",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d1_p4_b1_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d1_p4_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 7,
+              "tmax": 12
+            }
+          ],
+          "tune_z_values": [
+            1,
+            6,
+            10
+          ]
+        },
+        {
+          "id": "fit_gzg5_d0_p4_b1",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d0_p4_b1_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d0_p4_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 8,
+              "tmax": 12
+            }
+          ]
+        },
+        {
+          "id": "fit_gzg5_d1_p4_b1",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d1_p4_b1_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d1_p4_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 7,
+              "tmax": 12
+            }
+          ],
+          "tune_z_values": [
+            1,
+            6,
+            10
+          ]
+        },
+        {
+          "id": "fit_gtg5_d0_p5_b1",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d0_p5_b1_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d0_p5_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 8,
+              "tmax": 11
+            }
+          ]
+        },
+        {
+          "id": "fit_gtg5_d1_p5_b1",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d1_p5_b1_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d1_p5_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 8,
+              "tmax": 12
+            }
+          ]
+        },
+        {
+          "id": "fit_gzg5_d0_p5_b1",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d0_p5_b1_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d0_p5_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 7,
+              "tmax": 11
+            }
+          ]
+        },
+        {
+          "id": "fit_gzg5_d1_p5_b1",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d1_p5_b1_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d1_p5_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 7,
+              "tmax": 11
+            }
+          ]
+        },
+        {
+          "id": "fit_gtg5_d0_p6_b1",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d0_p6_b1_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d0_p6_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 8,
+              "tmax": 11
+            }
+          ]
+        },
+        {
+          "id": "fit_gtg5_d1_p6_b1",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d1_p6_b1_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d1_p6_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 7,
+              "tmax": 10
+            }
+          ]
+        },
+        {
+          "id": "fit_gzg5_d0_p6_b1",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d0_p6_b1_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d0_p6_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 8,
+              "tmax": 12
+            }
+          ]
+        },
+        {
+          "id": "fit_gzg5_d1_p6_b1",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d1_p6_b1_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d1_p6_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 7,
+              "tmax": 10
+            }
+          ]
+        },
+        {
+          "id": "fit_gtg5_d0_p4_b3",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d0_p4_b3_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d0_p4_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 6,
+              "tmax": 11
+            }
+          ]
+        },
+        {
+          "id": "fit_gtg5_d1_p4_b3",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d1_p4_b3_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d1_p4_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 7,
+              "tmax": 11
+            }
+          ],
+          "tune_z_values": [
+            1,
+            6,
+            10
+          ]
+        },
+        {
+          "id": "fit_gzg5_d0_p4_b3",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d0_p4_b3_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d0_p4_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 7,
+              "tmax": 11
+            }
+          ]
+        },
+        {
+          "id": "fit_gzg5_d1_p4_b3",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d1_p4_b3_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d1_p4_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 7,
+              "tmax": 11
+            }
+          ]
+        },
+        {
+          "id": "fit_gtg5_d0_p5_b3",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d0_p5_b3_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d0_p5_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 6,
+              "tmax": 11
+            }
+          ]
+        },
+        {
+          "id": "fit_gtg5_d1_p5_b3",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d1_p5_b3_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d1_p5_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 6,
+              "tmax": 11
+            }
+          ]
+        },
+        {
+          "id": "fit_gzg5_d0_p5_b3",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d0_p5_b3_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d0_p5_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 7,
+              "tmax": 11
+            }
+          ]
+        },
+        {
+          "id": "fit_gzg5_d1_p5_b3",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d1_p5_b3_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d1_p5_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 5,
+              "tmax": 9
+            }
+          ],
+          "tune_z_values": [
+            1,
+            6,
+            10
+          ]
+        },
+        {
+          "id": "fit_gtg5_d0_p6_b3",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d0_p6_b3_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d0_p6_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 6,
+              "tmax": 11
+            }
+          ]
+        },
+        {
+          "id": "fit_gtg5_d1_p6_b3",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d1_p6_b3_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gtg5_d1_p6_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 6,
+              "tmax": 10
+            }
+          ]
+        },
+        {
+          "id": "fit_gzg5_d0_p6_b3",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d0_p6_b3_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d0_p6_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 6,
+              "tmax": 10
+            }
+          ]
+        },
+        {
+          "id": "fit_gzg5_d1_p6_b3",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d1_p6_b3_nonlocal"
+              },
+              {
+                "json": "examples/pion_tmd_gi_p5_average_correlators.json",
+                "id": "gzg5_d1_p6_local"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 7,
+              "tmax": 11
+            }
+          ]
+        }
+      ]
+    },
+    "renormalization": {
+      "defaults": {
+        "strategy": "wilson_loop",
+        "normalization": false
+      },
+      "jobs": [
+        {
+          "id": "wilson_b1",
+          "inputs": {
+            "raw": {
+              "file": "data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5"
+            }
+          },
+          "settings": {
+            "b": 1,
+            "a_fm": 0.1053,
+            "L": 6,
+            "ZO": 0.92208,
+            "fit_start": 5,
+            "fit_stop": 20,
+            "priors": {
+              "c": "0.0 +- 10.0",
+              "E": "0.0 +- 10.0",
+              "c1": "10.0 +- 10.0",
+              "delta_E": "1.0 +- 1.0"
+            },
+            "svdcut": 1e-08
+          },
+          "type": "fit"
+        },
+        {
+          "id": "renormalized_p4_b1",
+          "inputs": {
+            "targets": [
+              "fit_gtg5_d0_p4_b1",
+              "fit_gtg5_d1_p4_b1",
+              "fit_gzg5_d0_p4_b1",
+              "fit_gzg5_d1_p4_b1"
+            ],
+            "denominator": "wilson_b1"
+          },
+          "type": "apply"
+        },
+        {
+          "id": "renormalized_p5_b1",
+          "inputs": {
+            "targets": [
+              "fit_gtg5_d0_p5_b1",
+              "fit_gtg5_d1_p5_b1",
+              "fit_gzg5_d0_p5_b1",
+              "fit_gzg5_d1_p5_b1"
+            ],
+            "denominator": "wilson_b1"
+          },
+          "type": "apply"
+        },
+        {
+          "id": "renormalized_p6_b1",
+          "inputs": {
+            "targets": [
+              "fit_gtg5_d0_p6_b1",
+              "fit_gtg5_d1_p6_b1",
+              "fit_gzg5_d0_p6_b1",
+              "fit_gzg5_d1_p6_b1"
+            ],
+            "denominator": "wilson_b1"
+          },
+          "type": "apply"
+        },
+        {
+          "id": "wilson_b3",
+          "inputs": {
+            "raw": {
+              "file": "data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5"
+            }
+          },
+          "settings": {
+            "b": 3,
+            "a_fm": 0.1053,
+            "L": 6,
+            "ZO": 0.92208,
+            "fit_start": 5,
+            "fit_stop": 20,
+            "priors": {
+              "c": "0.0 +- 10.0",
+              "E": "0.0 +- 10.0",
+              "c1": "10.0 +- 10.0",
+              "delta_E": "1.0 +- 1.0"
+            },
+            "svdcut": 1e-08
+          },
+          "type": "fit"
+        },
+        {
+          "id": "renormalized_p4_b3",
+          "inputs": {
+            "targets": [
+              "fit_gtg5_d0_p4_b3",
+              "fit_gtg5_d1_p4_b3",
+              "fit_gzg5_d0_p4_b3",
+              "fit_gzg5_d1_p4_b3"
+            ],
+            "denominator": "wilson_b3"
+          },
+          "type": "apply"
+        },
+        {
+          "id": "renormalized_p5_b3",
+          "inputs": {
+            "targets": [
+              "fit_gtg5_d0_p5_b3",
+              "fit_gtg5_d1_p5_b3",
+              "fit_gzg5_d0_p5_b3",
+              "fit_gzg5_d1_p5_b3"
+            ],
+            "denominator": "wilson_b3"
+          },
+          "type": "apply"
+        },
+        {
+          "id": "renormalized_p6_b3",
+          "inputs": {
+            "targets": [
+              "fit_gtg5_d0_p6_b3",
+              "fit_gtg5_d1_p6_b3",
+              "fit_gzg5_d0_p6_b3",
+              "fit_gzg5_d1_p6_b3"
+            ],
+            "denominator": "wilson_b3"
+          },
+          "type": "apply"
+        }
+      ]
+    },
+    "fourier_transform": {
+      "defaults": {
+        "tmdwf_profile": "pion_da_components",
+        "quasi_y_ls": {
+          "start": -0.5,
+          "stop": 1.5,
+          "num": 1000
+        },
+        "zmin_fm": [
+          0.5265
+        ],
+        "zmax_fm": [
+          1.2636
+        ],
+        "zmax_ext_fm": 5.0544,
+        "smooth": "linear",
+        "scheme_scan": {
+          "order": [
+            "LA"
+          ],
+          "sector": "full",
+          "Lambda0_gev": 0.0,
+          "posterior_prior_error_scale": [
+            10.0
+          ],
+          "model_average": false,
+          "q_min": 0.05,
+          "max_schemes": 20
+        },
+        "negative_z": "even_both_notebook"
+      },
+      "jobs": [
+        {
+          "id": "real_p4_b1",
+          "inputs": {
+            "input": "renormalized_p4_b1"
+          },
+          "tmdwf_projection": "real"
+        },
+        {
+          "id": "quasi_p4_b1",
+          "inputs": {
+            "input": "renormalized_p4_b1",
+            "real_projection": "real_p4_b1"
+          },
+          "tmdwf_projection": "imag"
+        },
+        {
+          "id": "real_p5_b1",
+          "inputs": {
+            "input": "renormalized_p5_b1"
+          },
+          "tmdwf_projection": "real"
+        },
+        {
+          "id": "quasi_p5_b1",
+          "inputs": {
+            "input": "renormalized_p5_b1",
+            "real_projection": "real_p5_b1"
+          },
+          "tmdwf_projection": "imag"
+        },
+        {
+          "id": "real_p6_b1",
+          "inputs": {
+            "input": "renormalized_p6_b1"
+          },
+          "tmdwf_projection": "real"
+        },
+        {
+          "id": "quasi_p6_b1",
+          "inputs": {
+            "input": "renormalized_p6_b1",
+            "real_projection": "real_p6_b1"
+          },
+          "tmdwf_projection": "imag"
+        },
+        {
+          "id": "real_p4_b3",
+          "inputs": {
+            "input": "renormalized_p4_b3"
+          },
+          "tmdwf_projection": "real"
+        },
+        {
+          "id": "quasi_p4_b3",
+          "inputs": {
+            "input": "renormalized_p4_b3",
+            "real_projection": "real_p4_b3"
+          },
+          "tmdwf_projection": "imag"
+        },
+        {
+          "id": "real_p5_b3",
+          "inputs": {
+            "input": "renormalized_p5_b3"
+          },
+          "tmdwf_projection": "real"
+        },
+        {
+          "id": "quasi_p5_b3",
+          "inputs": {
+            "input": "renormalized_p5_b3",
+            "real_projection": "real_p5_b3"
+          },
+          "tmdwf_projection": "imag"
+        },
+        {
+          "id": "real_p6_b3",
+          "inputs": {
+            "input": "renormalized_p6_b3"
+          },
+          "tmdwf_projection": "real",
+          "zmax_fm": [
+            1.1583
+          ]
+        },
+        {
+          "id": "quasi_p6_b3",
+          "inputs": {
+            "input": "renormalized_p6_b3",
+            "real_projection": "real_p6_b3"
+          },
+          "tmdwf_projection": "imag",
+          "zmax_fm": [
+            1.053
+          ]
+        }
+      ]
+    },
+    "soft_analysis": {
+      "defaults": {
+        "mu": 2.0,
+        "alpha_s": 0.293,
+        "kernel_id": "tmdwf_gi_unlo",
+        "sign": 1,
+        "convention": "author",
+        "logarithm": "expanded",
+        "dps": 30,
+        "min_magnitude": 1e-14
+      },
+      "jobs": [
+        {
+          "id": "cs_kernel",
+          "inputs": {
+            "quasi": [
+              "quasi_p4_b1",
+              "quasi_p5_b1",
+              "quasi_p6_b1",
+              "quasi_p4_b3",
+              "quasi_p5_b3",
+              "quasi_p6_b3"
+            ]
+          },
+          "type": "cs_kernel",
+          "momentum_pairs": [
+            [
+              4,
+              5
+            ],
+            [
+              5,
+              6
+            ]
+          ],
+          "x_window": [
+            0.34,
+            0.66
+          ],
+          "estimator": "pca_power",
+          "pca_variance_fraction": 0.99,
+          "priors": {
+            "A": "0.0 +- 1.0"
+          }
+        }
+      ]
+    }
+  }
+}

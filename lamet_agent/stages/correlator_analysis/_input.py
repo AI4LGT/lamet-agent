@@ -19,6 +19,142 @@ import numpy as np
 from lamet_agent.data import EnsembleData, EnsembleInfo
 
 
+def _c32p23_input_transform(values, record, ensemble):
+    """Project the local denominator or rotate a GI numerator into the midpoint convention."""
+    selectors = record["selectors"]
+    transform = selectors["input_transform"]
+    if ensemble.id != "C32P23" or selectors.get("gfix") != "GI":
+        raise ValueError("C32P23 input transforms require C32P23 GI correlators")
+    if transform == "c32p23_local_real":
+        if record["correlator_type"] != "two_point" or record["dims"] != ["bootstrap", "t"] or selectors["bT"] != 0:
+            raise ValueError("the C32P23 real denominator requires a local two-point function")
+        denominator = values.real
+        if not np.isfinite(denominator).all() or np.any(denominator == 0):
+            raise ValueError("nonfinite or zero C32P23 local denominator")
+        return denominator
+    if transform != "c32p23_midpoint":
+        raise ValueError(f"unknown input_transform: {transform!r}")
+    if record["correlator_type"] != "qda" or record["dims"] != ["bootstrap", "t", "z"]:
+        raise ValueError("the midpoint phase requires a bootstrap, t, z C32P23 numerator")
+    if selectors.get("phase_convention") != "midpoint" or selectors["zdir"] not in (0, 1):
+        raise ValueError("the midpoint phase requires the signed lattice direction zdir=0 or 1")
+    pz = record["source_momentum"][2]
+    if selectors["p1"] - selectors["p2"] != pz:
+        raise ValueError("C32P23 midpoint rotation requires p1 - p2 = Pz")
+    z = np.asarray(record["coords"]["z"])
+    theta = 2 * np.pi * (selectors["p1"] - pz / 2) * z / ensemble.L_s * (-1) ** selectors["zdir"]
+    if not np.isfinite(values).all():
+        raise ValueError("nonfinite C32P23 numerator")
+    return values * np.exp(1j * theta)[None, None, :]
+
+
+def _read_correlator_values(handle, record, configuration_count, sample_dim):
+    dataset_dims = record["dataset_dims"]
+    placeholders = re.findall(r"{([A-Za-z][A-Za-z0-9_]*)}", record["dataset"])
+    if len(placeholders) != len(set(placeholders)) or any(
+        dim not in record["dims"] or dim not in record["coords"] or dim in dataset_dims for dim in placeholders
+    ):
+        raise ValueError("dataset placeholders must be unique coordinate dimensions outside dataset_dims")
+    remaining_dims = [dim for dim in record["dims"] if dim not in placeholders]
+    if set(remaining_dims) != set(dataset_dims):
+        raise ValueError("dataset_dims plus dataset placeholders must cover dims exactly")
+    shape = [configuration_count if dim == sample_dim else len(record["coords"].get(dim, [])) for dim in record["dims"]]
+    if any(size == 0 for size in shape):
+        raise ValueError("every non-configuration dimension needs nonempty coordinates")
+    values = None
+    coordinate_products = itertools.product(*(record["coords"][dim] for dim in placeholders)) if placeholders else [()]
+    for coordinate_values in coordinate_products:
+        selected = dict(zip(placeholders, coordinate_values))
+        dataset_name = record["dataset"].format(**selected)
+        if dataset_name not in handle:
+            raise ValueError(f"HDF5 dataset does not exist: {dataset_name}")
+        leaf = np.asarray(handle[dataset_name])
+        if leaf.ndim != len(dataset_dims):
+            raise ValueError(f"dataset rank does not match dataset_dims: {dataset_name}")
+        sizes = dict(zip(dataset_dims, leaf.shape))
+        if sizes.get(sample_dim) != configuration_count:
+            raise ValueError(f"configuration count does not match descriptor: {dataset_name}")
+        for dim, size in sizes.items():
+            if dim != sample_dim and size > len(record["coords"][dim]):
+                raise ValueError(f"dataset is longer than declared coordinate {dim}: {dataset_name}")
+        if values is None:
+            values = np.zeros(shape, dtype=leaf.dtype)
+        elif values.dtype != leaf.dtype:
+            raise ValueError("templated HDF5 datasets must share one dtype")
+        target_dims = [dim for dim in record["dims"] if dim not in placeholders]
+        leaf = np.transpose(leaf, [dataset_dims.index(dim) for dim in target_dims])
+        selection = []
+        for dim in record["dims"]:
+            if dim in selected:
+                selection.append(record["coords"][dim].index(selected[dim]))
+            elif dim == sample_dim:
+                selection.append(slice(None))
+            else:
+                selection.append(slice(0, sizes[dim]))
+        values[tuple(selection)] = leaf
+    assert values is not None
+    if not np.issubdtype(values.dtype, np.number):
+        raise ValueError("HDF5 correlator datasets must be real or complex numeric arrays")
+    return values
+
+
+def _c32p23_partition_mean(handle, record, ensemble, count):
+    """Encode the mean of paired, individually normalized midpoint ratios for wf_over_2pt."""
+    selectors = record["selectors"]
+    partitions = selectors.get("momentum_partitions")
+    pz = record["source_momentum"][2]
+    if (
+        not isinstance(partitions, list)
+        or len(partitions) < 2
+        or any(
+            not isinstance(pair, list)
+            or len(pair) != 2
+            or any(type(p) is not int for p in pair)
+            or pair[0] - pair[1] != pz
+            for pair in partitions
+        )
+        or len({tuple(pair) for pair in partitions}) != len(partitions)
+        or "p1" in selectors
+        or "p2" in selectors
+    ):
+        raise ValueError("a partition mean requires distinct [p1,p2] pairs with p1 - p2 = Pz")
+    template = record["dataset"]
+    local_template = selectors.get("partition_local_dataset")
+    if not isinstance(local_template, str) or any(
+        "{p1}" not in path or "{p2}" not in path for path in (template, local_template)
+    ):
+        raise ValueError("both numerator and local dataset paths must identify each momentum partition")
+    ratios = []
+    reference_local = None
+    for p1, p2 in partitions:
+        num = {
+            **record,
+            "dataset": template.replace("{p1}", str(p1)).replace("{p2}", str(p2)),
+            "selectors": {**selectors, "input_transform": "c32p23_midpoint", "p1": p1, "p2": p2},
+        }
+        local = {
+            **record,
+            "dataset": local_template.format(p1=p1, p2=p2),
+            "dims": ["bootstrap", "t"],
+            "coords": {"t": record["coords"]["t"]},
+            "correlator_type": "two_point",
+            "selectors": {**selectors, "input_transform": "c32p23_local_real", "bT": 0},
+        }
+        rotated = _c32p23_input_transform(_read_correlator_values(handle, num, count, "bootstrap"), num, ensemble)
+        denominator = _c32p23_input_transform(
+            _read_correlator_values(handle, local, count, "bootstrap"), local, ensemble
+        )
+        if reference_local is None:
+            reference_local = denominator
+        ratios.append(rotated / denominator[..., None])
+    # wf_over_2pt divides by this same measured real correlator. Its fit likelihood
+    # then contains exactly the pointwise arithmetic mean of the individual ratios.
+    values = np.mean(ratios, axis=0) * reference_local[..., None]
+    if not np.isfinite(values).all():
+        raise ValueError("nonfinite C32P23 partition mean")
+    return values
+
+
 def load_descriptor(path: Path, *, selected_ids: set[str] | None = None) -> dict[str, Any]:
     """Load the selected ensemble from one project correlator descriptor."""
     if path.suffix.lower() != ".json" or not path.is_file():
@@ -79,8 +215,20 @@ def load_descriptor(path: Path, *, selected_ids: set[str] | None = None) -> dict
             "current",
             "source_sink_separation",
         }
-        if set(record) != required:
+        if set(record) - {"sampling"} != required:
             raise ValueError(f"correlator record must contain exactly: {sorted(required)}")
+        sampling = record.get("sampling")
+        if sampling is not None and (
+            not isinstance(sampling, dict)
+            or set(sampling) != {"mode", "resample_id"}
+            or sampling["mode"] != "bootstrap"
+            or not isinstance(sampling["resample_id"], str)
+            or not sampling["resample_id"].strip()
+        ):
+            raise ValueError("sampling requires mode=bootstrap and a nonempty paired resample_id")
+        if sampling is not None and "resample_group" in record.get("selectors", {}):
+            raise ValueError("precomputed bootstrap inputs cannot declare a raw resample_group")
+        sample_dim = "bootstrap" if sampling is not None else "configuration"
         if (
             not isinstance(record["id"], str)
             or not record["id"]
@@ -94,9 +242,9 @@ def load_descriptor(path: Path, *, selected_ids: set[str] | None = None) -> dict
             record["format"] != "hdf5"
             or not isinstance(record["dims"], list)
             or not record["dims"]
-            or record["dims"][0] != "configuration"
+            or record["dims"][0] != sample_dim
         ):
-            raise ValueError("only HDF5 descriptors with configuration as the first dimension are supported")
+            raise ValueError(f"HDF5 descriptor first dimension must be {sample_dim}")
         if any(not isinstance(dim, str) or not dim or dim == "resample" for dim in record["dims"]) or len(
             set(record["dims"])
         ) != len(record["dims"]):
@@ -150,57 +298,18 @@ def load_descriptor(path: Path, *, selected_ids: set[str] | None = None) -> dict
             raise ValueError(f"correlator HDF5 input does not exist: {hdf5_path.resolve()}")
         import h5py
 
-        placeholders = re.findall(r"{([A-Za-z][A-Za-z0-9_]*)}", record["dataset"])
-        if len(placeholders) != len(set(placeholders)) or any(
-            dim not in record["dims"] or dim not in record["coords"] or dim in dataset_dims for dim in placeholders
-        ):
-            raise ValueError("dataset placeholders must be unique coordinate dimensions outside dataset_dims")
-        remaining_dims = [dim for dim in record["dims"] if dim not in placeholders]
-        if set(remaining_dims) != set(dataset_dims):
-            raise ValueError("dataset_dims plus dataset placeholders must cover dims exactly")
-        shape = [
-            configuration_count if dim == "configuration" else len(record["coords"].get(dim, []))
-            for dim in record["dims"]
-        ]
-        if any(size == 0 for size in shape):
-            raise ValueError("every non-configuration dimension needs nonempty coordinates")
-        values = None
-        coordinate_products = (
-            itertools.product(*(record["coords"][dim] for dim in placeholders)) if placeholders else [()]
-        )
         with h5py.File(hdf5_path, "r") as handle:
-            for coordinate_values in coordinate_products:
-                selected = dict(zip(placeholders, coordinate_values))
-                dataset_name = record["dataset"].format(**selected)
-                if dataset_name not in handle:
-                    raise ValueError(f"HDF5 dataset does not exist: {dataset_name}")
-                leaf = np.asarray(handle[dataset_name])
-                if leaf.ndim != len(dataset_dims):
-                    raise ValueError(f"dataset rank does not match dataset_dims: {dataset_name}")
-                sizes = dict(zip(dataset_dims, leaf.shape))
-                if sizes.get("configuration") != configuration_count:
-                    raise ValueError(f"configuration count does not match descriptor: {dataset_name}")
-                for dim, size in sizes.items():
-                    if dim != "configuration" and size > len(record["coords"][dim]):
-                        raise ValueError(f"dataset is longer than declared coordinate {dim}: {dataset_name}")
-                if values is None:
-                    values = np.zeros(shape, dtype=leaf.dtype)
-                elif values.dtype != leaf.dtype:
-                    raise ValueError("templated HDF5 datasets must share one dtype")
-                target_dims = [dim for dim in record["dims"] if dim not in placeholders]
-                leaf = np.transpose(leaf, [dataset_dims.index(dim) for dim in target_dims])
-                selection = []
-                for dim in record["dims"]:
-                    if dim in selected:
-                        selection.append(record["coords"][dim].index(selected[dim]))
-                    elif dim == "configuration":
-                        selection.append(slice(None))
-                    else:
-                        selection.append(slice(0, sizes[dim]))
-                values[tuple(selection)] = leaf
-        assert values is not None
-        if not np.issubdtype(values.dtype, np.number):
-            raise ValueError("HDF5 correlator datasets must be real or complex numeric arrays")
+            if "input_transform" in record["selectors"] and (
+                sampling is None or handle.attrs.get("resample_mode") != "bootstrap"
+                or sampling["resample_id"] != handle.attrs.get("source_sha256")
+            ):
+                raise ValueError("C32P23 input transform requires the declared paired bootstrap source")
+            if record["selectors"].get("input_transform") == "c32p23_midpoint_partition_mean":
+                values = _c32p23_partition_mean(handle, record, ensemble, configuration_count)
+            else:
+                values = _read_correlator_values(handle, record, configuration_count, sample_dim)
+        if record["selectors"].get("input_transform") not in {None, "c32p23_midpoint_partition_mean"}:
+            values = _c32p23_input_transform(values, record, ensemble)
         dims = list(record["dims"])
         coords = record["coords"]
         if values.ndim != len(dims) or values.shape[0] != len(configuration_ids):
@@ -231,6 +340,11 @@ def load_descriptor(path: Path, *, selected_ids: set[str] | None = None) -> dict
             "bz_direction",
             "bT",
             "momentum",
+            "zdir",
+            "p1",
+            "p2",
+            "phase_convention",
+            "input_transform",
             "resample_group",
             "observable",
             "bT_fm",
@@ -238,6 +352,18 @@ def load_descriptor(path: Path, *, selected_ids: set[str] | None = None) -> dict
         ):
             if key in record["selectors"]:
                 attrs[key] = record["selectors"][key]
+        if attrs.get("input_transform") == "c32p23_local_real":
+            attrs["local_dataset"] = record["dataset"]
+        elif attrs.get("input_transform") == "c32p23_midpoint_partition_mean":
+            parts = record["selectors"]["momentum_partitions"]
+            attrs.update(
+                momentum_partitions=json.dumps(parts), p1=json.dumps([pair[0] for pair in parts]),
+                p2=json.dumps([pair[1] for pair in parts]),
+                partition_combination="equal mean of separately midpoint-rotated local ratios per bootstrap and t",
+                partition_reference_local_dataset=record["selectors"]["partition_local_dataset"].format(
+                    p1=parts[0][0], p2=parts[0][1]
+                ),
+            )
         direction = record["selectors"].get("longitudinal_direction")
         if direction is not None:
             direction = np.asarray(direction, dtype=float)
@@ -258,9 +384,12 @@ def load_descriptor(path: Path, *, selected_ids: set[str] | None = None) -> dict
             value = record.get(key, current.get(key))
             if value is not None:
                 attrs[key] = value
+        if sampling is not None:
+            attrs["resample_id"] = sampling["resample_id"]
+            attrs["sampling_origin"] = "precomputed_bootstrap"
         raw = EnsembleData(
             ensemble,
-            "raw",
+            "bootstrap" if sampling is not None else "raw",
             [values[index] for index in range(values.shape[0])],
             dims[1:],
             {dim: coords[dim] for dim in dims[1:]},
@@ -281,6 +410,16 @@ def resample_correlators(
     n_configurations = first.n_sample
     if any(item.n_sample != n_configurations for item in data.values()):
         raise ValueError("configuration counts differ inside one resample group")
+    modes = {item.resample for item in data.values()}
+    if modes != {"raw"}:
+        if modes != {"bootstrap"}:
+            raise ValueError("cannot mix raw configurations and precomputed bootstrap samples")
+        if mode != "bootstrap" or bin_size != 1 or n_boot != n_configurations:
+            raise ValueError("precomputed bootstrap requires bootstrap mode, bin_size=1 and matching samples")
+        identifiers = {item.attrs.get("resample_id") for item in data.values()}
+        if len(identifiers) != 1 or not next(iter(identifiers)):
+            raise ValueError("precomputed bootstrap inputs require one matching nonempty resample_id")
+        return dict(data)
     if bin_size < 1 or n_configurations // bin_size < 2:
         raise ValueError("bin_size leaves fewer than two configurations")
     plan_seed: int | None = None
