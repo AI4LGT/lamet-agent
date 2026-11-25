@@ -3072,15 +3072,21 @@ def test_spectrum_recommendation_describes_its_initial_request(tmp_path: Path) -
     assert "z_n^2/(2 E_n)" in backend.calls[0][0][0].content
 
 
-@pytest.mark.parametrize(("target", "offset"), [("pdf", 0), ("gpd", -1)])
-def test_fourier_tail_range_recommendation_reuses_context_and_obeys_job_budget(tmp_path: Path, target, offset) -> None:
+@pytest.mark.parametrize(
+    ("target", "offset", "a_s"),
+    [("pdf", 0, 0.1), ("gpd", -1, 0.1), ("gpd", -1, 0.1 / np.sqrt(2))],
+    ids=["pdf", "gpd_axial", "gpd_face_diagonal"],
+)
+def test_fourier_tail_range_recommendation_reuses_context_and_obeys_job_budget(
+    tmp_path: Path, target: str, offset: int, a_s: float
+) -> None:
     from lamet_agent.data import EnsembleData, EnsembleInfo
     from lamet_agent.stages.fourier_transform.ask import initial, revise
 
     grid = np.arange(-8, 9) / 10
     center = np.exp(-np.abs(grid)).astype(complex)
     data = EnsembleData(
-        EnsembleInfo("test", "test", 0.1, 0.1, 32, 64, 0.14),
+        EnsembleInfo("test", "test", a_s, a_s, 32, 64, 0.14),
         "bootstrap",
         [center, center * 0.98],
         ["z"],
