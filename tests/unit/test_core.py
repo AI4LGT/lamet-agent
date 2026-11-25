@@ -2082,13 +2082,16 @@ def test_systematics_propagate_without_downstream_declarations() -> None:
 
 
 def test_fourier_systematics_accept_single_zmin_without_resolving_data() -> None:
-    manifest = load_manifest(Path(__file__).parents[2] / "examples" / "pion_da_gi_manifest.json")
-    for job in manifest.document["stages"]["fourier_transform"]["jobs"]:
+    from lamet_agent.stages.fourier_transform.systematics import expand
+
+    document = load_manifest(Path(__file__).parents[2] / "examples" / "pion_da_gi_manifest.json").document
+    fourier = document["stages"]["fourier_transform"]
+    for job in fourier["jobs"]:
         job["zmin_fm"] = [job["zmin_fm"][0]]
 
-    assert manifest.validate() == []
+    expand(document, document["systematics"]["fourier_transform"], {})
 
-    jobs = {job["id"]: job for job in manifest.document["stages"]["fourier_transform"]["jobs"]}
+    jobs = {job["id"]: job for job in fourier["jobs"]}
     assert jobs["ft_a06m130_pz6"]["zmin_fm"] == [0.5166]
     assert jobs["ft_a06m130_pz6_lambda_low"]["zmin_fm"] == [0.5166]
     assert jobs["ft_a06m130_pz6_lambda_low"]["tail_window_step_offset"] == -1
