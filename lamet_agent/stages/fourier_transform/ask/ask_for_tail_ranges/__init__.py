@@ -44,12 +44,11 @@ def recommend(
     schema["properties"]["zmin_fm"]["minItems"] = 1
     schema["properties"]["zmin_fm"]["items"]["minimum"] = 0.5
     if target == "gpd" and "zmin_fm" in requested_fields:
-        data, _ = prepare(context)
+        data, z_grid_step_fm = prepare(context)
         grid = np.asarray(data.coords["z"], dtype=float)
-        shift_fm = offset * float(data.ensemble.a_s)
         eligible = []
         for raw in grid[grid >= 0.5]:
-            effective = shifted_zmin_fm(raw, shift_fm)
+            effective = shifted_zmin_fm(raw, offset, z_grid_step_fm)
             if effective >= GPD_MIN_ZMIN_FM and np.any(np.isclose(grid, effective, rtol=0, atol=1e-12)):
                 eligible.append(float(raw))
         if not eligible:

@@ -7,7 +7,7 @@ from typing import Any
 
 
 def expand(document: dict[str, Any], config: dict[str, Any], state: dict[str, Any]) -> None:
-    """Append one Fourier clone per declared lattice-step offset."""
+    """Append one Fourier clone per declared z-grid offset."""
     parsed = [(str(variant["id"]), int(variant["tail_window_step_offset"])) for variant in config["variants"]]
     if not parsed:
         return

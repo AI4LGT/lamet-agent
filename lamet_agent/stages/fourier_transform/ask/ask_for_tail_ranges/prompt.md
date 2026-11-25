@@ -2,8 +2,8 @@ The supplied evidence describes a coordinate-space matrix element `h(z)` on a
 physical z grid. Use exact nonnegative measured coordinates from the evidence;
 the evidence may already contain the runtime-completed signed-z grid, while
 tail fitting uses strictly positive z points. Real and imaginary entries carry
-pointwise central values and uncertainties. The lattice spacing identifies the
-measured grid resolution, and the momentum sets the scale of expected
+pointwise central values and uncertainties. Use `z_grid_step_fm` for the
+physical distance between adjacent measured z points. The momentum sets the scale of expected
 oscillations. `zmin_fm` is the lower measured separation constraining the tail
 fit; `zmax_fm` is the largest measured separation retained in that fit, not the
 later extension endpoint.
@@ -52,7 +52,7 @@ supplied positive-z grid. Follow this selection policy in order of priority:
    so that the tail fit can test when chi2/dof stops improving significantly.
    Recommend about 4--5 successive zmin grid points when the input coverage
    allows it, rather than only one or two. Never recommend raw zmin_fm below
-   0.5 fm. Runtime later applies `tail_window_step_offset * a_s`; effective
+   0.5 fm. Runtime later applies `tail_window_step_offset * z_grid_step_fm`; effective
    zmin values must remain nonnegative and lie on the input grid. For GPD,
    effective zmin values must be at least 0.5 fm, including authored ranges
    and systematic variations. Choose raw GPD starts from `eligible_raw_zmin_fm` when supplied.

@@ -87,7 +87,7 @@ PARAM_RULES = (
     Depends("", "quasi_y_ls", physics="Dimensionless quasi momentum-fraction grid y for P_z/(2 pi hbar c) sum_z w_z exp(+i y P_z z/(hbar c)) h(z), with z and w_z in fm and full endpoint weights on a uniform grid; it becomes the downstream matching input grid, so its range and spacing set numerical coverage but add no lattice information."),
     Depends("", "zmin_fm", physics="Candidate lower separations for the long-distance tail fit in fm; positive-z data with zmin <= z <= zmax constrain the tail, and one common range is selected from the sample-average data before resample fits.", null_hook=recommend_zmin_fm),
     Depends("", "zmax_fm", physics="Candidate upper separations of measured data entering the tail fit in fm; varying zmax tests the balance between large-|z| asymptotic validity and deteriorating lattice signal, independently of the later extension endpoint.", null_hook=recommend_zmax_fm),
-    Recommends("", "tail_window_step_offset", physics="Shifts every zmin_fm by this integer times the ensemble spatial spacing a_s while keeping zmax_fm fixed; zero is the unshifted default, while nonzero signed offsets produce tail-range variations in lattice-site units. For GPD, every effective lower boundary after this shift must be at least 0.5 fm.", default=0),
+    Recommends("", "tail_window_step_offset", physics="Shifts every zmin_fm by this many intervals on the measured physical z grid while keeping zmax_fm fixed. Zero uses the original window. For GPD, every effective lower boundary after this shift must be at least 0.5 fm.", default=0),
     Depends("", "smooth", physics="Connection of measured/interpolated data to the fitted tail: linear ramps the data weight from one at selected zmin to zero at selected zmax; none assigns unit data weight through requested zmax_ext_fm and tail weight beyond it, so only a rounded-up outer grid point can use the tail."),
     Depends("", "zmax_ext_fm", physics="Requested maximum |z| in fm for the finite Fourier sum; it must cover the input and fit boundaries, while the actual endpoint is rounded to the nearest input-grid step."),
     Depends("", "scheme_scan", physics="Tail-model scan combining LA/NLA orders and internal-coordinate posterior-prior scales after one sample-average range is selected; q_min guides range and best-model choices, while model averaging uses all numerically valid finite-logGBF candidates."),
@@ -109,9 +109,9 @@ PARAM_RULES = (
     List("scheme_scan.order", "order", physics="At least one asymptotic truncation is required; authored order fixes reproducible construction and labeling of the LA/NLA candidate set.", validator=_nonempty),
     List("scheme_scan.posterior_prior_error_scale", "width", physics="At least one posterior-width multiplier is required; authored order is retained when constructing and labeling tail-model candidates.", validator=_nonempty),
     Value("quasi_y_ls", (list, dict), physics="A strictly increasing dimensionless y grid, given explicitly or by start/stop/num; density controls Fourier and matching quadrature resolution but does not add lattice information.", validator=_valid_grid),
-    Value("zmin_fm.zmin", (int, float), physics="Each lower tail boundary is a finite nonnegative distance in fm and must match a measured nonnegative z coordinate after any lattice-step offset.", validator=_nonnegative),
+    Value("zmin_fm.zmin", (int, float), physics="Each lower tail boundary is a finite nonnegative distance in fm and must match a measured nonnegative z coordinate after any z-grid offset.", validator=_nonnegative),
     Value("zmax_fm.zmax", (int, float), physics="Each upper tail boundary is a finite positive distance in fm on the measured z grid and must exceed the retained lower boundary.", validator=_positive),
-    Value("tail_window_step_offset", int, physics="Dimensionless signed count of spatial lattice steps; the physical shift is exactly tail_window_step_offset times a_s."),
+    Value("tail_window_step_offset", int, physics="Signed count of measured z-grid intervals. For consecutive displacements along (1,1,0), each interval is sqrt(2) times a_s."),
     Value("smooth", Literal["linear", "none"], physics="linear blends data and tail over [selected zmin,selected zmax]; none keeps data weight one for |z| <= requested zmax_ext_fm and uses the tail only at any rounded-up outer endpoint."),
     Value("zmax_ext_fm", (int, float), physics="Finite positive requested extent in fm that covers the input and all fit candidates; the represented largest |z| is the nearest input-spacing multiple.", validator=_positive),
     Value("scheme_scan.order.order", Literal["LA", "NLA"], physics="LA/NLA truncation within the GI or CG tail family selected by upstream gfix provenance: LA keeps the leading structure and NLA adds the next inverse-|z| term."),
@@ -138,14 +138,14 @@ INPUT_RULES = (
 
 SYSTEMATICS_RULES = (
     Recommends("", "defaults", physics="Optional common values inherited by Fourier systematic variants, avoiding repeated authoring without changing the central jobs.", default={}),
-    Recommends("", "variants", physics="Optional tail-window variations; each clones every central Fourier job with a distinct nonzero shift of zmin in lattice-site units.", default=[]),
+    Recommends("", "variants", physics="Optional tail-window variations; each clones every central Fourier job with a distinct nonzero shift of zmin in measured z-grid intervals.", default=[]),
     Value("defaults", dict, physics="Object of shared variant fields applied before variant-specific values, so an explicit variant value remains authoritative."),
     List("variants", "variant", physics="For each central job, authored variant order fixes the relative order of its clones; central-job order remains outermost, and each id determines its suffix and downstream label order."),
     Suggests("", "defaults", "variants.variant", physics="Missing fields in each Fourier variant are supplied from defaults before the concrete shifted-window job is generated."),
     Depends("variants.variant", "id", physics="Stable label identifying the tail-window variation in generated job IDs, artifacts, and systematics provenance."),
-    Depends("variants.variant", "tail_window_step_offset", physics="Nonzero signed shift applied to every central zmin_fm as offset times a_s, while zmax_fm and all other Fourier parameters remain unchanged."),
+    Depends("variants.variant", "tail_window_step_offset", physics="Nonzero signed shift applied to every central zmin_fm as offset times the measured z-grid spacing, while zmax_fm and all other Fourier parameters remain unchanged."),
     Value("variants.variant.id", str, physics="Lowercase identifier beginning with a letter and containing only letters, digits, or underscores, suitable for reproducible job suffixes.", validator=_safe_systematics_id),
-    Value("variants.variant.tail_window_step_offset", int, physics="Nonzero integer count of spatial lattice steps; positive and negative values move the tail-fit onset later or earlier in |z|.", validator=_nonzero),
+    Value("variants.variant.tail_window_step_offset", int, physics="Nonzero integer count of measured z-grid intervals; positive and negative values move the tail-fit onset later or earlier in |z|.", validator=_nonzero),
 )
 # fmt: on
 # ruff: enable[E501]

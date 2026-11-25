@@ -2996,7 +2996,7 @@ def test_fourier_scan_plot_draws_extrapolation_only_from_selected_zmin(monkeypat
         {"metadata": {"sample_error_mode": "covariance"}},
         {},
         {
-            "tail_inspection": {},
+            "tail_inspection": {"z_grid_step_fm": 0.1},
             "fourier_input": source,
             "fourier_conventions": {
                 "parton": "quark",
@@ -3036,7 +3036,9 @@ def test_fourier_scan_plot_draws_extrapolation_only_from_selected_zmin(monkeypat
     assert configured[0]["ylabel"] == r"$\tilde q(x)$"
 
 
-def test_fourier_inspection_applies_systematic_offset_from_ensemble(tmp_path: Path) -> None:
+@pytest.mark.parametrize("step_fm", [0.1, 0.1 * np.sqrt(2)], ids=["axial", "face_diagonal"])
+@pytest.mark.parametrize("offset", [-1, 1])
+def test_fourier_inspection_shifts_by_measured_z_intervals(tmp_path: Path, step_fm: float, offset: int) -> None:
     from lamet_agent.stages.fourier_transform._inspection import effective_zmin_fm, run
 
     data = EnsembleData(
@@ -3044,7 +3046,7 @@ def test_fourier_inspection_applies_systematic_offset_from_ensemble(tmp_path: Pa
         "bootstrap",
         [np.ones(11), np.ones(11)],
         ["z"],
-        {"z": [-0.25, -0.2, -0.15, -0.1, -0.05, 0.0, 0.05, 0.1, 0.15, 0.2, 0.25]},
+        {"z": (np.arange(-5, 6) * step_fm).tolist()},
         attrs={
             "hadron": "pion",
             "coord_unit": "fm",
@@ -3063,10 +3065,10 @@ def test_fourier_inspection_applies_systematic_offset_from_ensemble(tmp_path: Pa
         "fourier_transform",
         "offset",
         {
-            "zmin_fm": [0.05],
-            "zmax_fm": [0.2],
-            "zmax_ext_fm": 0.25,
-            "tail_window_step_offset": 1,
+            "zmin_fm": [2 * step_fm],
+            "zmax_fm": [4 * step_fm],
+            "zmax_ext_fm": 5 * step_fm,
+            "tail_window_step_offset": offset,
             "scheme_scan": {"sector": "full"},
         },
         {"input": data},
@@ -3078,8 +3080,9 @@ def test_fourier_inspection_applies_systematic_offset_from_ensemble(tmp_path: Pa
 
     run(context)
 
-    assert effective_zmin_fm(context, data) == [0.15]
-    assert context.state["tail_inspection"]["z_grid_step_fm"] == 0.05
+    measured_step = context.state["tail_inspection"]["z_grid_step_fm"]
+    assert measured_step == pytest.approx(step_fm)
+    assert effective_zmin_fm(context, measured_step) == pytest.approx([(2 + offset) * step_fm], abs=1e-12)
 
 
 @pytest.mark.parametrize("observable", ["pdf", "gpd"])
