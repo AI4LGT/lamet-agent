@@ -303,6 +303,13 @@ See the [formulas and usage example](lamet_agent/kernels/tmd/sudakov.md),
 including the explicit NLL/NNLL infrared-scale options. Soft Analysis uses the
 same form-factor coefficient in its intrinsic-soft integral.
 
+The standalone API also accepts `order="nnnll"` for H_F, with four-loop cusp,
+three-loop noncusp, numerical four-loop running, and a two-loop matching boundary.
+The subleading evolution and the two-amplitude product are consistently expanded
+through NNLO in RG counting.
+See [the NNNLL formula and example](lamet_agent/kernels/tmd/cg_nnnll.md).
+This selector does not upgrade the separate TMD hard factors or pipeline order controls.
+
 ### Fourier tail-fit minimum distance
 
 All Fourier tail-fit windows require an effective `zmin_fm >= 0.5` fm,
@@ -326,12 +333,14 @@ residual-parameter convention and Python overrides.
 The bound concerns |z| in the fitted tail; measured short-distance data remain
 in the Fourier transform. The current `strategy="tmd"` direct/tapered TMDWF
 and TMDPDF transforms do not fit a tail and therefore have no `zmin_fm` cut.
-The standalone API also accepts `order="nnnll"` for H_F, with four-loop cusp,
-three-loop noncusp, numerical four-loop running, and a two-loop matching boundary.
-The subleading evolution and the two-amplitude product are consistently expanded
-through NNLO in RG counting.
-See [the NNNLL formula and example](lamet_agent/kernels/tmd/cg_nnnll.md).
-This selector does not upgrade the separate TMD hard factors or pipeline order controls.
+
+
+The positive mass-gap prior damps the oscillation envelope; it does not remove
+physical phases or require a monotonic matrix element. Monotonic-range search
+is no longer part of the tail-range policy. Fourier fits require an explicit
+`sample_error_mode` consistent with the manifest; both PDF examples use
+`variance`. See the [DA/PDF/GPD/TMD test reports](docs/fourier-tail-test-reports.md)
+for numerical checks and the current TMD limitations.
 
 ## Intermediate Data (NetCDF)
 
