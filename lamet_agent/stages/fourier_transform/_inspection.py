@@ -13,6 +13,7 @@ from lamet_agent.agent import ToolContext
 from lamet_agent.kernels.implementation import HBAR_C_GEV_FM
 from lamet_agent.stages.fourier_transform.physics import (
     _NUCLEON_HADRONS,
+    bind_sample_error_mode,
     complete_signed_z,
     load_data,
 )
@@ -160,13 +161,15 @@ def prepare(context: ToolContext) -> tuple[Any, float]:
     existing = context.state.get("fourier_input")
     inspection = context.state.get("tail_inspection")
     if existing is not None and isinstance(inspection, dict):
+        existing = bind_sample_error_mode(existing, context.manifest["metadata"])
+        context.state["fourier_input"] = existing
         return existing, float(inspection["z_grid_step_fm"])
     value = context.inputs["input"]
     if isinstance(value, list):
         if len(value) != 1:
             raise ValueError("Fourier input accepts one source")
         value = value[0]
-    data = load_data(value)
+    data = bind_sample_error_mode(load_data(value), context.manifest["metadata"])
     target = str(context.manifest["metadata"]["target_observable"]).lower()
     if target in {"pdf", "gpd"}:
         hadron = str(data.attrs.get("hadron", "")).strip().lower()
@@ -261,7 +264,7 @@ def prepare(context: ToolContext) -> tuple[Any, float]:
                 name=data.name,
             )
         else:
-            partner = load_data(partner_value)
+            partner = bind_sample_error_mode(load_data(partner_value), context.manifest["metadata"])
             if partner.attrs.get("coord_unit") != "fm":
                 raise ValueError("GPD hermitian_partner coordinates must be in fm")
             partner_source = _momentum_vector(partner, "source_momentum")

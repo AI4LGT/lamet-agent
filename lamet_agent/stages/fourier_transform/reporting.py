@@ -65,7 +65,15 @@ def _combined_series_label(record: StageReportRecord) -> str:
 
 _TAIL_FORMULA = r"""
 The fitted long-distance branch is used only away from the origin and is
-connected to the measured/interpolated branch before the transform.  For the
+connected to the measured/interpolated branch before the transform.
+The total physical mass gap has default prior 0.5 +/- 0.3 GeV and is strictly
+positive. Its exponential envelope automatically damps long-distance
+oscillation amplitudes; it does not eliminate oscillatory phases or guarantee
+pointwise monotonicity. No monotonic-range or matrix-element positivity filter
+is required. Candidate windows use effective |z|min >= 0.5 fm and
+N_observations > N_parameters, followed by the Q/logGBF selection rule.
+
+For the
 selected observable/hadron channel, the GI/CG LA/NLA ansatz is
 
 $$
@@ -209,7 +217,8 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
             "requires both fitted input channels. The PDF "
             "uses x and a linear taper. The longitudinal physical displacement includes the off-axis "
             "direction; the ensemble lattice spacing is unchanged. Each statistical replica is transformed "
-            "without resampling. Flavor normalization is applied by matching.",
+            "without resampling. Flavor normalization is applied by matching. These direct/tapered "
+            "transforms do not fit a mass gap and do not implement prior-damped tail extrapolation.",
             "",
             "| job | observable | bT [fm] | P [GeV] | method | projection | sector | samples |",
             "|---|---|---:|---:|---|---|---|---:|",
@@ -242,6 +251,9 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
         "### Fourier Transform and Projection",
         "",
         _TRANSFORM_FORMULA,
+        "",
+        "The fitted sample_error_mode is recorded in each candidate diagnostic; "
+        "variance uses diagonal weights and covariance retains correlations.",
         "",
         "## Job Summary",
         "",

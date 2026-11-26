@@ -29,6 +29,22 @@ def load_data(value: Any) -> EnsembleData:
     raise TypeError("Fourier input is neither EnsembleData nor a NetCDF Path")
 
 
+def bind_sample_error_mode(data: EnsembleData, metadata: Mapping[str, Any]) -> EnsembleData:
+    """Bind manifest fit weights without silently replacing input provenance."""
+    mode = metadata.get("sample_error_mode")
+    if mode not in {"variance", "covariance", "one_sigma"}:
+        raise ValueError("metadata.sample_error_mode must explicitly select variance, covariance, or one_sigma")
+    stored = data.attrs.get("sample_error_mode")
+    if stored is not None and stored != mode:
+        raise ValueError(
+            f"Fourier sample_error_mode mismatch: input={stored!r}, manifest={mode!r}; "
+            "regenerate or explicitly relabel the input for the intended weighting"
+        )
+    result = data.copy()
+    result.array.attrs["sample_error_mode"] = mode
+    return result
+
+
 def _symmetry_mapping(value: Mapping[str, str]) -> dict[str, str]:
     """Validate the authored component-wise signed-z convention."""
     if not isinstance(value, Mapping) or set(value) != {"real", "imag"}:
@@ -551,7 +567,12 @@ def fit_tail_parameters(
         ["observation"],
         {"observation": list(range(observations.shape[1]))},
     )
-    sample_error_mode = str(data.attrs.get("sample_error_mode", "covariance"))
+    sample_error_mode = data.attrs.get("sample_error_mode")
+    if sample_error_mode not in {"variance", "covariance", "one_sigma"}:
+        raise ValueError(
+            "tail fitting requires explicit attrs.sample_error_mode from the selected manifest; "
+            "choose variance, covariance, or one_sigma"
+        )
     if sample_error_mode == "covariance":
         covariance = np.asarray(gv.evalcov(fit_data.average("covariance")), dtype=float)
     else:
@@ -668,6 +689,7 @@ def fit_tail_parameters(
         )
     center_diagnostics = {
         **prior_diagnostics(prior_inputs, priors),
+        "sample_error_mode": sample_error_mode,
         "prior_convention": "physical_mass_gap_other_internal_sdev",
         "mass_gap_prior_gev": {
             "mean": float(gv.mean(prior[mass_gap_key])), "sdev": float(gv.sdev(prior[mass_gap_key]))

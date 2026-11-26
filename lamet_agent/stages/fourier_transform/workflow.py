@@ -27,7 +27,7 @@ def _attempts(result: dict[str, Any]) -> dict[str, dict[str, Any]]:
     quality = (
         "Q", "chi2", "dof", "chi2_dof", "logGBF", "fit_success", "error",
         "n_observations", "n_parameters", "data_dof",
-        "mass_gap_prior_gev", "mass_gap_lower_bound_gev",
+        "sample_error_mode", "mass_gap_prior_gev", "mass_gap_lower_bound_gev",
     )
     candidates = [*result.get("range_candidates", []), *result.get("model_candidates", [])]
     for index, candidate in enumerate(candidates, start=1):
