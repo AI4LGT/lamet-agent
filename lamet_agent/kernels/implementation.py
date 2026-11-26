@@ -464,6 +464,67 @@ def _da_wilson_line(scheme: str, zspz: float | None, eps: float) -> Callable[[fl
     return hybrid
 
 
+def _cg_da_theta(x: float, y: float, eps: float) -> float:
+    q = y * (y - 2.0 * x)
+    abs_x = np.abs(x) + eps
+    if q > eps:
+        return float(np.arctan(np.sqrt(q) / abs_x) / np.sqrt(q))
+    if q < -eps:
+        return float(np.arctanh(np.sqrt(-q) / abs_x) / np.sqrt(-q))
+    return float(1.0 / abs_x)
+
+
+def G_qq_cg_t(x: float, y: float, momentum_gev: float, mu: float, eps: float = 1e-12) -> float:
+    if x > y:
+        return G_qq_cg_t(1.0 - x, 1.0 - y, momentum_gev, mu, eps)
+    y_minus_x = y - x + eps
+    quark = (1.0 + y_minus_x) / y_minus_x * x / y
+    antiquark = (1.0 - y_minus_x) / y_minus_x * (1.0 - x) / (1.0 - y)
+    coulomb = (
+        (y - 3.0 * x) * _cg_da_theta(x, y, eps) + (2.0 + y - 3.0 * x) * _cg_da_theta(1.0 - x, 1.0 - y, eps)
+    ) / (2.0 * y_minus_x) - 1.5 / y_minus_x
+    entry = antiquark * np.log(y_minus_x / (1.0 - x)) + coulomb
+    if x < 0.0:
+        entry += quark * np.log(y_minus_x / (-x + eps))
+    else:
+        entry += quark * np.log(4.0 * momentum_gev**2 * x * y_minus_x / mu**2 + eps) - x / y
+    return float(entry)
+
+
+def G_qq_cg_z(x: float, y: float, momentum_gev: float, mu: float, eps: float = 1e-12) -> float:
+    entry = G_qq_cg_t(x, y, momentum_gev, mu, eps)
+    if eps < x < y:
+        entry += 2.0 * x / y
+    elif y <= x < 1.0 - eps:
+        entry += 2.0 * (1.0 - x) / (1.0 - y)
+    return entry
+
+
+def _da_cg_matrix(
+    lc_x_ls: np.ndarray,
+    momentum_gev: float,
+    mu: float,
+    quasi_y_ls: np.ndarray | None,
+    eps: float,
+    *,
+    coefficient: Callable[[float, float, float, float, float], float],
+    scheme: str,
+    zspz: float | None = None,
+) -> np.ndarray:
+    if scheme == "hybrid" and zspz is None:
+        raise ValueError("`zspz` is required for the hybrid matching kernel.")
+
+    def density(x: float, y: float) -> float:
+        if not eps < y < 1.0 - eps:
+            return 0.0
+        entry = coefficient(x, y, momentum_gev, mu, eps)
+        if scheme == "hybrid":
+            entry += _hybrid_gi_delta(x / y, y, float(zspz), eps, strength=-0.5) / np.abs(y)
+        return entry
+
+    return build_matching_matrix_column_plus(lc_x_ls, mu, quasi_y_ls, eps, density=density)
+
+
 _NM_RENORMALON: Final[dict[int, float]] = {3: 0.5749687262865643, 4: 0.5522713118193284, 5: 0.5235323457364502}
 
 

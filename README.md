@@ -259,7 +259,7 @@ The fixed-order NLO raw-data validation completed all 516 numerical jobs and sci
 including a separate review pinned to the supplied v5 paper. Low-Q FF fits,
 soft momentum dependence and large-distance uncertainties remain documented limitations.
 The earlier bootstrap domain failure is retained as historical validation evidence.
-See [TMD analysis](docs/tmd-analysis.md) for normalization, sampling lineage,
+See [TMD analysis](notes/tmd-analysis.md) for normalization, sampling lineage,
 off-axis geometry, numerical domains, and stage-by-stage debugging, and
 [reference comparison](docs/tmd-reference-comparison.md) for stage-by-stage
 comparisons with the saved `data_pion_tmd_cg` results and the stated NLL limitations.
@@ -291,6 +291,24 @@ nf=3 with the supplied package's prescription and the existing running-coupling
 threshold policy. Check numerical convergence for a production analysis.
 Legacy suffixed RGR kernels remain available directly. See each kernel's
 companion Markdown for its formula and numerical prescription.
+
+### Sudakov kernel for the intrinsic soft function
+
+The standalone `lamet_agent.kernels.tmd.coefficients.form_factor_kernel`
+evaluates the multiplicative coefficient `H_F(x1, x2)` with `order="nlo"`,
+the paper's tree-boundary `order="nll"`, or `order="nnll"` with a one-loop
+matching boundary (Collins–Rogers, arXiv:1705.07167). It supports NumPy
+broadcasting; use `x[:, None]` and `y[None, :]` for a two-dimensional grid.
+See the [formulas and usage example](lamet_agent/kernels/tmd/sudakov.md),
+including the explicit NLL/NNLL infrared-scale options. Soft Analysis uses the
+same form-factor coefficient in its intrinsic-soft integral.
+
+The standalone API also accepts `order="nnnll"` for H_F, with four-loop cusp,
+three-loop noncusp, numerical four-loop running, and a two-loop matching boundary.
+The subleading evolution and the two-amplitude product are consistently expanded
+through NNLO in RG counting.
+See [the NNNLL formula and example](lamet_agent/kernels/tmd/cg_nnnll.md).
+This selector does not upgrade the separate TMD hard factors or pipeline order controls.
 
 ## Intermediate Data (NetCDF)
 
@@ -407,9 +425,9 @@ For correlator inputs that use a descriptor JSON record, see
 [Standard Correlator HDF5 Format](#standard-correlator-hdf5-format) for the
 input-file conventions.
 
-All fitting stages accept partial named Gaussian overrides as gvar strings
-(e.g. `"priors": {"E0": "0.3(0.1)"}`); missing parameters
-keep their existing defaults and unused names are ignored. See
+Correlator, self-renormalization, and extrapolation fits accept partial named
+Gaussian overrides as gvar strings, for example `"priors": {"E0": "0.3(0.1)"}`.
+Missing parameters keep their defaults and unused names are ignored. See
 [Configurable fit priors](docs/fit-priors.md) for stage-specific names and units,
 replica-prior choices, and fully authored two-point fit examples.
 

@@ -66,7 +66,7 @@ def attempt(context: ToolContext) -> dict[str, object]:
         transform=conventions["transform"],
         tail={
             "models": conventions["tail_models"],
-            "z_min_fm": effective_zmin_fm(context, source),
+            "z_min_fm": effective_zmin_fm(context, context.state["tail_inspection"]["z_grid_step_fm"]),
             "z_max_fm": context.params["zmax_fm"],
             "extent_fm": context.params["zmax_ext_fm"],
             "smoothing_method": context.params["smooth"],

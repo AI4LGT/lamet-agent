@@ -21,8 +21,7 @@ def test_effective_tail_minimum(target, lower, offset, expected):
         params={"zmin_fm": lower, "tail_window_step_offset": offset},
         manifest={"metadata": {"target_observable": target}},
     )
-    data = SimpleNamespace(ensemble=SimpleNamespace(a_s=0.1))
-    assert effective_zmin_fm(context, data) == expected
+    assert effective_zmin_fm(context, z_grid_step_fm=0.1) == expected
 
 
 @pytest.mark.parametrize("lower, offset", [([0.4], 0), ([0.5], -1), ([0.6, 0.4], 0)])
@@ -31,6 +30,5 @@ def test_gpd_rejects_short_distance_tail_candidates(lower, offset):
         params={"zmin_fm": lower, "tail_window_step_offset": offset},
         manifest={"metadata": {"target_observable": "gpd"}},
     )
-    data = SimpleNamespace(ensemble=SimpleNamespace(a_s=0.1))
     with pytest.raises(ValueError, match="effective zmin_fm >= 0.5 fm"):
-        effective_zmin_fm(context, data)
+        effective_zmin_fm(context, z_grid_step_fm=0.1)
