@@ -206,7 +206,7 @@ NLL 示例显式选择 `infrared_policy="reference_quad"`，用于复现并诊�
 并补做锁定本地 v5 论文的审查。
 FF 低 Q、soft 动量依赖和大横向距离误差仍是明确保留的限制。
 此前 bootstrap 在 `bT/a=18` 的对数定义域问题作为历史诊断保留。
-归一化约定、输出范围及逐 stage 调试方法见 [TMD 分析说明](docs/tmd-analysis.md)。
+归一化约定、输出范围及逐 stage 调试方法见 [TMD 分析说明](notes/tmd-analysis.md)。
 与 `data_pion_tmd_cg` 原始保存结果的逐阶段对照及 NLL 限制见
 [参考结果比较](docs/tmd-reference-comparison.md)。
 
@@ -316,7 +316,7 @@ loader 接受 JSON 和 JSONC 注释。当前 manifest envelope 为：
 
 对于使用 descriptor JSON record 的关联函数输入，请参阅[标准关联函数 HDF5 格式](#标准关联函数-hdf5-格式)中的输入文件约定。
 
-各拟合步骤均支持按参数名配置 gvar 字符串先验（如 `"priors": {"E0": "0.3(0.1)"}`）：缺项沿用原有默认值，多余项忽略。各模型的参数名、单位、重采样先验模式和完整两点拟合示例统一见[可配置拟合先验](docs/fit-priors.md)。
+关联函数拟合、自重整化拟合和外推拟合支持按参数名配置 gvar 字符串先验（如 `"priors": {"E0": "0.3(0.1)"}`）。缺项沿用原有默认值，多余项忽略。各模型的参数名、单位、重采样先验模式和完整两点拟合示例见[可配置拟合先验](docs/fit-priors.md)。
 
 未知字段、无效选项、损坏的 input roles、重复 id、向前 job 引用、缺失路径以及跨参数不一致都会被拒绝。
 
