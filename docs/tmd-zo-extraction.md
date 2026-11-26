@@ -131,8 +131,8 @@ averaging is not used in sample-based production extraction.
 
 Select `order: "nnlo_rgr"` in the extraction job (`"nnlo"` selects fixed order).
 The Wilson-loop division remains an input requirement and is not applied twice.
-This option ports the **NNLO Fixed order** module of the supplied `TMD(2).nb`
-(version 2, 2026-11-14), also exported as `TMD_NNLO.wl`. It is an additional
+This option ports the **NNLO Fixed order** module of the supplied `TMD_V3.nb`,
+using its closed analytic remainder (`qTMDNNLOClosed-2`). It is an additional
 notebook result, not an NNLO zero-momentum formula attributed to arXiv:2412.19988.
 
 With `a_s = alpha_s/(4*pi)`, `r=z/b`, and
@@ -153,14 +153,14 @@ threshold-running `alpha_sNNLO` function is not silently substituted.
 Boundary logarithms are retained at each of the 0.8/1.0/1.2 scale variants.
 The sample-wise average and application of the resulting factor are unchanged.
 
-The finite remainder uses the notebook's ordered same-side integral. Each
-absolute `z/b` is cached; radial order 48, kernel order 64, and log range 12
-are independently refined to 72, 96, and 14, and then jointly refined.
-All four differences from the initial value must be at most 1e-5 in the
-same-side sum; otherwise extraction fails. The jointly refined value is used.
-This is a numerical stability check, not a certified integration error bound.
-It is separate from perturbative scale variation and statistical uncertainty.
-The numerical prescription and boundary source are recorded in `zo_settings`.
+The finite remainder uses the closed principal-polylogarithm expression from
+`TMD_V3.nb`, cached by absolute `z/b`, with at least 40 decimal working digits.
+The original quadrature is retained as an independent diagnostic only. Extraction
+no longer depends on its refinement guard, which rejected some points at
+`z/b >= 1.5` with the old default grid. Scale and coupling guards still apply.
+The analytic prescription and boundary source are recorded in `zo_settings`.
+Production extraction retains coherent scale factors **0.8, 1.0, 1.2**.
+The P17 benchmark uses 0.75, 1.0, 1.5 solely to reproduce that figure.
 
 The notebook result assumes massless, zero external momentum, pure dimensional
 regularization, the nonsinglet gamma-t projection, and MSbar renormalization.

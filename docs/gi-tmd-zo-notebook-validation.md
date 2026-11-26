@@ -1,5 +1,30 @@
 # Reproduction of the Boer–Mulders residual Z_O calculation
 
+## P17 NNLO+RGR benchmark
+
+`TMD_V3.nb` supplies the closed analytic same-side sum. The independent Python
+benchmark uses that production expression and reproduces all 26 cached points
+of `Out[108]` ("Plot - each point"), shown on P17 of `Z_O_extraction_V3.pdf`.
+Only the numerical reference coordinates are committed, not the full notebook.
+
+```
+python benchmarks/reproduce_gi_tmd_p17.py /path/to/output
+```
+
+The benchmark checks central values to 2e-5 and band half-widths to 5e-5.
+Observed maximum differences: NLO central 1.04e-5, band 1.76e-5;
+NNLO central 4.54e-6, band 3.80e-5. It writes a plot, CSV and JSON validation.
+The figure has b=0.1 fm, mu=2 GeV, z=0:0.01:0.25 fm. Its scale factors are
+0.75/1/1.5 and its bands are symmetric absolute half-differences, without
+neighbor smoothing. It uses the notebook's continuous threshold couplings
+from alpha_s(M_Z)=0.1179 but n_f=3 in coefficient evolution. NNLO uses
+three-loop beta and anomalous dimension; NLO uses two loops.
+
+These historical benchmark conventions do not change production extraction:
+**fixed-flavor running and coherent 0.8/1.0/1.2 scale variants remain in use**.
+Production scale/coupling guards still apply; the full plotted interval is
+not automatically an approved extraction window.
+
 The supplied Mathematica notebook and original tables in the user-supplied data directory were used. The original files were read only. Python independently implements the notebook's coefficient, running coupling, analytic evolution and table processing. Mathematica 12 could not be launched because Windows reported a DLL relocation failure.
 
 ## Reproduced averages
