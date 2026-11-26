@@ -2912,7 +2912,7 @@ def test_native_fourier_scan_fits_and_transforms_with_one_parallel_entry(monkeyp
 def test_fourier_scan_plot_draws_extrapolation_only_from_selected_zmin(monkeypatch, tmp_path) -> None:
     import lamet_agent.stages.fourier_transform._scan as tool
 
-    z = [-0.3, -0.2, -0.1, 0.0, 0.1, 0.2, 0.3, 0.4]
+    z = (np.arange(-7, 9) / 10).tolist()
     source = EnsembleData(
         _ensemble(0.1),
         "bootstrap",
@@ -2933,8 +2933,8 @@ def test_fourier_scan_plot_draws_extrapolation_only_from_selected_zmin(monkeypat
     candidate = {
         "label": "gi_nla_NLA_w1_linear_0p1",
         "model_id": "gi_nla",
-        "z_min_fm": 0.2,
-        "z_max_fm": 0.3,
+        "z_min_fm": 0.6,
+        "z_max_fm": 0.7,
         "order": "NLA",
         "prior_width": 1.0,
         "smoothing_method": "linear",
@@ -2948,7 +2948,7 @@ def test_fourier_scan_plot_draws_extrapolation_only_from_selected_zmin(monkeypat
     }
     result = {
         "data": output,
-        "selected_range": {"model_id": "gi_nla", "z_min_fm": 0.2, "z_max_fm": 0.3},
+        "selected_range": {"model_id": "gi_nla", "z_min_fm": 0.6, "z_max_fm": 0.7},
         "model_candidates": [candidate],
         "weights": [1.0],
         "selected_labels": [candidate["label"]],
@@ -2971,10 +2971,10 @@ def test_fourier_scan_plot_draws_extrapolation_only_from_selected_zmin(monkeypat
         "quasi_y_ls": [-0.5, 0.0, 0.5],
         "transform": {"phase_sign": 1, "x_shift": 0.0, "prefactor": "pz_over_2pi"},
         "tail_models": ["gi_nla"],
-        "zmin_fm": [0.2],
+        "zmin_fm": [0.6],
         "tail_window_step_offset": 0,
-        "zmax_fm": [0.3],
-        "zmax_ext_fm": 0.4,
+        "zmax_fm": [0.7],
+        "zmax_ext_fm": 0.8,
         "smooth": "linear",
         "scheme_scan": {
             "order": ["NLA"],
@@ -3024,12 +3024,12 @@ def test_fourier_scan_plot_draws_extrapolation_only_from_selected_zmin(monkeypat
     assert len(input_curves) == 2
     assert len(extrapolation_curves) == 2
     for coordinates in input_curves:
-        np.testing.assert_allclose(coordinates, np.asarray([0.0, 0.1, 0.2, 0.3, 0.4]) * scale)
+        np.testing.assert_allclose(coordinates, (np.arange(9) / 10) * scale)
         assert all(value >= -1e-12 for value in coordinates)
     for coordinates in extrapolation_curves:
-        np.testing.assert_allclose(coordinates, np.asarray([0.2, 0.3, 0.4]) * scale)
+        np.testing.assert_allclose(coordinates, np.asarray([0.6, 0.7, 0.8]) * scale)
         assert all(value >= -1e-12 for value in coordinates)
-    np.testing.assert_allclose([value for value, _ in boundaries], np.asarray([0.2, 0.3, 0.2, 0.3]) * scale)
+    np.testing.assert_allclose([value for value, _ in boundaries], np.asarray([0.6, 0.7, 0.6, 0.7]) * scale)
     assert all(item == {"color": "black", "linestyle": "dashed"} for _, item in boundaries)
     assert [item["xlabel"] for item in configured[-2:]] == [r"$\lambda = zP^z$", r"$\lambda = zP^z$"]
     assert configured[0]["xlabel"] == r"$x$"
@@ -3044,9 +3044,9 @@ def test_fourier_inspection_shifts_by_measured_z_intervals(tmp_path: Path, step_
     data = EnsembleData(
         _ensemble(0.1),
         "bootstrap",
-        [np.ones(11), np.ones(11)],
+        [np.ones(19), np.ones(19)],
         ["z"],
-        {"z": (np.arange(-5, 6) * step_fm).tolist()},
+        {"z": (np.arange(-9, 10) * step_fm).tolist()},
         attrs={
             "hadron": "pion",
             "coord_unit": "fm",
@@ -3065,9 +3065,9 @@ def test_fourier_inspection_shifts_by_measured_z_intervals(tmp_path: Path, step_
         "fourier_transform",
         "offset",
         {
-            "zmin_fm": [2 * step_fm],
-            "zmax_fm": [4 * step_fm],
-            "zmax_ext_fm": 5 * step_fm,
+            "zmin_fm": [6 * step_fm],
+            "zmax_fm": [8 * step_fm],
+            "zmax_ext_fm": 9 * step_fm,
             "tail_window_step_offset": offset,
             "scheme_scan": {"sector": "full"},
         },
@@ -3082,7 +3082,7 @@ def test_fourier_inspection_shifts_by_measured_z_intervals(tmp_path: Path, step_
 
     measured_step = context.state["tail_inspection"]["z_grid_step_fm"]
     assert measured_step == pytest.approx(step_fm)
-    assert effective_zmin_fm(context, measured_step) == pytest.approx([(2 + offset) * step_fm], abs=1e-12)
+    assert effective_zmin_fm(context, measured_step) == pytest.approx([(6 + offset) * step_fm], abs=1e-12)
 
 
 @pytest.mark.parametrize("observable", ["pdf", "gpd"])
@@ -3275,7 +3275,8 @@ def test_fourier_scan_uses_original_fixed_first_pass_priors() -> None:
         "Lambda": 0.4,
         "n": 0.5,
     }
-    assert set(widths.values()) == {3.0}
+    assert widths["Lambda"] == 0.3
+    assert {width for name, width in widths.items() if name != "Lambda"} == {3.0}
 
 
 def test_extrapolation_lattice_spacing_basis_uses_original_units() -> None:

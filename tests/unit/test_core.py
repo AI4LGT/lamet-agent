@@ -3074,8 +3074,8 @@ def test_spectrum_recommendation_describes_its_initial_request(tmp_path: Path) -
 
 @pytest.mark.parametrize(
     ("target", "offset", "a_s"),
-    [("pdf", 0, 0.1), ("gpd", -1, 0.1), ("gpd", -1, 0.1 / np.sqrt(2))],
-    ids=["pdf", "gpd_axial", "gpd_face_diagonal"],
+    [(target, offset, a_s) for target in ("pdf", "da", "gpd", "tmd", "tmdwf", "tmdpdf")
+     for offset in (0, -1, 1) for a_s in (0.1, 0.1 / np.sqrt(2))],
 )
 def test_fourier_tail_range_recommendation_reuses_context_and_obeys_job_budget(
     tmp_path: Path, target: str, offset: int, a_s: float
@@ -3138,9 +3138,9 @@ def test_fourier_tail_range_recommendation_reuses_context_and_obeys_job_budget(
     )
     for request, contract in zip((first_payload["request"], second_payload), backend.response_schemas):
         assert request["evidence"]["tail_window_step_offset"] == offset
-        if target == "gpd":
-            assert request["evidence"]["eligible_raw_zmin_fm"] == [0.6, 0.7, 0.8]
-            assert contract["schema"]["properties"]["zmin_fm"]["items"]["enum"] == [0.6, 0.7, 0.8]
+        expected = {0: [0.5, 0.6, 0.7, 0.8], -1: [0.6, 0.7, 0.8], 1: [0.5, 0.6, 0.7]}[offset]
+        assert request["evidence"]["eligible_raw_zmin_fm"] == expected
+        assert contract["schema"]["properties"]["zmin_fm"]["items"]["enum"] == expected
     assert first_payload["context"][0]["key"] == "fourier_tail_fit_data"
     assert isinstance(first_payload["context"][0]["content"]["components"]["real"], str)
     assert "context" not in second_payload
