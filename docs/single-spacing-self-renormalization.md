@@ -52,7 +52,8 @@ Target: the same lattice ensemble/regularization, gauge-invariant gamma-t quark
 PDF or GPD. GPDs may have nonzero momentum transfer or skewness; the forward
 zero-momentum **PDF** reference still supplies the subtraction. Targets support
 `z` and optional `t`, `xi`, or `Q2` axes in any order, and signed z grids. The
-short-distance reference must cover each target |z| and the switch exactly.
+reference grid must contain each target |z| <= z_s and z_s exactly; the
+long-distance target tail does not need reference points beyond z_s.
 The fitted masses and denominator must come from identical reference samples.
 Users must keep the link smearing and lattice operator identical; ensemble
 identity and spacing alone cannot establish operator equivalence.
@@ -61,7 +62,8 @@ The GPD application requires `normalization=false` so H/E local form factors
 are retained. For PDFs, `normalization=true` optionally normalizes the final
 hybrid result to one at the origin. The fit itself uses `normalization=false`.
 
-The fit exports `output.nc` with the original replicas and a `parameter` axis:
+The fit exports `output.nc` with one fitted parameter vector per input replica
+and a `parameter` axis:
 `delta_m_gev`, `m0_gev`, `total_mass_gev`, `B`, `c`. This is a mass artifact,
 not a multi-spacing zR artifact. The apply job consumes it as `inputs.masses`.
 Shared sample lineage is retained, including independent jackknife-group
@@ -84,8 +86,10 @@ does not resum the upstream mass subtraction.
 
 ## Manifest example
 
-Insert this stage into a manifest whose `ca_p0` and `ca_target` jobs provide the
-sample-bearing inputs described above. The distances below illustrate the paper's
+Insert the `renormalization` entry below under the manifest's top-level `stages`
+object, after the jobs `ca_p0` and `ca_target` that provide the sample-bearing
+inputs described above. This is a stage fragment, not a standalone manifest;
+retain the package's required run-wide `metadata`. The distances below illustrate the paper's
 choice; adjust to your grid and perturbative window.
 
 ```json
@@ -129,3 +133,24 @@ Diagnostics include both fit qualities, covariance rank, all masses with
 statistical errors, selected windows, and correlated local m0/total-mass scans.
 They do not include a continuum extrapolation or a systematic error estimate
 from fit-window, scale, perturbative-order, or interpolation variations.
+
+## Package integration
+
+Run this workflow through the normal manifest validation and execution commands
+in the [package README](../README.md). The fit and apply jobs run deterministically;
+no LLM selects a plateau. Unlike the multi-spacing `self_renormalization` fit,
+this strategy performs covariance-weighted fits without Gaussian priors and
+accepts no `priors`, `LambdaQCD_gev`, `d`, or `zR` fields.
+
+Only the apply job's `output.nc` is a coordinate-space matrix element suitable
+for the downstream Fourier stage. The fit's parameter-axis `output.nc` is an
+intermediate mass artifact. Use the usual Fourier and matching jobs with a
+compatible hybrid prescription; this stage does not select or implement new
+momentum-space matching kernels. Its fixed-order mass subtraction alone does
+not provide a consistent upstream RGR/LRR prescription.
+
+This guide is available in the repository and source distribution. Installed
+wheels contain the implementation and paired NNLO coefficient document; the
+repository-level guide and digitization benchmark are not wheel resources.
+The [paper benchmark](../benchmarks/paper2312/README.md) is run from a repository
+checkout with the package installed and is separate from production sample fits.
