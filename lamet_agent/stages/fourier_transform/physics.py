@@ -360,7 +360,7 @@ def tail_fit_fcn(x: Mapping[str, Any], parameters: Mapping[str, Any]) -> np.ndar
     return _tail_fit_fcn_base(x, parameters)
 
 
-def _tail_bounds(names: list[str]) -> tuple[np.ndarray, np.ndarray]:
+def _tail_bounds(names: list[str], lambda0_gev: float = 0.0) -> tuple[np.ndarray, np.ndarray]:
     lower = []
     upper = []
     for name in names:
@@ -371,7 +371,7 @@ def _tail_bounds(names: list[str]) -> tuple[np.ndarray, np.ndarray]:
             lower.append(-np.pi)
             upper.append(np.pi)
         elif name == "Lambda":
-            lower.append(0.0)
+            lower.append(-lambda0_gev)
             upper.append(np.inf)
         elif name == "n":
             lower.append(0.0)
@@ -404,11 +404,16 @@ def _internal_to_bounded(value: Any, lower: float, upper: float) -> Any:
     return value
 
 
-def _internal_start(initial: np.ndarray, bounds: tuple[np.ndarray, np.ndarray]) -> gv.BufferDict:
+def _internal_start(
+    initial: np.ndarray, bounds: tuple[np.ndarray, np.ndarray], names: list[str], lambda0_gev: float
+) -> gv.BufferDict:
     lower, upper = bounds
     result = gv.BufferDict()
     for index, value in enumerate(initial):
-        result[f"u{index}"] = _bounded_to_internal(float(value), float(lower[index]), float(upper[index]))
+        result[f"u{index}"] = (
+            float(value) + lambda0_gev if names[index] == "Lambda"
+            else _bounded_to_internal(float(value), float(lower[index]), float(upper[index]))
+        )
     return result
 
 
@@ -416,10 +421,14 @@ def _physical_tail_parameters(
     parameters: Mapping[str, Any],
     names: list[str],
     bounds: tuple[np.ndarray, np.ndarray],
+    lambda0_gev: float = 0.0,
 ) -> dict[str, Any]:
     lower, upper = bounds
     return {
-        name: _internal_to_bounded(parameters[f"u{index}"], float(lower[index]), float(upper[index]))
+        name: (
+            parameters[f"u{index}"] - lambda0_gev if name == "Lambda"
+            else _internal_to_bounded(parameters[f"u{index}"], float(lower[index]), float(upper[index]))
+        )
         for index, name in enumerate(names)
     }
 
@@ -427,7 +436,8 @@ def _physical_tail_parameters(
 def _bounded_tail_fit_fcn(x: Mapping[str, Any], parameters: Mapping[str, Any]) -> np.ndarray:
     names = list(x["parameter_names"])
     bounds = (np.asarray(x["lower_bounds"], dtype=float), np.asarray(x["upper_bounds"], dtype=float))
-    return tail_fit_fcn(x, _physical_tail_parameters(parameters, names, bounds))
+    # Evaluate the total gap directly, avoiding cancellation near its zero bound.
+    return tail_fit_fcn({**x, "lambda0_gev": 0.0}, _physical_tail_parameters(parameters, names, bounds))
 
 
 def fit_tail_parameters(
@@ -498,9 +508,14 @@ def fit_tail_parameters(
             raise ValueError("phase_transfer_gpd must be mid_at_0, barpsi_at_0, or psi_at_0")
     names = _tail_parameter_names(model_id, order, observable, psi1_flavor_class, psi2_flavor_class, sector, hadron)
     channel_count = 2 if source_component == "both" else 1
-    required_points = max(int(math.ceil(len(names) / channel_count)), 2)
+    # Gaussian priors do not count as measured observations. Require a strict surplus.
+    required_points = max(len(names) // channel_count + 1, 2)
     if int(np.count_nonzero(mask)) < required_points:
-        raise ValueError("tail fit range has too few points for the selected model")
+        raise ValueError(
+            "tail fit range has too few points for the selected model: "
+            f"{int(np.count_nonzero(mask)) * channel_count} observations for {len(names)} parameters; "
+            "require N_observations > N_parameters and at least two positive-z points"
+        )
     if set(prior_means) != set(names) or set(prior_widths) != set(names):
         raise ValueError(f"tail priors must contain exactly {names}")
     initial = np.asarray([float(prior_means[name]) for name in names], dtype=float)
@@ -512,8 +527,10 @@ def fit_tail_parameters(
     )
     initial = np.asarray([float(gv.mean(prior_inputs[name])) for name in names], dtype=float)
     widths = np.asarray([float(gv.sdev(prior_inputs[name])) for name in names], dtype=float)
-    if initial[names.index("Lambda")] <= 0 or ("n" in names and initial[names.index("n")] <= 0):
-        raise ValueError("tail Lambda and CG power prior means must be positive")
+    if initial[names.index("Lambda")] + lambda0_gev <= 0.0:
+        raise ValueError("tail mass-gap prior mean (Lambda + Lambda0_gev) must exceed 0.0 GeV")
+    if "n" in names and initial[names.index("n")] <= 0:
+        raise ValueError("CG power prior mean must be positive")
     samples = np.asarray(data.values)
     if samples.shape[0] < 2:
         raise ValueError("tail fitting requires at least two resamples")
@@ -559,14 +576,14 @@ def fit_tail_parameters(
             else np.concatenate([real_error, imag_error])
         )
         covariance = np.diag(fit_error**2)
-    bounds = _tail_bounds(names)
+    bounds = _tail_bounds(names, lambda0_gev)
     for index, name in enumerate(names):
         if name in (priors or {}) and not bounds[0][index] < initial[index] < bounds[1][index]:
             raise ValueError(
                 f"prior {name!r} mean must lie strictly inside "
                 f"({bounds[0][index]}, {bounds[1][index]})"
             )
-    internal_start = _internal_start(initial, bounds)
+    internal_start = _internal_start(initial, bounds, names, lambda0_gev)
     prior = gv.BufferDict()
     for index, width in enumerate(widths):
         prior[f"u{index}"] = gv.gvar(float(internal_start[f"u{index}"]), float(width))
@@ -591,7 +608,14 @@ def fit_tail_parameters(
         "upper_bounds": bounds[1],
     }
 
+    # Lambda's optimizer coordinate is the physical mass gap in GeV. Its prior
+    # is Gaussian in this coordinate; enforce the domain with solver bounds.
+    mass_gap_key = f"u{names.index('Lambda')}"
+    optimizer_lower = {key: -np.inf for key in prior}
+    optimizer_lower[mass_gap_key] = np.nextafter(0.0, np.inf)
     fit_options = {
+        "fitter": "scipy_least_squares",
+        "bounds": (optimizer_lower, {key: np.inf for key in prior}),
         "maxit": 2000,
         "svdcut": 1e-12,
     }
@@ -611,6 +635,9 @@ def fit_tail_parameters(
         )
         posterior_prior = gv.BufferDict()
         for key in prior:
+            if key == mass_gap_key:
+                posterior_prior[key] = prior[key]
+                continue
             center = initial_result.fit.p[key]
             width = float(gv.sdev(center)) * posterior_prior_scale
             posterior_prior[key] = gv.gvar(float(gv.mean(center)), max(width, 1e-8))
@@ -635,14 +662,23 @@ def fit_tail_parameters(
     )
     records = []
     for parameters in fitted_parameters:
-        physical = _physical_tail_parameters(parameters, names, bounds)
-        records.append({name: float(physical[name]) + (lambda0_gev if name == "Lambda" else 0.0) for name in names})
+        physical = _physical_tail_parameters(parameters, names, bounds, lambda0_gev)
+        records.append(
+            {name: float(parameters[mass_gap_key] if name == "Lambda" else physical[name]) for name in names}
+        )
     center_diagnostics = {
         **prior_diagnostics(prior_inputs, priors),
-        "prior_convention": "physical_mean_internal_sdev",
+        "prior_convention": "physical_mass_gap_other_internal_sdev",
+        "mass_gap_prior_gev": {
+            "mean": float(gv.mean(prior[mass_gap_key])), "sdev": float(gv.sdev(prior[mass_gap_key]))
+        },
+        "mass_gap_lower_bound_gev": 0.0,
         "base_fit_priors": base_fit_priors,
         "fit_priors": prior_diagnostics(prior)["effective_priors"],
         "chi2": result.chi2,
+        "n_observations": int(observations.shape[1]),
+        "n_parameters": len(names),
+        "data_dof": int(observations.shape[1]) - len(names),
         "dof": float(result.dof),
         "chi2_dof": result.chi2 / result.dof,
         "Q": result.Q,
@@ -897,14 +933,14 @@ def _scan_tail_priors(
     sector: str = "full",
     hadron: str = "",
 ) -> tuple[dict[str, float], dict[str, float]]:
-    """Return the original fixed tail starts and first-pass prior widths."""
+    """Return tail starts with a physical mass-gap prior of 0.5 +/- 0.3 GeV."""
     names = _tail_parameter_names(model_id, order, observable, psi1_flavor_class, psi2_flavor_class, sector, hadron)
     means = {}
     widths = {}
     amplitude_index = 0
     for name in names:
         if name == "Lambda":
-            means[name] = max(0.5 - lambda0_gev, 0.05)
+            means[name] = 0.5 - lambda0_gev
         elif name == "n":
             means[name] = 0.5
         elif name.startswith("phi"):
@@ -912,7 +948,7 @@ def _scan_tail_priors(
         else:
             means[name] = 1.0 if amplitude_index == 0 else 0.1
             amplitude_index += 1
-        widths[name] = 3.0
+        widths[name] = 0.3 if name == "Lambda" else 3.0
     return means, widths
 
 
@@ -1133,7 +1169,7 @@ def scan_fourier_transform(
         z = np.asarray(data.coords["z"], dtype=float)
         mask = (z >= z_min_fm - 1e-12) & (z <= z_max_fm + 1e-12) & (z > 0)
         channel_count = 2 if source_component == "both" else 1
-        required_points = max(int(math.ceil(len(names) / channel_count)), 2)
+        required_points = max(len(names) // channel_count + 1, 2)
         if int(np.count_nonzero(mask)) < required_points:
             continue
         means, widths = _scan_tail_priors(
@@ -1200,7 +1236,7 @@ def scan_fourier_transform(
             hadron,
         )
         channel_count = 2 if source_component == "both" else 1
-        required_points = max(int(math.ceil(len(names) / channel_count)), 2)
+        required_points = max(len(names) // channel_count + 1, 2)
         if int(np.count_nonzero(selected_mask)) >= required_points:
             fit_model_specs.extend((order, prior_width) for prior_width in prior_widths)
     if not fit_model_specs:

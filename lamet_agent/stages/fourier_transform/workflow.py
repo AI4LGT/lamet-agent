@@ -24,7 +24,11 @@ def _attempts(result: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "smoothing_method",
         "smoothing_width_fm",
     )
-    quality = ("Q", "chi2", "dof", "chi2_dof", "logGBF", "fit_success", "error")
+    quality = (
+        "Q", "chi2", "dof", "chi2_dof", "logGBF", "fit_success", "error",
+        "n_observations", "n_parameters", "data_dof",
+        "mass_gap_prior_gev", "mass_gap_lower_bound_gev",
+    )
     candidates = [*result.get("range_candidates", []), *result.get("model_candidates", [])]
     for index, candidate in enumerate(candidates, start=1):
         label = str(candidate.get("label", candidate.get("model_id", f"fourier_{index:03d}")))

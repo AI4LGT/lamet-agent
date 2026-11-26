@@ -18,7 +18,7 @@ from lamet_agent.stages.fourier_transform.physics import (
 )
 
 
-GPD_MIN_ZMIN_FM = 0.5
+TAIL_MIN_ZMIN_FM = 0.5
 
 
 def shifted_zmin_fm(value: float, offset: int, z_grid_step_fm: float) -> float:
@@ -29,9 +29,8 @@ def effective_zmin_fm(context: ToolContext, z_grid_step_fm: float) -> list[float
     """Shift each lower boundary by the requested number of measured z-grid intervals."""
     offset = int(context.params["tail_window_step_offset"])
     lower = [shifted_zmin_fm(value, offset, z_grid_step_fm) for value in context.params["zmin_fm"]]
-    target = str(context.manifest["metadata"]["target_observable"]).lower()
-    if target == "gpd" and any(value < GPD_MIN_ZMIN_FM for value in lower):
-        raise ValueError("GPD tail fits require effective zmin_fm >= 0.5 fm after tail_window_step_offset")
+    if any(value < TAIL_MIN_ZMIN_FM for value in lower):
+        raise ValueError("Fourier tail fits require effective zmin_fm >= 0.5 fm after tail_window_step_offset")
     return lower
 
 
