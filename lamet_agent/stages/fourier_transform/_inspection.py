@@ -15,24 +15,15 @@ from lamet_agent.stages.fourier_transform.physics import (
     _NUCLEON_HADRONS,
     complete_signed_z,
     load_data,
+    prepare_tmdwf_projection,
 )
 
 
-GPD_MIN_ZMIN_FM = 0.5
-
-
-def shifted_zmin_fm(value: float, offset: int, z_grid_step_fm: float) -> float:
-    return round(float(value) + offset * z_grid_step_fm, 12)
-
-
-def effective_zmin_fm(context: ToolContext, z_grid_step_fm: float) -> list[float]:
-    """Shift each lower boundary by the requested number of measured z-grid intervals."""
+def effective_zmin_fm(context: ToolContext, data: Any) -> list[float]:
+    """Apply the job's lattice-site offset to its current lower-range candidates."""
     offset = int(context.params["tail_window_step_offset"])
-    lower = [shifted_zmin_fm(value, offset, z_grid_step_fm) for value in context.params["zmin_fm"]]
-    target = str(context.manifest["metadata"]["target_observable"]).lower()
-    if target == "gpd" and any(value < GPD_MIN_ZMIN_FM for value in lower):
-        raise ValueError("GPD tail fits require effective zmin_fm >= 0.5 fm after tail_window_step_offset")
-    return lower
+    spacing = float(data.ensemble.a_s)
+    return [round(float(value) + offset * spacing, 12) for value in context.params["zmin_fm"]]
 
 
 def derive_conventions(attrs: Mapping[str, object], *, target_observable: str, sector: str) -> dict[str, object]:
@@ -45,7 +36,14 @@ def derive_conventions(attrs: Mapping[str, object], *, target_observable: str, s
         raise ValueError("the migrated Fourier examples require parton='quark' provenance")
     if gfix not in {"GI", "CG"}:
         raise ValueError("Fourier input must carry GI or CG gfix provenance")
-    if target == "da":
+    if target in {"da", "tmdwf"}:
+        if target == "tmdwf" and (
+            gfix != "GI"
+            or attrs.get("phase_convention") != "endpoint_from_even_midpoint"
+            or attrs.get("renormalization_scheme") != "tmdwf_wilson_loop"
+            or attrs.get("tmdwf_projection") not in {"real", "imag"}
+        ):
+            raise ValueError("GI TMDWF Fourier input requires a Wilson-renormalized midpoint projection")
         if sector != "full":
             raise ValueError("DA Fourier transformation requires sector='full'")
         source_component, output_scale = "both", 1.0
@@ -169,6 +167,8 @@ def prepare(context: ToolContext) -> tuple[Any, float]:
         value = value[0]
     data = load_data(value)
     target = str(context.manifest["metadata"]["target_observable"]).lower()
+    if target == "tmdwf":
+        data = prepare_tmdwf_projection(data, context.params["tmdwf_projection"], context.params["negative_z"])
     if target in {"pdf", "gpd"}:
         hadron = str(data.attrs.get("hadron", "")).strip().lower()
         if hadron != "pion" and hadron not in _NUCLEON_HADRONS:
@@ -319,7 +319,7 @@ def run(context: ToolContext) -> dict[str, object]:
     data, z_grid_step = prepare(context)
     z = np.asarray(data.coords["z"], dtype=float)
     parameters = context.params
-    effective_zmin = effective_zmin_fm(context, z_grid_step)
+    effective_zmin = effective_zmin_fm(context, data)
     if any(value < 0 for value in effective_zmin):
         raise ValueError("tail_window_step_offset shifts zmin_fm below zero")
     if float(parameters["zmax_ext_fm"]) < float(np.max(np.abs(z))) - 1e-12:

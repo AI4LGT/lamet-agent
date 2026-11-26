@@ -13,6 +13,7 @@ from lamet_agent.contract import CheckContext, Depends, Issue, Provides, Recomme
 from lamet_agent.kernels import load_renormalization_kernel
 from lamet_agent.ui import warning
 from lamet_agent.stages._priors import valid_prior_overrides
+from lamet_agent.stages.renormalization._wilson_factor import parse_wilson_priors
 
 
 def _annotation_accepts(annotation: Any, value: Any) -> bool:
@@ -111,8 +112,16 @@ def _nonnegative_finite(value: int | float) -> bool:
 # ruff: disable[E501]
 # fmt: off
 PARAM_RULES = (
+    Provides("", "wilson_loop", "strategy", physics="Fit and apply a fixed central Wilson-loop denominator."),
+    Depends("wilson_loop", "type", physics="Fit a central factor or apply it to paired matrix elements."),
+    Value("wilson_loop.type", Literal["fit", "apply"], physics="Wilson fit and application are separate jobs."),
+    Provides("wilson_loop", "fit", "wilson_loop.type", physics="Fit the raw-configuration Wilson mean."),
+    Provides("wilson_loop", "apply", "wilson_loop.type", physics="Average four fitted channels and divide by the Wilson factor."),
+    Depends("wilson_loop.fit", "settings", physics="Explicit C32P23 geometry, fit window, priors, and ZO."),
+    Value("wilson_loop.fit.settings", dict, physics="Wilson fit settings are validated together with their geometry."),
+
     Depends("", "strategy", physics="Renormalization factors are either supplied through an external denominator or extracted by fitting reference matrix elements in the self-renormalization workflow."),
-    Value("strategy", Literal["external_denominator", "self_renormalization", "tmd_ratio"], physics="Selects external factors, self-renormalization, or the Coulomb-gauge TMD ratio prescription."),
+    Value("strategy", Literal["external_denominator", "self_renormalization", "tmd_ratio", "wilson_loop"], physics="Selects external factors, self-renormalization, a Coulomb-gauge TMD ratio or a fixed Wilson-loop denominator."),
     Provides("", "external_denominator", "strategy", physics="External-denominator jobs apply a renormalization factor determined outside this workflow to the target matrix element."),
     Provides("", "self_renormalization", "strategy", physics="Self-renormalization jobs extract a reusable factor from reference matrix elements and apply it to target matrix elements."),
     Provides("", "tmd_ratio", "strategy", physics="TMD ratios retain the common local-current and zero-momentum reference uncertainties."),
@@ -174,6 +183,15 @@ PARAM_RULES = (
 INPUT_RULES = ()
 
 JOB_CONDITIONAL_RULES = (
+    Depends("wilson_loop.fit", "inputs", physics="Wilson fitting consumes raw configurations."),
+    Depends("wilson_loop.fit.inputs", "raw", physics="Raw Wilson text or HDF5 input."),
+    Source("wilson_loop.fit.inputs.raw", physics="Wilson measurements with explicit configuration and geometry axes."),
+    Depends("wilson_loop.apply", "inputs", physics="Apply the fitted factor to paired channel outputs."),
+    Depends("wilson_loop.apply.inputs", "targets", physics="Four gtg5/gzg5 x zdir0/zdir1 fit outputs."),
+    Source("wilson_loop.apply.inputs.targets", allow_list=True, physics="Paired bootstrap channels averaged after fitting."),
+    Depends("wilson_loop.apply.inputs", "denominator", physics="A fixed central Wilson denominator."),
+    Source("wilson_loop.apply.inputs.denominator", physics="The preceding Wilson factor or an external NetCDF factor."),
+
     Depends("tmd_ratio", "inputs", physics="TMD normalization consumes explicit sample-bearing sources."),
     Depends("tmd_ratio.inputs", "target", physics="The matrix element being normalized is explicit."),
     Source("tmd_ratio.inputs.target", physics="The target is an earlier job or NetCDF artifact."),
@@ -211,6 +229,8 @@ JOB_CONDITIONAL_RULES = (
 
 
 def check_path(context: CheckContext) -> Issue | None:
+    if context.params.get("strategy") == "wilson_loop":
+        return None
     physics = (
         "Only declared renormalization strategy, type, and scheme combinations define a valid numerical path; "
         "the renormalon-related mass term is extracted by fitting and supplied when applying the factor."
@@ -252,6 +272,8 @@ def check_hybrid(context: CheckContext) -> Issue | None:
 
 
 def check_inputs(context: CheckContext) -> Issue | None:
+    if context.params.get("strategy") == "wilson_loop":
+        return None
     physics = (
         "The strategy, job type, and scheme determine whether target, denominator, reference, and fitted factor roles "
         "are physically required; no additional input roles are meaningful."
@@ -332,6 +354,8 @@ def check_kernel(context: CheckContext) -> list[Issue] | Issue | None:
 
 
 def _check_scale(context: CheckContext) -> Issue | None:
+    if context.params.get("strategy") == "wilson_loop":
+        return None
     params = context.params
     scheme = params.get("scheme")
     strategy = params.get("strategy")
@@ -354,6 +378,53 @@ def _check_scale(context: CheckContext) -> Issue | None:
     return None
 
 
+def check_wilson(context: CheckContext) -> list[Issue]:
+    """Validate the fixed-central C32P23 Wilson prescription before executing a job."""
+    params = context.params
+    if params.get("strategy") != "wilson_loop":
+        return []
+    physics = "Preserve paired bootstrap samples and divide by one fitted central Wilson denominator."
+    issues = []
+
+    def require(ok, path, message):
+        if not ok:
+            issues.append(Issue(path, message, physics))
+
+    def number(value, positive=False):
+        return type(value) in (int, float) and math.isfinite(value) and (not positive or value > 0)
+
+    meta = context.manifest["metadata"]
+    require(meta["target_observable"] in {"tmdwf", "tmd"}, "strategy", "requires target_observable=tmdwf")
+    require(meta["resample_mode"] == "bootstrap" and meta["bin_size"] == 1,
+            "strategy", "requires paired bootstrap samples and bin_size=1")
+    require(params.get("normalization") is False, "normalization", "Wilson application must not normalize at z=0")
+    fit = params.get("type") == "fit"
+    roles = {"raw"} if fit else {"targets", "denominator"}
+    require(set(context.inputs) == roles, "inputs", f"requires exactly {sorted(roles)}")
+    if not fit:
+        require(isinstance(context.inputs.get("targets"), list) and len(context.inputs["targets"]) == 4,
+                "inputs.targets", "requires four source/direction fits")
+        return issues
+    cfg = params.get("settings", {})
+    fields = {"b", "a_fm", "L", "ZO", "fit_start", "fit_stop", "priors", "svdcut"}
+    if not isinstance(cfg, dict):
+        return [*issues, Issue("settings", "must be an object", physics)]
+    require(set(cfg) == fields, "settings", f"requires exactly {sorted(fields)}")
+    if set(cfg) != fields:
+        return issues
+    for field in ("a_fm", "ZO", "svdcut"):
+        require(number(cfg[field], True), f"settings.{field}", "must be finite and positive")
+    require(type(cfg["b"]) is int and 1 <= cfg["b"] <= 10, "settings.b", "supported range is 1..10")
+    valid = all(type(cfg[k]) is int for k in ("fit_start", "fit_stop", "L"))
+    require(valid and 0 <= cfg["fit_start"] < cfg["fit_stop"] <= 26 and cfg["L"] >= 0,
+            "settings.fit_start", "requires an ordered window in 0..26 and nonnegative L")
+    try:
+        parse_wilson_priors(cfg["priors"])
+    except ValueError as exc:
+        issues.append(Issue("settings.priors", str(exc), physics))
+    return issues
+
+
 JOB_RULES = stage_job_rules(PARAM_RULES, INPUT_RULES, JOB_CONDITIONAL_RULES)
 
-CHECKS = (check_path, check_hybrid, check_inputs, check_kernel, _check_scale)
+CHECKS = (check_wilson, check_path, check_hybrid, check_inputs, check_kernel, _check_scale)

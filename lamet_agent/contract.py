@@ -242,17 +242,19 @@ def stage_job_rules(
     param_rules: Sequence[_Rule],
     input_rules: Sequence[_Rule],
     job_rules: Sequence[_Rule] = (),
+    *,
+    allow_empty: bool = False,
 ) -> tuple[_Rule, ...]:
     """Compose one stage contract, including optional cross-field job rules."""
     # ruff: disable[E501]
     # fmt: off
     base: tuple[_Rule, ...] = (
-        Depends("", "jobs", physics="A stage declares a nonempty ordered job list."),
+        Depends("", "jobs", physics="A stage declares an ordered job list."),
         List(
             "jobs",
             "job",
             physics="Stage jobs preserve authored order.",
-            validator=lambda value: len(value) > 0,
+            validator=None if allow_empty else bool,
         ),
         Suggests(
             "",

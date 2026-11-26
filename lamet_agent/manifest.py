@@ -259,6 +259,7 @@ _BASE_RULES: tuple[Depends | Provides | Recommends | Value, ...] = (
     Depends("metadata", "resample_mode", physics="Correlator uncertainties need one consistent jackknife or bootstrap sampling plan."),
     Depends("metadata", "sample_error_mode", physics="All stages need one convention for sample centers and reported errors."),
     Recommends("metadata", "parameter_recommendation_retries", physics="A failed parameter recommendation may be retried a bounded number of times for each job.", default=1),
+    Recommends("metadata", "first_stage_index", physics="Continue stage numbering from existing upstream artifacts.", default=1),
     Provides("metadata", "bootstrap", "metadata.resample_mode", physics="Bootstrap mode needs an explicit replica count for resampled ensembles."),
     Depends("metadata.bootstrap", "samples", physics="Bootstrap resampling needs the number of replicas to generate."),
     Depends("metadata", "bin_size", physics="Raw correlator configurations need a common bin size before resampling."),
@@ -267,7 +268,8 @@ _BASE_RULES: tuple[Depends | Provides | Recommends | Value, ...] = (
     Value("metadata.artifacts_directory", str, physics="The filesystem directory receiving per-job outputs and diagnostics."),
     Value("metadata.random_seed", int, physics="The nonnegative integer seed for reproducible random resampling and numerical procedures.", validator=_nonnegative),
     Value("metadata.workers", int, physics="The positive integer limit on concurrent sample-wise jobs.", validator=_positive),
-    Value("metadata.target_observable", Literal["pdf", "da", "gpd", "tmd", "ff", "moment"], physics="'pdf' targets a parton distribution; 'da' a distribution amplitude; 'gpd' a generalized distribution; 'tmd' combines job-specific TMDWF and TMDPDF observables; 'ff' targets a form factor; 'moment' targets a Mellin moment."),
+    Value("metadata.first_stage_index", int, physics="Number assigned to the first authored stage when continuing an earlier analysis.", validator=_positive),
+    Value("metadata.target_observable", Literal["pdf", "da", "gpd", "tmd", "tmdwf", "ff", "moment"], physics="'pdf' targets a parton distribution; 'da' a distribution amplitude; 'gpd' a generalized distribution; 'tmd' combines job-specific TMDWF and TMDPDF observables; 'tmdwf' targets a transverse-momentum-dependent wave function; 'ff' targets a form factor; 'moment' targets a Mellin moment."),
     Value("metadata.parton", Literal["quark"], physics="'quark' selects quark correlators and quark matching conventions."),
     Value("metadata.resample_mode", Literal["jackknife", "bootstrap"], physics="'jackknife' omits each data group in turn; 'bootstrap' generates replica samples from binned configurations."),
     Value("metadata.sample_error_mode", Literal["covariance", "variance", "one_sigma"], physics="'covariance' retains sample covariance; 'variance' reports variance-only errors; 'one_sigma' uses the median and bootstrap 16/84-percentile interval."),
@@ -626,7 +628,10 @@ def _build_jobs_from_document(document: Mapping[str, Any], *, manifest_path: Pat
     artifact_base = Path(artifacts_value).expanduser()
     artifact_base = artifact_base.resolve() if artifact_base.is_absolute() else (root / artifact_base).resolve()
     resolved: list[Job] = []
-    for stage_index, (stage_id, block) in enumerate(stages.items(), start=1):
+    first = metadata.get("first_stage_index", 1)
+    if type(first) is not int or first < 1:
+        return []
+    for stage_index, (stage_id, block) in enumerate(stages.items(), start=first):
         if not isinstance(block, Mapping) or not isinstance(block.get("jobs"), list):
             continue
         for job_index, job in enumerate(block["jobs"]):

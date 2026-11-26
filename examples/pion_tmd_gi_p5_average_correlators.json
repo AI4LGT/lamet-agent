@@ -1,0 +1,3220 @@
+{
+  "correlators": [
+    {
+      "id": "gtg5_d0_p4_b1_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gtg5/gamma_sink0/PX0PY0PZ4/p1_2_p2_-2/bT1/zdir0/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gtg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 0,
+        "bT": 1,
+        "p1": 2,
+        "p2": -2,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        4
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        4
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gtg5_d0_p4_local",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gtg5/gamma_sink0/PX0PY0PZ4/p1_2_p2_-2/bT0/zdir0/bz0",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gtg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 0,
+        "bT": 0,
+        "p1": 2,
+        "p2": -2,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_local_real"
+      },
+      "correlator_type": "two_point",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        4
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        4
+      ],
+      "current": null,
+      "source_sink_separation": null
+    },
+    {
+      "id": "gtg5_d1_p4_b1_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gtg5/gamma_sink0/PX0PY0PZ4/p1_2_p2_-2/bT1/zdir1/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gtg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 1,
+        "bT": 1,
+        "p1": 2,
+        "p2": -2,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        4
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        4
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gtg5_d1_p4_local",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gtg5/gamma_sink0/PX0PY0PZ4/p1_2_p2_-2/bT0/zdir1/bz0",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gtg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 1,
+        "bT": 0,
+        "p1": 2,
+        "p2": -2,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_local_real"
+      },
+      "correlator_type": "two_point",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        4
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        4
+      ],
+      "current": null,
+      "source_sink_separation": null
+    },
+    {
+      "id": "gzg5_d0_p4_b1_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gzg5/gamma_sink0/PX0PY0PZ4/p1_2_p2_-2/bT1/zdir0/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gzg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 0,
+        "bT": 1,
+        "p1": 2,
+        "p2": -2,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        4
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        4
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gzg5_d0_p4_local",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gzg5/gamma_sink0/PX0PY0PZ4/p1_2_p2_-2/bT0/zdir0/bz0",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gzg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 0,
+        "bT": 0,
+        "p1": 2,
+        "p2": -2,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_local_real"
+      },
+      "correlator_type": "two_point",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        4
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        4
+      ],
+      "current": null,
+      "source_sink_separation": null
+    },
+    {
+      "id": "gzg5_d1_p4_b1_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gzg5/gamma_sink0/PX0PY0PZ4/p1_2_p2_-2/bT1/zdir1/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gzg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 1,
+        "bT": 1,
+        "p1": 2,
+        "p2": -2,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        4
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        4
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gzg5_d1_p4_local",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gzg5/gamma_sink0/PX0PY0PZ4/p1_2_p2_-2/bT0/zdir1/bz0",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gzg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 1,
+        "bT": 0,
+        "p1": 2,
+        "p2": -2,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_local_real"
+      },
+      "correlator_type": "two_point",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        4
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        4
+      ],
+      "current": null,
+      "source_sink_separation": null
+    },
+    {
+      "id": "gtg5_d0_p4_b3_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gtg5/gamma_sink0/PX0PY0PZ4/p1_2_p2_-2/bT3/zdir0/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gtg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 0,
+        "bT": 3,
+        "p1": 2,
+        "p2": -2,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        4
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        4
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gtg5_d1_p4_b3_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gtg5/gamma_sink0/PX0PY0PZ4/p1_2_p2_-2/bT3/zdir1/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gtg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 1,
+        "bT": 3,
+        "p1": 2,
+        "p2": -2,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        4
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        4
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gzg5_d0_p4_b3_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gzg5/gamma_sink0/PX0PY0PZ4/p1_2_p2_-2/bT3/zdir0/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gzg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 0,
+        "bT": 3,
+        "p1": 2,
+        "p2": -2,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        4
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        4
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gzg5_d1_p4_b3_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gzg5/gamma_sink0/PX0PY0PZ4/p1_2_p2_-2/bT3/zdir1/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gzg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 1,
+        "bT": 3,
+        "p1": 2,
+        "p2": -2,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        4
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        4
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gtg5_d0_p5_b1_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gtg5/gamma_sink0/PX0PY0PZ5/p1_{p1}_p2_{p2}/bT1/zdir0/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gtg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 0,
+        "bT": 1,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint_partition_mean",
+        "momentum_partitions": [
+          [
+            3,
+            -2
+          ],
+          [
+            2,
+            -3
+          ]
+        ],
+        "partition_local_dataset": "gtg5/gamma_sink0/PX0PY0PZ5/p1_{p1}_p2_{p2}/bT0/zdir0/bz0"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        5
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        5
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gtg5_d0_p5_local",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gtg5/gamma_sink0/PX0PY0PZ5/p1_3_p2_-2/bT0/zdir0/bz0",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gtg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 0,
+        "bT": 0,
+        "p1": 3,
+        "p2": -2,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_local_real"
+      },
+      "correlator_type": "two_point",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        5
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        5
+      ],
+      "current": null,
+      "source_sink_separation": null
+    },
+    {
+      "id": "gtg5_d1_p5_b1_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gtg5/gamma_sink0/PX0PY0PZ5/p1_{p1}_p2_{p2}/bT1/zdir1/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gtg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 1,
+        "bT": 1,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint_partition_mean",
+        "momentum_partitions": [
+          [
+            3,
+            -2
+          ],
+          [
+            2,
+            -3
+          ]
+        ],
+        "partition_local_dataset": "gtg5/gamma_sink0/PX0PY0PZ5/p1_{p1}_p2_{p2}/bT0/zdir1/bz0"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        5
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        5
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gtg5_d1_p5_local",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gtg5/gamma_sink0/PX0PY0PZ5/p1_3_p2_-2/bT0/zdir1/bz0",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gtg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 1,
+        "bT": 0,
+        "p1": 3,
+        "p2": -2,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_local_real"
+      },
+      "correlator_type": "two_point",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        5
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        5
+      ],
+      "current": null,
+      "source_sink_separation": null
+    },
+    {
+      "id": "gzg5_d0_p5_b1_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gzg5/gamma_sink0/PX0PY0PZ5/p1_{p1}_p2_{p2}/bT1/zdir0/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gzg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 0,
+        "bT": 1,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint_partition_mean",
+        "momentum_partitions": [
+          [
+            3,
+            -2
+          ],
+          [
+            2,
+            -3
+          ]
+        ],
+        "partition_local_dataset": "gzg5/gamma_sink0/PX0PY0PZ5/p1_{p1}_p2_{p2}/bT0/zdir0/bz0"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        5
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        5
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gzg5_d0_p5_local",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gzg5/gamma_sink0/PX0PY0PZ5/p1_3_p2_-2/bT0/zdir0/bz0",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gzg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 0,
+        "bT": 0,
+        "p1": 3,
+        "p2": -2,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_local_real"
+      },
+      "correlator_type": "two_point",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        5
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        5
+      ],
+      "current": null,
+      "source_sink_separation": null
+    },
+    {
+      "id": "gzg5_d1_p5_b1_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gzg5/gamma_sink0/PX0PY0PZ5/p1_{p1}_p2_{p2}/bT1/zdir1/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gzg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 1,
+        "bT": 1,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint_partition_mean",
+        "momentum_partitions": [
+          [
+            3,
+            -2
+          ],
+          [
+            2,
+            -3
+          ]
+        ],
+        "partition_local_dataset": "gzg5/gamma_sink0/PX0PY0PZ5/p1_{p1}_p2_{p2}/bT0/zdir1/bz0"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        5
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        5
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gzg5_d1_p5_local",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gzg5/gamma_sink0/PX0PY0PZ5/p1_3_p2_-2/bT0/zdir1/bz0",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gzg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 1,
+        "bT": 0,
+        "p1": 3,
+        "p2": -2,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_local_real"
+      },
+      "correlator_type": "two_point",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        5
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        5
+      ],
+      "current": null,
+      "source_sink_separation": null
+    },
+    {
+      "id": "gtg5_d0_p5_b3_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gtg5/gamma_sink0/PX0PY0PZ5/p1_{p1}_p2_{p2}/bT3/zdir0/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gtg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 0,
+        "bT": 3,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint_partition_mean",
+        "momentum_partitions": [
+          [
+            3,
+            -2
+          ],
+          [
+            2,
+            -3
+          ]
+        ],
+        "partition_local_dataset": "gtg5/gamma_sink0/PX0PY0PZ5/p1_{p1}_p2_{p2}/bT0/zdir0/bz0"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        5
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        5
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gtg5_d1_p5_b3_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gtg5/gamma_sink0/PX0PY0PZ5/p1_{p1}_p2_{p2}/bT3/zdir1/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gtg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 1,
+        "bT": 3,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint_partition_mean",
+        "momentum_partitions": [
+          [
+            3,
+            -2
+          ],
+          [
+            2,
+            -3
+          ]
+        ],
+        "partition_local_dataset": "gtg5/gamma_sink0/PX0PY0PZ5/p1_{p1}_p2_{p2}/bT0/zdir1/bz0"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        5
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        5
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gzg5_d0_p5_b3_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gzg5/gamma_sink0/PX0PY0PZ5/p1_{p1}_p2_{p2}/bT3/zdir0/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gzg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 0,
+        "bT": 3,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint_partition_mean",
+        "momentum_partitions": [
+          [
+            3,
+            -2
+          ],
+          [
+            2,
+            -3
+          ]
+        ],
+        "partition_local_dataset": "gzg5/gamma_sink0/PX0PY0PZ5/p1_{p1}_p2_{p2}/bT0/zdir0/bz0"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        5
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        5
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gzg5_d1_p5_b3_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gzg5/gamma_sink0/PX0PY0PZ5/p1_{p1}_p2_{p2}/bT3/zdir1/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gzg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 1,
+        "bT": 3,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint_partition_mean",
+        "momentum_partitions": [
+          [
+            3,
+            -2
+          ],
+          [
+            2,
+            -3
+          ]
+        ],
+        "partition_local_dataset": "gzg5/gamma_sink0/PX0PY0PZ5/p1_{p1}_p2_{p2}/bT0/zdir1/bz0"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        5
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        5
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gtg5_d0_p6_b1_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gtg5/gamma_sink0/PX0PY0PZ6/p1_3_p2_-3/bT1/zdir0/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gtg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 0,
+        "bT": 1,
+        "p1": 3,
+        "p2": -3,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        6
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        6
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gtg5_d0_p6_local",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gtg5/gamma_sink0/PX0PY0PZ6/p1_3_p2_-3/bT0/zdir0/bz0",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gtg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 0,
+        "bT": 0,
+        "p1": 3,
+        "p2": -3,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_local_real"
+      },
+      "correlator_type": "two_point",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        6
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        6
+      ],
+      "current": null,
+      "source_sink_separation": null
+    },
+    {
+      "id": "gtg5_d1_p6_b1_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gtg5/gamma_sink0/PX0PY0PZ6/p1_3_p2_-3/bT1/zdir1/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gtg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 1,
+        "bT": 1,
+        "p1": 3,
+        "p2": -3,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        6
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        6
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gtg5_d1_p6_local",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gtg5/gamma_sink0/PX0PY0PZ6/p1_3_p2_-3/bT0/zdir1/bz0",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gtg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 1,
+        "bT": 0,
+        "p1": 3,
+        "p2": -3,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_local_real"
+      },
+      "correlator_type": "two_point",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        6
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        6
+      ],
+      "current": null,
+      "source_sink_separation": null
+    },
+    {
+      "id": "gzg5_d0_p6_b1_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gzg5/gamma_sink0/PX0PY0PZ6/p1_3_p2_-3/bT1/zdir0/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gzg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 0,
+        "bT": 1,
+        "p1": 3,
+        "p2": -3,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        6
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        6
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gzg5_d0_p6_local",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gzg5/gamma_sink0/PX0PY0PZ6/p1_3_p2_-3/bT0/zdir0/bz0",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gzg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 0,
+        "bT": 0,
+        "p1": 3,
+        "p2": -3,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_local_real"
+      },
+      "correlator_type": "two_point",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        6
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        6
+      ],
+      "current": null,
+      "source_sink_separation": null
+    },
+    {
+      "id": "gzg5_d1_p6_b1_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gzg5/gamma_sink0/PX0PY0PZ6/p1_3_p2_-3/bT1/zdir1/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gzg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 1,
+        "bT": 1,
+        "p1": 3,
+        "p2": -3,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        6
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        6
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gzg5_d1_p6_local",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gzg5/gamma_sink0/PX0PY0PZ6/p1_3_p2_-3/bT0/zdir1/bz0",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gzg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 1,
+        "bT": 0,
+        "p1": 3,
+        "p2": -3,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_local_real"
+      },
+      "correlator_type": "two_point",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        6
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        6
+      ],
+      "current": null,
+      "source_sink_separation": null
+    },
+    {
+      "id": "gtg5_d0_p6_b3_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gtg5/gamma_sink0/PX0PY0PZ6/p1_3_p2_-3/bT3/zdir0/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gtg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 0,
+        "bT": 3,
+        "p1": 3,
+        "p2": -3,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        6
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        6
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gtg5_d1_p6_b3_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gtg5/gamma_sink0/PX0PY0PZ6/p1_3_p2_-3/bT3/zdir1/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gtg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 1,
+        "bT": 3,
+        "p1": 3,
+        "p2": -3,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        6
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        6
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gzg5_d0_p6_b3_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gzg5/gamma_sink0/PX0PY0PZ6/p1_3_p2_-3/bT3/zdir0/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gzg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 0,
+        "bT": 3,
+        "p1": 3,
+        "p2": -3,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        6
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        6
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    },
+    {
+      "id": "gzg5_d1_p6_b3_nonlocal",
+      "ensemble": {
+        "series": "C32P23",
+        "id": "C32P23",
+        "a_s": 0.1053,
+        "a_t": 0.1053,
+        "L_s": 32,
+        "L_t": 64,
+        "m_pi": 0.23
+      },
+      "count": 1000,
+      "format": "hdf5",
+      "path": "../data_C32P23/correlators/C32P23/2pt/C32P23_2pt_bootstrap.h5",
+      "dataset": "gzg5/gamma_sink0/PX0PY0PZ6/p1_3_p2_-3/bT3/zdir1/bz{z}",
+      "dataset_dims": [
+        "t",
+        "bootstrap"
+      ],
+      "dims": [
+        "bootstrap",
+        "t",
+        "z"
+      ],
+      "coords": {
+        "t": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "z": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "sampling": {
+        "mode": "bootstrap",
+        "resample_id": "0457b58d067dc417e40d3db71eaac1eb79f7f7d13fdea4c8872fd597f3fb86b7"
+      },
+      "selectors": {
+        "gfix": "GI",
+        "source_operator": "gzg5",
+        "sink_operator": "gamma_sink0",
+        "zdir": 1,
+        "bT": 3,
+        "p1": 3,
+        "p2": -3,
+        "phase_convention": "midpoint",
+        "input_transform": "c32p23_midpoint"
+      },
+      "correlator_type": "qda",
+      "hadron": {
+        "name": "pion"
+      },
+      "source_momentum": [
+        0,
+        0,
+        6
+      ],
+      "sink_momentum": [
+        0,
+        0,
+        6
+      ],
+      "current": {
+        "kernel_operator": "tmdwf",
+        "parton": "quark",
+        "renormalization_scheme": "bare"
+      },
+      "source_sink_separation": null
+    }
+  ]
+}
