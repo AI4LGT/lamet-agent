@@ -598,6 +598,9 @@ amplitudes and the longitudinal $\bar P_z=(p_i^z+p_f^z)/2$. The example sets
 `gpd_min_zmin_fm` to 0.08 fm to permit its explicitly authored short windows.
 The default minimum is 0.5 fm. Each NonBreit `pt2_windows_by_state` entry
 pairs an initial and a final half-open time window in lattice units.
+The example sets `t_energy_source="pion_dispersion"` to label $Q^2=-t$ with
+$E_{i,f}=\sqrt{m_\pi^2+|\mathbf{p}_{i,f}|^2}$. This choice affects the transfer
+metadata and plots. The matrix-element fit still uses its own fitted energies.
 
 Build the complete prior list from the selected row using these rules:
 

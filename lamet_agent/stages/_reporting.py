@@ -60,6 +60,8 @@ def kinematic_series_label(
     if is_gpd:
         xi = attrs.get("xi")
         if not isinstance(xi, Real) or isinstance(xi, bool) or not math.isfinite(float(xi)):
+            if attrs.get("momentum_gev") == 0.0 and attrs.get("t_gev2") == 0.0:
+                return rf"$Q^2=0.00\,\mathrm{{GeV}}^2$, $\xi$ undefined, {spacing_label}"
             return fallback
         if coordinate == "Q2":
             return rf"$\xi={float(xi):.2f}$, {spacing_label}"

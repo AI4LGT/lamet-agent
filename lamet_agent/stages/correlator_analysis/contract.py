@@ -91,6 +91,8 @@ PARAM_RULES = (
     Value("analysis_method", Literal["lsqfit", "lanczos"], physics="'lsqfit' fits authored correlator models with sample-wise nonlinear least-squares; 'lanczos' extracts the spectrum or matrix element through the Lanczos algorithm."),
     Recommends("lsqfit", "qda_window", physics="An explicit independent source window is optional.", default=None),
     Recommends("lsqfit", "qda_windows_by_z", physics="Optional static coordinate-specific source windows override qda_window for native TMD axial fits.", default={}),
+    Recommends("lsqfit", "t_energy_source", physics="Energy convention used only to record the invariant momentum transfer for GPD and NonBreit outputs.", default="fit"),
+    Value("lsqfit.t_energy_source", Literal["fit", "pion_dispersion"], physics="Use ground-state energies at the smallest fitted |z|, or the pion dispersion relation with the ensemble pion mass and the full initial and final three-momenta."),
     Recommends("lsqfit", "pt2_windows_by_state", physics="Optional explicit NonBreit fit candidates with separate initial- and final-state two-point windows; each list item is one paired candidate.", default=[]),
     Recommends("lsqfit", "qda_output", physics="The usual qDA amplitude convention remains the default.", default="ratio"),
     Recommends("lsqfit", "tmd_phase_rotation", physics="Raw axial TMDWF phases are opt-in.", default=False),

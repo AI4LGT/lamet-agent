@@ -329,17 +329,25 @@ def run(context: ToolContext, *, candidate_id: str) -> dict[str, object]:
             data.array.attrs["xi"] = (final_pz - initial_pz) / (final_pz + initial_pz)
         fits = selected.get("application_fit", {}).get("fits", [])
         energy_fits = [fit for fit in fits if fit.get("E0_i") is not None and fit.get("E0_f") is not None]
-        if energy_fits:
+        source = settings.get("t_energy_source", "fit")
+        if source == "pion_dispersion":
+            if str(data.attrs.get("hadron", "")).lower() != "pion":
+                raise ValueError("pion_dispersion requires a pion matrix element")
+            mpi, ks = float(data.ensemble.m_pi), float(data.ensemble.k_s)
+            initial_energy = np.sqrt(mpi**2 + (ks * np.linalg.norm(source_momentum))**2)
+            final_energy = np.sqrt(mpi**2 + (ks * np.linalg.norm(sink_momentum))**2)
+        elif energy_fits:
             reference = min(energy_fits, key=lambda fit: (abs(float(fit["z"])), float(fit["z"])))
             energy_scale = HBAR_C_GEV_FM / float(data.ensemble.a_t)
             initial_energy = float(reference["E0_i"]) * energy_scale
             final_energy = float(reference["E0_f"]) * energy_scale
-            delta_momentum = (sink_momentum - source_momentum) * float(data.ensemble.k_s)
+        if source == "pion_dispersion" or energy_fits:
+            delta = sink_momentum - source_momentum
+            delta_spatial_sq = float(data.ensemble.k_s)**2 * np.dot(delta, delta)
+            data.array.attrs["t_energy_source"] = source
             data.array.attrs["initial_energy_gev"] = initial_energy
             data.array.attrs["final_energy_gev"] = final_energy
-            data.array.attrs["t_gev2"] = (final_energy - initial_energy) ** 2 - float(
-                np.dot(delta_momentum, delta_momentum)
-            )
+            data.array.attrs["t_gev2"] = (final_energy - initial_energy)**2 - delta_spatial_sq
         elif np.array_equal(source_momentum, sink_momentum):
             data.array.attrs["t_gev2"] = 0.0
     kinematic_label = kinematic_series_label(
