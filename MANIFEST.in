@@ -1,2 +1,5 @@
 include README.md
 include DEVELOPMENT.md
+include docs/tmd-zo-extraction.md
+include docs/gi-tmd-zo-notebook-validation.md
+include benchmarks/reproduce_gi_tmd_zo.py
