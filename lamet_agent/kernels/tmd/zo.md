@@ -31,7 +31,20 @@ hard-coded benchmarks for arbitrary coupling choices. No coupling freezing is
 performed. Scales below min_scale_gev or trajectories reaching alpha_s >= 1
 raise errors. The scale floor is a domain guard, not a perturbativity guarantee.
 
-Only the published NLO and NLO+RGR prescriptions are implemented. Candidate
-two-loop zero-momentum finite terms from the slides and LRR are not included.
+The published NLO prescriptions and the supplied notebook NNLO extension
+below are implemented. LRR is not included.
 This is the single-log renormalization evolution, not the double-log hard
 matching or Collins-Soper evolution.
+
+
+## NNLO notebook extension
+
+`zo_nnlo.py` ports the NNLO Fixed order module of `TMD(2).nb` v2 and
+`TMD_NNLO.wl` (2026-11-14), including the numerical same-side remainder.
+`order="nnlo"` uses its fixed-order coefficient; `order="nnlo_rgr"` evolves
+that NNLO boundary with the existing two-loop beta and anomalous dimension
+(NLL, not NNLL evolution). This source is separate from arXiv:2412.19988.
+See `docs/tmd-zo-extraction.md` for the subtraction, numerical refinement,
+fixed-flavor conventions, and massless pure-DR limitations.
+
+

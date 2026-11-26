@@ -22,8 +22,8 @@ def validate_settings(mu=2.0, alpha_s=0.293, n_f=3, order="nlo_rgr", min_scale_g
         raise ValueError("reference coupling must be < 1 and mu >= min_scale_gev")
     if isinstance(n_f, bool) or n_f not in (3, 4, 5):
         raise ValueError("n_f must be 3, 4, or 5 (fixed-flavor prescription)")
-    if order not in ("nlo", "nlo_rgr"):
-        raise ValueError("order must be nlo or nlo_rgr; NNLO input is not validated")
+    if order not in ("nlo", "nlo_rgr", "nnlo", "nnlo_rgr"):
+        raise ValueError("order must be nlo, nlo_rgr, nnlo, or nnlo_rgr")
 
 
 def anomalous_dimension(alpha_s, n_f):
@@ -58,23 +58,31 @@ def coefficient(z_fm, b_fm, *, mu=2.0, alpha_s=0.293, n_f=3, order="nlo_rgr", sc
     validate_settings(mu, alpha_s, n_f, order, min_scale_gev)
     if not np.isfinite(scale_factor) or scale_factor <= 0 or isinstance(scale_factor, bool):
         raise ValueError("scale_factor must be finite and positive")
-    if order == "nlo" and scale_factor != 1:
-        raise ValueError("initial-scale variation is defined only for nlo_rgr")
+    if order in ("nlo", "nnlo") and scale_factor != 1:
+        raise ValueError("initial-scale variation requires an RGR order")
     z, b = np.broadcast_arrays(np.asarray(z_fm, float), np.asarray(b_fm, float))
     if not np.all(np.isfinite(z)) or not np.all(np.isfinite(b)) or np.any(b <= 0):
         raise ValueError("coordinates must be finite, with b_fm > 0")
     radius = np.hypot(z, b) / HBAR_C_GEV_FM
     natural = 2 * np.exp(-np.euler_gamma) / radius
-    boundary = np.full(z.shape, mu) if order == "nlo" else natural * scale_factor
+    boundary = np.full(z.shape, mu) if order in ("nlo", "nnlo") else natural * scale_factor
     if np.any(boundary < min_scale_gev):
         raise ValueError("natural boundary scale is below min_scale_gev; no freezing is applied")
     alphas, evolution = np.full(z.shape, alpha_s), np.ones(z.shape)
-    if order == "nlo_rgr":
+    if order.endswith("_rgr"):
         for index in np.ndindex(z.shape):
             alphas[index], evolution[index] = _evolve(mu, alpha_s, float(boundary[index]), n_f)
     # Keep the boundary log, including 2 ln(scale_factor) away from the natural scale.
     bracket = 3 * np.log(boundary / natural) - 2 * z / b * np.arctan(z / b) + 0.5
-    result = (1 + alphas * CF / (2 * np.pi) * bracket) * evolution
+    fixed = 1 + alphas * CF / (2 * np.pi) * bracket
+    if order.startswith("nnlo"):
+        from lamet_agent.kernels.tmd.zo_nnlo import checked_same_side_sum, color_coefficients
+
+        ratios = z / b
+        same = np.array([checked_same_side_sum(float(r)) for r in ratios.flat]).reshape(z.shape)
+        hff, hfa, hfferm = color_coefficients(ratios, 2 * np.log(boundary / natural), same)
+        fixed += (alphas / (4 * np.pi))**2 * (CF**2 * hff + CF * CA * hfa + CF * TF * n_f * hfferm)
+    result = fixed * evolution
     if not np.all(np.isfinite(result)) or np.any(result <= 0):
         raise ValueError("nonpositive/nonfinite perturbative coefficient; revise reference window")
     return result
