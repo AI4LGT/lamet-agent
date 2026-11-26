@@ -2358,7 +2358,8 @@ def test_nla_tail_fit_recovers_a_complex_toy() -> None:
         values + rng.normal(0.0, 2e-4, values.shape) + 1j * rng.normal(0.0, 2e-4, values.shape) for _ in range(32)
     ]
     data = EnsembleData(
-        None, "bootstrap", samples, ["z"], {"z": z.tolist()}, attrs={"coord_unit": "fm", "hadron": "proton"}
+        None, "bootstrap", samples, ["z"], {"z": z.tolist()},
+        attrs={"sample_error_mode": "covariance", "coord_unit": "fm", "hadron": "proton"}
     )
     fitted, diagnostics = fit_tail_parameters(
         data,
@@ -2397,7 +2398,7 @@ def test_da_tail_uses_two_endpoint_phases_and_light_light_alias() -> None:
         samples,
         ["z"],
         {"z": z.tolist()},
-        attrs={"coord_unit": "fm", "momentum_gev": 2.0, "hadron": "pion"},
+        attrs={"sample_error_mode": "covariance", "coord_unit": "fm", "momentum_gev": 2.0, "hadron": "pion"},
     )
     fitted, diagnostics = fit_tail_parameters(
         data,
@@ -2844,6 +2845,7 @@ def test_native_fourier_scan_fits_and_transforms_with_one_parallel_entry(monkeyp
         ["z"],
         {"z": z.tolist()},
         attrs={
+            "sample_error_mode": "covariance",
             "coord_unit": "fm",
             "momentum_gev": 2.0,
             "hadron": "proton",
@@ -3060,7 +3062,7 @@ def test_fourier_inspection_shifts_by_measured_z_intervals(tmp_path: Path, step_
     data.to_netcdf(source)
     data = EnsembleData.from_netcdf(source)
     context = ToolContext(
-        {"metadata": {"target_observable": "pdf", "parton": "quark"}},
+        {"metadata": {"sample_error_mode": "covariance", "target_observable": "pdf", "parton": "quark"}},
         Path("manifest.json"),
         "fourier_transform",
         "offset",
@@ -3097,7 +3099,8 @@ def test_fourier_input_rejects_unsupported_hadron_before_recommendation(observab
         attrs={"hadron": hadron} if hadron else {},
     )
     context = SimpleNamespace(
-        state={}, inputs={"input": data}, manifest={"metadata": {"target_observable": observable}},
+        state={}, inputs={"input": data},
+        manifest={"metadata": {"sample_error_mode": "covariance", "target_observable": observable}},
     )
     session = SimpleNamespace(has_context=lambda key: False)
     with pytest.raises(ValueError, match=f"Fourier input hadron.*got {hadron or '<missing>'}"):
@@ -3135,7 +3138,7 @@ def test_gpd_fourier_preparation_records_signed_longitudinal_momenta(tmp_path: P
         attrs={**common_attrs, "source_momentum": [0, 0, 3], "sink_momentum": [0, 0, 2]},
     )
     context = ToolContext(
-        {"metadata": {"workers": 1, "target_observable": "gpd", "parton": "quark"}},
+        {"metadata": {"sample_error_mode": "covariance", "workers": 1, "target_observable": "gpd", "parton": "quark"}},
         tmp_path / "manifest.json",
         "fourier_transform",
         "gpd",
