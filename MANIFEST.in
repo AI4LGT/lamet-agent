@@ -3,3 +3,5 @@ include DEVELOPMENT.md
 include docs/tmd-zo-extraction.md
 include docs/gi-tmd-zo-notebook-validation.md
 include benchmarks/reproduce_gi_tmd_zo.py
+include benchmarks/reproduce_gi_tmd_p17.py
+include benchmarks/gi_tmd_p17_reference.json
