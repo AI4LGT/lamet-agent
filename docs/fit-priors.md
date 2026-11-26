@@ -618,24 +618,36 @@ names in `priors`; positional internal names such as `u0` are not input keys.
 settings/provenance that select the model, not fitted prior parameters.
 
 The first-pass defaults are: first amplitude 1, remaining amplitudes 0.1,
-phases 0, `Lambda=max(0.5-Lambda0_gev, 0.05)`, and CG `n=0.5`. "First" follows
-the order in the table, with NLA suffixes appended afterward. Every initial
-standard deviation is 3 in the internal coordinate.
+phases 0, and CG `n=0.5`. "First" follows the order in the table, with NLA
+suffixes appended afterward. Those parameters retain width 3 in their bounded
+internal coordinates.
 
-For example, `"Lambda": "0.6(0.2)"` gives the existing
-internal log-Lambda parameter a mean of log(0.6) and width 0.2. Lambda is the
-fitted GeV decay scale before adding `scheme_scan.Lambda0_gev`. This is not a
-Gaussian width of 0.2 GeV on Lambda. Amplitudes, phases and the CG power use
-their existing bounded coordinate maps. Explicit means must lie strictly
-inside those bounds (amplitudes: -20 to 20; phases: -pi to pi; Lambda: positive;
+The physical mass gap is `m_gap = Lambda + Lambda0_gev`. Its default prior is
+Gaussian, `0.5 +/- 0.3 GeV`, restricted to `m_gap > 0 GeV` by the numerical
+optimizer's lower bound. The quoted center and width specify the Gaussian
+penalty before restricting its domain; they are not the moments of the
+truncated distribution. The optimizer fits this gap directly in GeV, so the
+width is not a log-coordinate width. The residual start is
+`Lambda = 0.5 - Lambda0_gev`, which may be negative for a large offset; only
+the total gap must be positive. Returned fit records store the total gap in
+`Lambda`, as before, for use by the extension code.
+
+Python overrides retain the residual `Lambda` convention. For example,
+`priors={"Lambda": "0.6(0.2)"}` with `Lambda0_gev=0.1` gives a physical
+mass-gap prior `0.7 +/- 0.2 GeV`. Its mean must be strictly positive after
+adding the offset. Amplitudes, phases and the CG power retain their existing
+bounded coordinate maps and internal-coordinate widths. Explicit means must
+lie strictly inside their bounds (amplitudes: -20 to 20; phases: -pi to pi;
 CG n: 0 to 4), and are rejected instead of being silently clipped.
-Unspecified first-pass widths remain
-3 in those internal coordinates.
 
 In the Python scan, overrides apply during range selection and every
-subsequent model fit. The scan's `prior_widths` setting controls the subsequent
-posterior-derived widths. Diagnostics expose the input convention,
-`base_fit_priors` before posterior transfer, and the final `fit_priors`.
+subsequent model fit. The scan's `prior_widths` setting controls the
+posterior-derived widths for parameters other than the mass gap. The gap
+keeps its original physical Gaussian prior in both passes and every replica;
+it is not recentered or rescaled from a posterior. Diagnostics expose
+`mass_gap_prior_gev`, `mass_gap_lower_bound_gev`, `base_fit_priors` before
+posterior transfer, and final `fit_priors`. Its `u` entry is in GeV; other
+`u` entries are in bounded internal coordinates.
 
 Source: `_tail_family`, `_tail_parameter_names`, `_tail_bounds`, and
 `_scan_tail_priors` in
