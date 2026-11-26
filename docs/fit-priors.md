@@ -732,3 +732,20 @@ Source: `_dispersion_model` and `_dispersion_lines` in
 | Extrapolation `operation="systematics_budget"` | None; it combines completed results without a fit. |
 | Matching, for all matching kernels | None; kernel options belong in `kernel_parameters`. |
 | Review | None. |
+
+## Fourier fit weighting and tail damping
+
+Fourier preparation reads `metadata.sample_error_mode` from the active manifest
+and rejects conflicting input attributes. The low-level tail fitter requires
+an explicit `attrs.sample_error_mode`; it no longer silently assumes covariance.
+Both pion PDF example manifests select `variance` (diagonal errors).
+`covariance` remains a valid explicit alternative analysis. Each fit diagnostic
+records the actual weighting mode. Standalone validation scripts must compare
+saved configuration with the selected manifest before reusing checkpoints.
+
+The positive total-gap prior, by default 0.5 +/- 0.3 GeV, damps the asymptotic
+oscillation envelope. It does not remove physical phases or guarantee a
+monotonic matrix element. No monotonic range search is required; retain the
+0.5 fm effective minimum, strict observation surplus, and Q/logGBF selection.
+The direct/tapered TMD workflow has no mass-gap fit; bare-TMDPDF tail checks
+are separate diagnostics, not validation of a production TMD tail model.
