@@ -238,7 +238,7 @@ def publish(context: ToolContext, result: dict[str, object]) -> dict[str, object
     }
     kinematic_label = kinematic_series_label(
         source_attrs,
-        spacing_fm=source.ensemble.a_s,
+        spacing_fm=getattr(source.ensemble, "a_s", None),
         fallback=context.job_id,
     )
     source_component = str(scan["source_component"])

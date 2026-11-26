@@ -201,7 +201,7 @@ def stage_overlay_lines(
                 else:
                     label = kinematic_series_label(
                         output_attrs(record),
-                        spacing_fm=record.output.ensemble.a_s,
+                        spacing_fm=getattr(record.output.ensemble, "a_s", None),
                         fallback=record.job_id,
                         coordinate=coordinate,
                     )

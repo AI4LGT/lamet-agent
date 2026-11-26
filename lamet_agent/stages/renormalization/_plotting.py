@@ -180,7 +180,7 @@ def render_result(
     mode = sample_error_mode or str(data.attrs.get("sample_error_mode", "covariance"))
     base_label = kinematic_series_label(
         data.attrs,
-        spacing_fm=data.ensemble.a_s,
+        spacing_fm=getattr(data.ensemble, "a_s", None),
         fallback=str(data.name or "result"),
     )
     start_plot()

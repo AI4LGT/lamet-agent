@@ -972,7 +972,7 @@ def test_correlator_dataset_key_groups_nstate_and_prior_on_one_window() -> None:
 
     shared = {
         "method": "lsqfit",
-        "fit_scope": ["3pt_ratio"],
+        "fit_scope": ["3pt_over_2pt"],
         "window": {"tmin": 3, "tmax": 8, "tau_min": 2},
         "tsep_values": [8],
     }
@@ -991,12 +991,18 @@ def test_correlator_dataset_key_groups_nstate_and_prior_on_one_window() -> None:
         "nstate": 1,
         "prior_width": 1.0,
         **shared,
-        "fit_scope": ["3pt_ratio"],
+        "fit_scope": ["3pt_over_2pt"],
     }
     grouped = models_on_dataset([anchor, same_dataset, other_window, other_scope], anchor)
     assert [candidate["id"] for candidate in grouped] == ["matrix_001", "matrix_002"]
     assert dataset_key(anchor) == dataset_key(same_dataset)
     assert dataset_key(anchor) != dataset_key(other_window)
+    different_final = {
+        **anchor, "window": {**anchor["window"], "pt2_by_state": {
+            "initial": {"tmin": 3, "tmax": 8}, "final": {"tmin": 5, "tmax": 10},
+        }},
+    }
+    assert dataset_key(anchor) != dataset_key(different_final)
     assert dataset_key(anchor) != dataset_key(other_scope)
     joint_a = {**anchor, "fit_scope": ["2pt+3pt"]}
     joint_b = {**reordered_joint, "fit_scope": ["3pt+2pt"]}
@@ -1068,18 +1074,22 @@ def test_combine_matrix_samples_weights_per_sample_and_skips_failed_siblings() -
 
 
 def test_matrix_element_prior_keeps_original_inactive_component_parameters() -> None:
-    prior = matrix_element_prior(2, form="Breit", scope="3pt_ratio", components=("re",), width_scale=1.0)
+    prior = matrix_element_prior(2, form="Breit", scope="3pt_over_2pt", components=("re",), width_scale=1.0)
     assert "O00_im" in prior and "O01_im" in prior and "O11_im" in prior
     assert float(prior["O00_im"].mean) == 1.0
     assert "log(E0)" in prior
     assert float(prior["E0"].mean) > 0.0
 
+    gpd = matrix_element_prior(2, form="Breit", scope="3pt_over_2pt", components=("re",),
+                               width_scale=1.0, target_observable="gpd")
+    assert "O00_re" in gpd and "O00_im" not in gpd
+
 
 def test_matrix_element_prior_unions_per_atom_state_counts() -> None:
     two_plus_one = matrix_element_prior(
-        {"2pt": 2, "3pt_ratio": 1},
+        {"2pt": 2, "3pt_over_2pt": 1},
         form="Breit",
-        scope=("2pt", "3pt_ratio"),
+        scope=("2pt", "3pt_over_2pt"),
         components=("re",),
         width_scale=1.0,
     )
@@ -1088,9 +1098,9 @@ def test_matrix_element_prior_unions_per_atom_state_counts() -> None:
     assert "O01_re" not in two_plus_one and "O11_re" not in two_plus_one
 
     one_plus_two = matrix_element_prior(
-        {"2pt": 1, "3pt_ratio": 2},
+        {"2pt": 1, "3pt_over_2pt": 2},
         form="Breit",
-        scope=("2pt", "3pt_ratio"),
+        scope=("2pt", "3pt_over_2pt"),
         components=("re",),
         width_scale=1.0,
     )
@@ -1896,7 +1906,11 @@ def test_native_matrix_element_fit_supports_composable_scopes(fit_scope: list[st
         assert tuning["n_failed_samples"] == 0
 
 
-def test_native_nonbreit_fit_uses_distinct_source_and_sink_spectra() -> None:
+@pytest.mark.parametrize("state_windows", [
+    None,
+    {"initial": {"tmin": 3, "tmax": 8}, "final": {"tmin": 4, "tmax": 10}},
+])
+def test_native_nonbreit_fit_uses_distinct_source_and_sink_spectra(state_windows) -> None:
     ensemble = EnsembleInfo("toy", "toy", 0.1, 0.1, 32, 32, 0.2)
     times = np.arange(16)
     tseps = np.asarray([8, 10])
@@ -1961,13 +1975,14 @@ def test_native_nonbreit_fit_uses_distinct_source_and_sink_spectra() -> None:
     result, diagnostics = fit_matrix_element_samples(
         {"initial": initial_data, "final": final_data, "three_point": three_point_data},
         fitting_form="NonBreit",
-        fit_scope=["2pt+3pt_ratio"],
+        fit_scope=["2pt+3pt_over_2pt"],
         components="real",
         tmin=3,
         tmax=8,
+        pt2_windows_by_state=state_windows,
         tsep_values=tseps.tolist(),
         tau_min=2,
-        n_states=1,
+        n_states={"2pt": 1, "3pt_over_2pt": 1},
         prior_width=1.0,
         correlator_rescale=1.0,
         svdcut=1e-8,
@@ -3019,8 +3034,9 @@ def test_fourier_scan_plot_draws_extrapolation_only_from_selected_zmin(monkeypat
     assert context.summary["diagnostics"]["fallback_no_q_passing"] is True
 
     scale = 2.0 / HBAR_C_GEV_FM
-    input_curves = [x for label, x in plotted if label == "input"]
-    extrapolation_curves = [x for label, x in plotted if label == "extrapolation"]
+    kinematics = r"$P=2.00\,\mathrm{GeV}$, $a=0.10\,\mathrm{fm}$"
+    input_curves = [x for label, x in plotted if label == f"input, {kinematics}"]
+    extrapolation_curves = [x for label, x in plotted if label == f"extrapolation, {kinematics}"]
     assert len(input_curves) == 2
     assert len(extrapolation_curves) == 2
     for coordinates in input_curves:

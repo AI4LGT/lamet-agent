@@ -54,10 +54,11 @@ selected observable/hadron channel, the GI/CG LA/NLA ansatz is
 $$
 h(z)=\left[A_2e^{i\phi_2\operatorname{sgn}z}
 +\frac{A'_2e^{i\phi'_2\operatorname{sgn}z}}{|z|}\right]
-e^{-\Lambda |z|/(\hbar c)},
+e^{-(\Lambda+\Lambda_0)|z|/(\hbar c)},
 $$
 
-where the primed term is omitted at LA.  The CG family divides the selected
+where the primed term is omitted at LA and $\Lambda_0$ is the authored
+`Lambda0_gev` offset. The CG family divides the selected
 base family by the fitted power $(|z|/1\,\mathrm{fm})^n$.  The algebraic
 coordinate is therefore the numerical input coordinate in fm; only momentum
 phases and the exponential decay use $\hbar c$.  The
@@ -76,7 +77,7 @@ and phase. This channel and the pion valence PDF use the same two-endpoint form
 $$
 h(z)=\left[A_2+2A_1\cos\left(\phi_1-\frac{P_z|z|}{\hbar c}\right)
  +\frac{1}{|z|}\left(A'_2+2A'_1\cos\left(\phi'_1-\frac{P_z|z|}{\hbar c}\right)\right)\right]
-e^{-\Lambda |z|/(\hbar c)},
+e^{-(\Lambda+\Lambda_0)|z|/(\hbar c)},
 $$
 
 with the CG power applied afterward. Other GPD tails use the endpoint structures

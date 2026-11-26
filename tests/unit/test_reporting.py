@@ -804,6 +804,7 @@ def test_fourier_stage_report_contains_tail_and_selection(tmp_path: Path) -> Non
         {"x": [-0.2, 0.2]},
         attrs={
             "momentum_gev": 1.72,
+            "longitudinal_direction": "[0,0,1]",
             "gfix": "GI",
             "parton": "quark",
             "sector": "full",
@@ -962,8 +963,10 @@ def test_stage_overlay_splits_crowded_series_into_even_figures(tmp_path: Path) -
     assert "renormalization_overview_2.svg" in text
     assert "renormalization_overview_1.pdf" in text
     assert not (tmp_path / "plots" / "renormalization_overview.svg").exists()
-    assert "job_0" in first and "job_4" in first and "job_5" not in first
-    assert "job_5" in second and "job_8" in second and "job_0" not in second
+    for index in range(9):
+        label = rf"$P={1.0 + 0.05 * index:.2f}\,\mathrm{{GeV}}$"
+        assert (label in first) == (index < 5)
+        assert (label in second) == (index >= 5)
     assert r"$x$" in first
     assert "overlay" in first
 

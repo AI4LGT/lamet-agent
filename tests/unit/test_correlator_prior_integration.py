@@ -186,6 +186,58 @@ def test_nonbreit_overlap_conditioning_keeps_physical_matrix_prior():
     assert gv.sdev(prior["O00_re"]) == 0.6
 
 
+def test_matrix_candidate_grid_preserves_paired_nonbreit_windows(tmp_path, monkeypatch):
+    from lamet_agent.stages.correlator_analysis import _fit_matrix
+
+    records = _correlators()
+    settings = _settings()
+    expected = {"initial": {"tmin": 2, "tmax": 7}, "final": {"tmin": 4, "tmax": 9}}
+    settings.update(
+        fitting_form="NonBreit",
+        fit_scope=["2pt+3pt_over_2pt"],
+        nstate={"2pt": [1], "3pt_over_2pt": [1]},
+        pt2_windows_by_state=[expected],
+        tune_z_values=[1],
+    )
+    context = _context(tmp_path, settings, records)
+    calls = []
+
+    def capture(_correlators, **kwargs):
+        calls.append(kwargs["pt2_windows_by_state"])
+        return None, {"Q": 0.8, "chi2_dof": 1.0, "n_data": 30, "n_params": 5, "logGBF": -2.0}
+
+    monkeypatch.setattr(_fit_matrix, "fit_matrix_element_samples", capture)
+    _fit_matrix.run(context, tune_z_values=[1])
+
+    assert calls == [expected]
+    assert context.state["matrix_element_candidates"][0]["window"]["pt2_by_state"] == expected
+
+
+def test_nonbreit_preflight_filters_only_the_time_window_for_each_state(tmp_path, monkeypatch):
+    import json
+    from lamet_agent.stages.correlator_analysis import _input
+
+    sample = _correlators()
+    data = {"i": sample["c2"], "f": sample["c2"].copy(), "three": sample["c3"]}
+    data["f"].values[0, 2] = np.nan  # in the initial window only
+    data["f"].values[1, 7] = np.nan  # in the final window
+    source, sink = [0, 0, 2], [1, 0, 2]
+    records = [
+        {"id": key, "correlator_type": value.attrs["correlator_type"],
+         "source_momentum": sink if key == "f" else source,
+         "sink_momentum": source if key == "i" else sink, "selectors": {"resample_group": "shared"}}
+        for key, value in data.items()
+    ]
+    (tmp_path / "c.json").write_text(json.dumps({"correlators": records}))
+    monkeypatch.setattr(_input, "load_descriptor",
+                        lambda path, selected_ids: {"correlators": {key: data[key] for key in selected_ids}})
+    job = {"id": "test", "fitting_form": "NonBreit", "fit_scope": ["2pt+3pt"], "component": "re",
+           "pt2_windows_by_state": [{"initial": {"tmin": 2, "tmax": 5}, "final": {"tmin": 6, "tmax": 9}}],
+           "inputs": {"correlators": [{"json": "c.json", "id": key} for key in data]}}
+    document = {"metadata": {"bin_size": 1}, "stages": {"correlator_analysis": {"jobs": [job]}}}
+    assert _input.prepare_resampling_groups(document, tmp_path)["shared"]["excluded_indices"] == [1]
+
+
 def test_public_qda_wrapper_routes_authored_priors_and_sample_mode(monkeypatch):
     records = {key: value for key, value in _correlators().items() if key != "c3"}
     settings = _settings(True)

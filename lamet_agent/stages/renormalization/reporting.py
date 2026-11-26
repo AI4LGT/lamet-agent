@@ -191,7 +191,7 @@ def _combined_series_label(record: StageReportRecord) -> str:
     attrs = output_attrs(record)
     label = kinematic_series_label(
         attrs,
-        spacing_fm=record.output.ensemble.a_s,
+        spacing_fm=getattr(record.output.ensemble, "a_s", None),
         fallback="",
     )
     if label:

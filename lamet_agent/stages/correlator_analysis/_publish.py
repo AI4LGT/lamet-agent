@@ -352,7 +352,7 @@ def run(context: ToolContext, *, candidate_id: str) -> dict[str, object]:
             data.array.attrs["t_gev2"] = 0.0
     kinematic_label = kinematic_series_label(
         data.attrs,
-        spacing_fm=data.ensemble.a_s,
+        spacing_fm=getattr(data.ensemble, "a_s", None),
         fallback=context.job_id,
     )
     if target_observable == "tmd":
