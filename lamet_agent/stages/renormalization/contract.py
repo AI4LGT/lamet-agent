@@ -12,6 +12,7 @@ import numpy as np
 from lamet_agent.contract import CheckContext, Depends, Issue, Provides, Recommends, Source, Value, stage_job_rules
 from lamet_agent.kernels import load_renormalization_kernel
 from lamet_agent.ui import warning
+from lamet_agent.stages.renormalization import _zo_contract
 from lamet_agent.stages._priors import valid_prior_overrides
 
 
@@ -112,7 +113,7 @@ def _nonnegative_finite(value: int | float) -> bool:
 # fmt: off
 PARAM_RULES = (
     Depends("", "strategy", physics="Renormalization factors are either supplied through an external denominator or extracted by fitting reference matrix elements in the self-renormalization workflow."),
-    Value("strategy", Literal["external_denominator", "self_renormalization", "tmd_ratio"], physics="Selects external factors, self-renormalization, or the Coulomb-gauge TMD ratio prescription."),
+    Value("strategy", Literal["external_denominator", "self_renormalization", "tmd_ratio", "tmd_zo"], physics="Selects external factors, self-renormalization, CG TMD ratios, or residual GI TMD Z_O extraction."),
     Provides("", "external_denominator", "strategy", physics="External-denominator jobs apply a renormalization factor determined outside this workflow to the target matrix element."),
     Provides("", "self_renormalization", "strategy", physics="Self-renormalization jobs extract a reusable factor from reference matrix elements and apply it to target matrix elements."),
     Provides("", "tmd_ratio", "strategy", physics="TMD ratios retain the common local-current and zero-momentum reference uncertainties."),
@@ -211,6 +212,8 @@ JOB_CONDITIONAL_RULES = (
 
 
 def check_path(context: CheckContext) -> Issue | None:
+    if context.params.get("strategy") == "tmd_zo":
+        return None
     physics = (
         "Only declared renormalization strategy, type, and scheme combinations define a valid numerical path; "
         "the renormalon-related mass term is extracted by fitting and supplied when applying the factor."
@@ -252,6 +255,8 @@ def check_hybrid(context: CheckContext) -> Issue | None:
 
 
 def check_inputs(context: CheckContext) -> Issue | None:
+    if context.params.get("strategy") == "tmd_zo":
+        return None
     physics = (
         "The strategy, job type, and scheme determine whether target, denominator, reference, and fitted factor roles "
         "are physically required; no additional input roles are meaningful."
@@ -332,6 +337,8 @@ def check_kernel(context: CheckContext) -> list[Issue] | Issue | None:
 
 
 def _check_scale(context: CheckContext) -> Issue | None:
+    if context.params.get("strategy") == "tmd_zo":
+        return None
     params = context.params
     scheme = params.get("scheme")
     strategy = params.get("strategy")
@@ -354,6 +361,8 @@ def _check_scale(context: CheckContext) -> Issue | None:
     return None
 
 
+PARAM_RULES += _zo_contract.PARAM_RULES
+JOB_CONDITIONAL_RULES += _zo_contract.INPUT_RULES
 JOB_RULES = stage_job_rules(PARAM_RULES, INPUT_RULES, JOB_CONDITIONAL_RULES)
 
-CHECKS = (check_path, check_hybrid, check_inputs, check_kernel, _check_scale)
+CHECKS = (_zo_contract.check, check_path, check_hybrid, check_inputs, check_kernel, _check_scale)
