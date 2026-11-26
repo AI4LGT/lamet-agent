@@ -612,4 +612,5 @@ regulator defaults, scale guards, and the finite-cut matching limitation.
 
 Extract and apply a single-spacing residual `Z_O` after Wilson-loop division with
 `strategy="tmd_zo"`. See [the TMD Z_O guide](docs/tmd-zo-extraction.md) for the
-NLO/NLO+RGR prescription, normalization contract, correlated averaging and scale variations.
+NLO and notebook NNLO boundary coefficients, optional NLL RGR evolution,
+normalization contract, correlated averaging and scale variations.
