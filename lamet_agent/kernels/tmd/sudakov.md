@@ -42,6 +42,12 @@ extends only `form_factor_kernel`; TMDWF/TMDPDF `hard_factor` remains NLO/NLL.
 
 ## Evaluate a grid
 
+`order="nnnll"` adds four-loop cusp, three-loop noncusp, numerical four-loop
+running and the two-loop matching boundary. See [cg_nnnll.md](cg_nnnll.md)
+for sources and its distinct running-coupling pole. It supports `error` and
+explicit `freeze` policies and extends only the standalone $H_F$ API;
+the separate TMD hard factors and pipeline order controls remain unchanged.
+
 ```python
 import numpy as np
 from lamet_agent.kernels.tmd.coefficients import form_factor_kernel

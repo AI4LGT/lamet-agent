@@ -303,6 +303,13 @@ See the [formulas and usage example](lamet_agent/kernels/tmd/sudakov.md),
 including the explicit NLL/NNLL infrared-scale options. Soft Analysis uses the
 same form-factor coefficient in its intrinsic-soft integral.
 
+The standalone API also accepts `order="nnnll"` for H_F, with four-loop cusp,
+three-loop noncusp, numerical four-loop running, and a two-loop matching boundary.
+The subleading evolution and the two-amplitude product are consistently expanded
+through NNLO in RG counting.
+See [the NNNLL formula and example](lamet_agent/kernels/tmd/cg_nnnll.md).
+This selector does not upgrade the separate TMD hard factors or pipeline order controls.
+
 ## Intermediate Data (NetCDF)
 
 Stage-to-stage numerical artifacts are stored as NetCDF files. Every array has:
