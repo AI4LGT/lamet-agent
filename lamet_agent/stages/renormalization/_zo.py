@@ -115,7 +115,7 @@ def extract(reference, *, points_fm, mu=2.0, alpha_s=0.293, n_f=3, order="nlo_rg
     if order.startswith("nnlo"):
         settings.update(
             boundary_source="TMD(2).nb v2 / TMD_NNLO.wl; massless pure-DR nonsinglet gamma-t",
-            rgr_accuracy="two-loop beta and endpoint anomalous dimension; NLL" if order.endswith("_rgr") else "none",
+            rgr_accuracy="three-loop beta and endpoint anomalous dimension; NNLL" if order.endswith("_rgr") else "none",
             quadrature="48/64/12 refined independently and jointly to 72/96/14; absolute S tolerance 1e-5",
         )
     attrs = {
