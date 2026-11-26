@@ -326,6 +326,12 @@ residual-parameter convention and Python overrides.
 The bound concerns |z| in the fitted tail; measured short-distance data remain
 in the Fourier transform. The current `strategy="tmd"` direct/tapered TMDWF
 and TMDPDF transforms do not fit a tail and therefore have no `zmin_fm` cut.
+The standalone API also accepts `order="nnnll"` for H_F, with four-loop cusp,
+three-loop noncusp, numerical four-loop running, and a two-loop matching boundary.
+The subleading evolution and the two-amplitude product are consistently expanded
+through NNLO in RG counting.
+See [the NNNLL formula and example](lamet_agent/kernels/tmd/cg_nnnll.md).
+This selector does not upgrade the separate TMD hard factors or pipeline order controls.
 
 ## Intermediate Data (NetCDF)
 
