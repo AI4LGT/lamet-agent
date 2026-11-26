@@ -114,9 +114,9 @@ def extract(reference, *, points_fm, mu=2.0, alpha_s=0.293, n_f=3, order="nlo_rg
     settings = dict(mu=mu, alpha_s=alpha_s, n_f=n_f, order=order, min_scale_gev=min_scale_gev)
     if order.startswith("nnlo"):
         settings.update(
-            boundary_source="TMD(2).nb v2 / TMD_NNLO.wl; massless pure-DR nonsinglet gamma-t",
+            boundary_source="TMD_V3.nb qTMDNNLOClosed; massless pure-DR nonsinglet gamma-t",
             rgr_accuracy="three-loop beta and endpoint anomalous dimension; NNLL" if order.endswith("_rgr") else "none",
-            quadrature="48/64/12 refined independently and jointly to 72/96/14; absolute S tolerance 1e-5",
+            finite_remainder="closed principal polylogarithms; at least 40 decimal working digits",
         )
     attrs = {
         **reference.attrs,
