@@ -34,6 +34,7 @@ def list_kernel_ids(root: str | Path | None = None) -> list[str]:
         if path.is_file()
         and path.suffix == ".py"
         and path.name != "__init__.py"
+        and not path.stem.startswith("z_msbar_")
         and path.stem.isidentifier()
         and (directory / f"{path.stem}.md").is_file()
     )
