@@ -314,7 +314,7 @@ def test_nnlo_logs_satisfy_two_loop_rg_and_rgr_boundary():
     z, b, mu, alpha = 0.08, 0.16, 2.0, 0.293
     natural = 2*np.exp(-np.euler_gamma)*HC/np.hypot(z, b)
     for k in (0.8, 1.0, 1.2):
-        a0, u = _evolve(mu, alpha, k*natural, nf)
+        a0, u = _evolve(mu, alpha, k*natural, nf, loops=3)
         expected = coefficient(z, b, mu=k*natural, alpha_s=a0, order="nnlo") * u
         assert coefficient(z, b, order="nnlo_rgr", scale_factor=k) == pytest.approx(expected, rel=1e-12)
     np.testing.assert_allclose(coefficient(-z, b, order="nnlo_rgr"), coefficient(z, b, order="nnlo_rgr"))
@@ -327,3 +327,37 @@ def test_nnlo_refinement_failure_rejected(monkeypatch):
     monkeypatch.setattr(zo_nnlo, "same_side_sum", lambda r, n=48, k=64, t=12.0: float(n))
     with pytest.raises(ValueError, match="refinement"):
         zo_nnlo.checked_same_side_sum(0.12345)
+
+
+@pytest.mark.parametrize("nf", [3, 4, 5])
+def test_three_loop_endpoint_gamma_published_su3_polynomial(nf):
+    # Independently reduced SU(3) expression, hep-ph/0303113 Eq. (14).
+    from scipy.special import zeta
+
+    alpha = 0.25
+    cubic = (anomalous_dimension(alpha, nf, loops=3) - anomalous_dimension(alpha, nf, loops=2))
+    single_current = cubic / (-2 * (alpha / np.pi)**3)
+    expected = (61/192 + 43*nf/324 + 35*nf**2/1296 - 343*zeta(2)/108
+                + 49*nf*zeta(2)/162 + 89*zeta(3)/72 + 83*nf*zeta(3)/108 - 475*zeta(4)/54)
+    assert single_current == pytest.approx(expected, abs=1e-12)
+
+
+def test_nnll_evolution_independent_running_quadrature_and_composition():
+    mu, low, mid, alpha, nf = 2.0, 1.1, 1.5, 0.293, 3
+
+    def beta(a):
+        x = a / (4*np.pi)
+        return -2*a*(9*x + 64*x*x + (2857/2-5033*nf/18+325*nf*nf/54)*x**3)
+
+    low_alpha = brentq(lambda a: quad(lambda x: 1/beta(x), alpha, a)[0] - np.log(low/mu), alpha, 0.9)
+    expected = np.exp(quad(lambda a: anomalous_dimension(a, nf, loops=3)/beta(a), low_alpha, alpha)[0])
+    actual_alpha, actual = _evolve(mu, alpha, low, nf, loops=3)
+    assert actual_alpha == pytest.approx(low_alpha, rel=2e-9)
+    assert actual == pytest.approx(expected, rel=2e-9)
+    am, u1 = _evolve(mu, alpha, mid, nf, loops=3)
+    _, u2 = _evolve(mid, am, low, nf, loops=3)
+    assert u1*u2 == pytest.approx(actual, rel=2e-9)
+    _, inverse = _evolve(low, actual_alpha, mu, nf, loops=3)
+    assert inverse*actual == pytest.approx(1, rel=2e-9)
+    assert abs(actual - _evolve(mu, alpha, low, nf, loops=2)[1]) > 1e-4
+    assert _evolve(mu, alpha, mu, nf, loops=3) == pytest.approx((alpha, 1))
