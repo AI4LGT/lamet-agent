@@ -44,7 +44,7 @@ _SAFE_TOOL = re.compile(r"^[a-z][a-z0-9_]*$")
 _WORKFLOW_STAGES = frozenset(
     {
         "correlator_analysis", "renormalization", "fourier_transform",
-        "perturbative_matching", "extrapolation", "soft_analysis",
+        "matching", "extrapolation", "soft_analysis",
     }
 )
 
@@ -134,7 +134,7 @@ _FIT_QUALITY_KEYS = ("Q", "chi2", "dof", "chi2_dof", "aic", "logGBF")
 
 def _review_fit_quality(stage_id: str, summary: Mapping[str, Any]) -> dict[str, Any]:
     """Return normalized selected-fit quality without sample-level diagnostics."""
-    if stage_id in {"perturbative_matching", "soft_analysis"}:
+    if stage_id in {"matching", "soft_analysis"}:
         return {"status": "not_applicable"}
     diagnostics = summary.get("diagnostics")
     if not isinstance(diagnostics, Mapping):
