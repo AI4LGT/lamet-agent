@@ -19,7 +19,9 @@ the selected channel base family, while CG adds the phenomenological
 algebraic factor $|z|^{-n}$; this does not assert that GI and CG matrix
 elements are the same physical quantity. All inverse-distance NLA terms and
 the CG power use the numerical `z` coordinate in fm. Only decay exponents and
-momentum phases convert GeV and fm with $\hbar c$.
+momentum phases convert GeV and fm with $\hbar c$. The total decay mass gap
+`Lambda + Lambda0_gev` has a Gaussian prior of 0.5 +/- 0.3 GeV restricted to
+positive gaps; its prior is retained during posterior-prior refinement.
 
 Recommend compact candidate lists for whichever Fourier tail-fit boundaries are
 requested by the response schema. Use only exact coordinates present in the
@@ -53,10 +55,10 @@ supplied positive-z grid. Follow this selection policy in order of priority:
    Recommend about 4--5 successive zmin grid points when the input coverage
    allows it, rather than only one or two. Never recommend raw zmin_fm below
    0.5 fm. Runtime later applies `tail_window_step_offset * z_grid_step_fm`; effective
-   zmin values must remain nonnegative and lie on the input grid. For GPD,
-   effective zmin values must be at least 0.5 fm, including authored ranges
-   and systematic variations. Choose raw GPD starts from `eligible_raw_zmin_fm` when supplied.
-   Other observables may use authored runtime ranges including zero.
+   zmin values must lie on the input grid and be at least 0.5 fm for every
+   observable, including authored ranges and systematic variations. Choose raw
+   starts from `eligible_raw_zmin_fm` when supplied. The bound applies to the
+   tail-fit window in |z|, not to the short-distance data retained in the FT.
 3. Prefer candidate pairs with the same large zmax and ordered increasing
    zmin values. Recommend 2--3 zmax grid points when the input coverage allows
    it, with the largest valid zmax first and carrying the largest-zmax choice
@@ -66,8 +68,13 @@ supplied positive-z grid. Follow this selection policy in order of priority:
 
 Every Cartesian-product pair formed from the returned lists must satisfy
 `zmin_fm < zmax_fm`. Pairs with too few strictly positive measured points for
-the selected model/order/component are skipped deterministically; do not assume
-one universal point-count threshold. More flexible expansions generally need
+the selected model/order/component are skipped deterministically. Require
+N_observations > N_parameters, counting one observation per positive-z point
+for a real-only or imaginary-only fit, and two for a joint complex fit.
+Do not count reflected negative-z values, resampling replicas, or Gaussian
+priors as additional measured observations. Retain at least two positive-z
+points. This data-count requirement is distinct from the Bayesian fitter's
+reported `dof`; do not assume one universal point-count threshold. More flexible expansions generally need
 more data support, so avoid minimal windows chosen only to move deeper into the
 apparent long-distance region. If a shorter zmax would leave a high-zmin
 candidate visibly underconstrained, omit that pair.
