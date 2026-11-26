@@ -221,6 +221,9 @@ Implemented stage families, normally authored in this order, are:
 6. `extrapolation`
 7. `review`
 
+For the one-spacing PDF/GPD mass-fit and hybrid-ratio path, see
+[Single-spacing collinear renormalization](#single-spacing-collinear-renormalization).
+
 A partial workflow may omit unneeded stages. The order of keys under `stages`
 is the execution order; there is no separate `metadata.stages` list.
 
@@ -418,7 +421,7 @@ For correlator inputs that use a descriptor JSON record, see
 [Standard Correlator HDF5 Format](#standard-correlator-hdf5-format) for the
 input-file conventions.
 
-Correlator, self-renormalization, and extrapolation fits accept partial named
+Correlator, multi-spacing `self_renormalization`, and extrapolation fits accept partial named
 Gaussian overrides as gvar strings, for example `"priors": {"E0": "0.3(0.1)"}`.
 Missing parameters keep their defaults and unused names are ignored. See
 [Configurable fit priors](docs/fit-priors.md) for stage-specific names and units,

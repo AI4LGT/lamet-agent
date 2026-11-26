@@ -1046,3 +1046,11 @@ scope and replica lineage before aligning independent jackknife groups.
 The authored OPE points determine the result; the optional scan is diagnostic.
 See `docs/single-spacing-self-renormalization.md` for the public contract and
 `tests/unit/test_single_spacing_renormalization.py` for the physical invariants.
+
+The single-spacing fit has no Gaussian-prior interface; its contract must not
+inherit multi-spacing `priors`, `LambdaQCD_gev`, `d`, or `zR` parameters. Its
+parameter-axis output is consumed only as `inputs.masses`; downstream Fourier
+jobs consume the apply output. The public guide is included in the sdist by
+`MANIFEST.in`, while implementation and kernel documents ship in the wheel.
+The paper digitization benchmark is a repository-only research check, not a
+production replica dataset or an end-to-end workflow regression.
