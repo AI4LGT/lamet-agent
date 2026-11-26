@@ -179,7 +179,15 @@ def _window_text(candidate: Mapping[str, object] | None) -> str:
     if not isinstance(window, Mapping):
         return "window not recorded"
     details: list[str] = []
-    if window.get("tmin") is not None and window.get("tmax") is not None:
+    state_windows = window.get("pt2_by_state")
+    if isinstance(state_windows, Mapping):
+        initial = state_windows.get("initial", {})
+        final = state_windows.get("final", {})
+        if isinstance(initial, Mapping) and initial.get("tmin") is not None and initial.get("tmax") is not None:
+            details.append(f"initial 2pt [{initial['tmin']}, {initial['tmax']})")
+        if isinstance(final, Mapping) and final.get("tmin") is not None and final.get("tmax") is not None:
+            details.append(f"final 2pt [{final['tmin']}, {final['tmax']})")
+    elif window.get("tmin") is not None and window.get("tmax") is not None:
         details.append(f"2pt window [{window['tmin']}, {window['tmax']})")
     tseps = candidate.get("tsep_values")
     if isinstance(tseps, (list, tuple)) and tseps:
@@ -927,6 +935,12 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
                 window = candidate.get("window", {})
                 if not isinstance(window, Mapping):
                     window = {}
+                pt2_text = f"[{format_value(window.get('tmin'))}, {format_value(window.get('tmax'))})"
+                if pair := window.get("pt2_by_state"):
+                    pt2_text = (
+                        f"initial [{pair['initial']['tmin']}, {pair['initial']['tmax']}) / "
+                        f"final [{pair['final']['tmin']}, {pair['final']['tmax']})"
+                    )
                 tseps = candidate.get("tsep_values")
                 tsep_text = ", ".join(str(value) for value in tseps) if isinstance(tseps, (list, tuple)) else "n/a"
                 selected_marker = candidate.get("candidate_id") == summary.get("decisions", {}).get("candidate_id")
@@ -938,7 +952,7 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
                     f"| {'yes' if selected_marker else ''} | "
                     f"{'yes' if candidate.get('averaged') else ''} | "
                     f"{format_value(candidate.get('model_weight'))} | {candidate_method} | "
-                    f"[{format_value(window.get('tmin'))}, {format_value(window.get('tmax'))}) | {tsep_text} | "
+                    f"{pt2_text} | {tsep_text} | "
                     f"{format_value(window.get('tau_min'))} | {format_value(candidate.get('nstate'))} | "
                     f"{format_value(candidate.get('prior_width'))} | "
                     f"{format_value(candidate.get('Q', candidate.get('min_Q')))} | "

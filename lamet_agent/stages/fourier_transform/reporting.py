@@ -69,7 +69,9 @@ channel-specific base structures are:
 * DA: two ordered meson endpoints, with pion-only isospin constraints;
 * GPD: the hadron-dependent non-forward endpoint structures.
 
-The pion valence-PDF branch uses its dedicated two-endpoint form
+For the real unpolarized pion valence GPD at $\xi=0$, the initial and final
+longitudinal frequencies coincide. Each transfer has its own fitted amplitudes
+and phase. This channel and the pion valence PDF use the same two-endpoint form
 
 $$
 h(z)=\left[A_2+2A_1\cos\left(\phi_1-\frac{P_z|z|}{\hbar c}\right)
@@ -77,7 +79,7 @@ h(z)=\left[A_2+2A_1\cos\left(\phi_1-\frac{P_z|z|}{\hbar c}\right)
 e^{-\Lambda |z|/(\hbar c)},
 $$
 
-with the CG power applied afterward.  GPD tails use the endpoint structures
+with the CG power applied afterward. Other GPD tails use the endpoint structures
 selected by the hadron and the paired-flow convention.  Thus the parameter
 names are model- and observable-dependent; short-distance data are never
 replaced by the asymptotic ansatz.

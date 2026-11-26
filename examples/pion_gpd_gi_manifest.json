@@ -1,0 +1,921 @@
+{
+  "metadata": {
+    "run_id": "pion_gpd_gi_p0den_hqft_highx_refined_20261126",
+    "root_directory": "..",
+    "artifacts_directory": "examples/artifacts/Pion_GIGPD/lamet_agent/pion_gpd_gi_p0den_hqft_highx_refined_20261126",
+    "random_seed": 1984,
+    "workers": 8,
+    "target_observable": "gpd",
+    "parton": "quark",
+    "resample_mode": "bootstrap",
+    "samples": 200,
+    "bin_size": 1,
+    "sample_error_mode": "covariance",
+    "parameter_recommendation_retries": 0
+  },
+  "stages": {
+    "correlator_analysis": {
+      "defaults": {
+        "analysis_method": "lsqfit",
+        "component": "re",
+        "fit_scope": [
+          "2pt",
+          "3pt_over_2pt"
+        ],
+        "nstate": {
+          "2pt": [
+            2
+          ],
+          "3pt_over_2pt": [
+            3
+          ]
+        },
+        "fitting_form": "NonBreit",
+        "model_average": false,
+        "prior_width": [
+          1.0
+        ],
+        "pt2_windows": [
+          {
+            "tmin": 4,
+            "tmax": 12
+          }
+        ],
+        "pt3_windows": [
+          {
+            "tsep_ls": [
+              9,
+              12,
+              15
+            ],
+            "tau_cut": 4
+          }
+        ],
+        "svdcut": 1e-06,
+        "posterior_prior_error_scale": 3.0,
+        "q_min": 0.05,
+        "chained_prior_error_scale": 1.0,
+        "sample_prior_mode": "center_posterior"
+      },
+      "jobs": [
+        {
+          "id": "ca_q0",
+          "fitting_form": "Breit",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "2pt_PX4PY0PZ0"
+              },
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "3pt_qx0qy0qz0"
+              }
+            ]
+          },
+          "pt3_windows": [
+            {
+              "tsep_ls": [
+                9,
+                12,
+                15
+              ],
+              "tau_cut": 4
+            }
+          ],
+          "priors": {
+            "log(E0)": "-0.92286260(0.20)",
+            "log(dE1)": "-2.36070149(0.50)",
+            "O00_re": "1(1.0)",
+            "O01_re": "0(0.5)",
+            "O02_re": "0(0.5)",
+            "O11_re": "1(1.0)",
+            "O12_re": "0(0.5)",
+            "O22_re": "1(1.0)"
+          },
+          "pt2_windows": [
+            {
+              "tmin": 6,
+              "tmax": 14
+            }
+          ],
+          "fit_scope": [
+            "2pt",
+            "3pt_over_2pt"
+          ],
+          "nstate": {
+            "2pt": [
+              2
+            ],
+            "3pt_over_2pt": [
+              2
+            ]
+          },
+          "prior_width": [
+            1.0
+          ],
+          "model_average": false,
+          "sample_prior_mode": "center_posterior",
+          "posterior_prior_error_scale": 3.0,
+          "chained_prior_error_scale": 1.0,
+          "tune_z_values": [
+            0,
+            -8,
+            8,
+            -16,
+            16,
+            -32,
+            32
+          ]
+        },
+        {
+          "id": "ca_qx0qy-1qz0",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "2pt_PX4PY1PZ0"
+              },
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "2pt_PX4PY0PZ0"
+              },
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "3pt_qx0qy-1qz0"
+              }
+            ]
+          },
+          "pt3_windows": [
+            {
+              "tsep_ls": [
+                9,
+                12,
+                15
+              ],
+              "tau_cut": 4
+            }
+          ],
+          "priors": {
+            "log(E0_i)": "-0.89323958(0.20)",
+            "log(E0_f)": "-0.92286260(0.20)",
+            "log(dE1_i)": "-2.38476229(0.50)",
+            "log(dE1_f)": "-2.36070149(0.50)",
+            "O00_re": "1(1.0)",
+            "O01_re": "0(0.5)",
+            "O02_re": "0(0.5)",
+            "O10_re": "0(0.5)",
+            "O11_re": "1(1.0)",
+            "O12_re": "0(0.5)",
+            "O20_re": "0(0.5)",
+            "O21_re": "0(0.5)",
+            "O22_re": "1(1.0)"
+          },
+          "fitting_form": "NonBreit",
+          "pt2_windows_by_state": [
+            {
+              "initial": {
+                "tmin": 7,
+                "tmax": 15
+              },
+              "final": {
+                "tmin": 6,
+                "tmax": 14
+              }
+            }
+          ],
+          "fit_scope": [
+            "2pt",
+            "3pt_over_2pt"
+          ],
+          "nstate": {
+            "2pt": [
+              2
+            ],
+            "3pt_over_2pt": [
+              2
+            ]
+          },
+          "prior_width": [
+            1.0
+          ],
+          "model_average": false,
+          "sample_prior_mode": "center_posterior",
+          "posterior_prior_error_scale": 3.0,
+          "chained_prior_error_scale": 1.0,
+          "tune_z_values": [
+            0,
+            -8,
+            8,
+            -16,
+            16,
+            -32,
+            32
+          ]
+        },
+        {
+          "id": "ca_qx0qy-1qz-1",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "2pt_PX4PY1PZ1"
+              },
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "2pt_PX4PY0PZ0"
+              },
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "3pt_qx0qy-1qz-1"
+              }
+            ]
+          },
+          "pt3_windows": [
+            {
+              "tsep_ls": [
+                9,
+                12,
+                15
+              ],
+              "tau_cut": 3
+            }
+          ],
+          "priors": {
+            "log(E0_i)": "-0.86527386(0.20)",
+            "log(E0_f)": "-0.92286260(0.20)",
+            "log(dE1_i)": "-2.40769639(0.50)",
+            "log(dE1_f)": "-2.36070149(0.50)",
+            "O00_re": "1(1.0)",
+            "O01_re": "0(0.5)",
+            "O02_re": "0(0.5)",
+            "O10_re": "0(0.5)",
+            "O11_re": "1(1.0)",
+            "O12_re": "0(0.5)",
+            "O20_re": "0(0.5)",
+            "O21_re": "0(0.5)",
+            "O22_re": "1(1.0)"
+          },
+          "fitting_form": "NonBreit",
+          "pt2_windows_by_state": [
+            {
+              "initial": {
+                "tmin": 7,
+                "tmax": 15
+              },
+              "final": {
+                "tmin": 5,
+                "tmax": 13
+              }
+            }
+          ],
+          "fit_scope": [
+            "2pt",
+            "3pt_over_2pt"
+          ],
+          "nstate": {
+            "2pt": [
+              2
+            ],
+            "3pt_over_2pt": [
+              2
+            ]
+          },
+          "prior_width": [
+            1.0
+          ],
+          "model_average": false,
+          "sample_prior_mode": "center_posterior",
+          "posterior_prior_error_scale": 3.0,
+          "chained_prior_error_scale": 1.0,
+          "tune_z_values": [
+            0,
+            -8,
+            8,
+            -16,
+            16,
+            -32,
+            32
+          ]
+        },
+        {
+          "id": "ca_qx0qy-2qz0",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "2pt_PX4PY2PZ0"
+              },
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "2pt_PX4PY0PZ0"
+              },
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "3pt_qx0qy-2qz0"
+              }
+            ]
+          },
+          "pt3_windows": [
+            {
+              "tsep_ls": [
+                9,
+                12,
+                15
+              ],
+              "tau_cut": 4
+            }
+          ],
+          "priors": {
+            "log(E0_i)": "-0.81363828(0.20)",
+            "log(E0_f)": "-0.92286260(0.20)",
+            "log(dE1_i)": "-2.45058123(0.50)",
+            "log(dE1_f)": "-2.36070149(0.50)",
+            "O00_re": "1(1.0)",
+            "O01_re": "0(0.5)",
+            "O02_re": "0(0.5)",
+            "O10_re": "0(0.05)",
+            "O11_re": "1(1.0)",
+            "O12_re": "0(0.5)",
+            "O20_re": "0(0.5)",
+            "O21_re": "0(0.5)",
+            "O22_re": "1(1.0)"
+          },
+          "fitting_form": "NonBreit",
+          "pt2_windows_by_state": [
+            {
+              "initial": {
+                "tmin": 5,
+                "tmax": 13
+              },
+              "final": {
+                "tmin": 5,
+                "tmax": 13
+              }
+            }
+          ],
+          "fit_scope": [
+            "2pt",
+            "3pt_over_2pt"
+          ],
+          "nstate": {
+            "2pt": [
+              2
+            ],
+            "3pt_over_2pt": [
+              2
+            ]
+          },
+          "prior_width": [
+            1.0
+          ],
+          "model_average": false,
+          "sample_prior_mode": "center_posterior",
+          "posterior_prior_error_scale": 3.0,
+          "chained_prior_error_scale": 1.0,
+          "tune_z_values": [
+            0,
+            -8,
+            8,
+            -16,
+            16,
+            -32,
+            32
+          ]
+        },
+        {
+          "id": "ca_qx0qy-2qz-1",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "2pt_PX4PY2PZ1"
+              },
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "2pt_PX4PY0PZ0"
+              },
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "3pt_qx0qy-2qz-1"
+              }
+            ]
+          },
+          "pt3_windows": [
+            {
+              "tsep_ls": [
+                9,
+                12,
+                15
+              ],
+              "tau_cut": 3
+            }
+          ],
+          "priors": {
+            "log(E0_i)": "-0.78969158(0.20)",
+            "log(E0_f)": "-0.92286260(0.20)",
+            "log(dE1_i)": "-2.47069864(0.50)",
+            "log(dE1_f)": "-2.36070149(0.50)",
+            "O00_re": "1(1.0)",
+            "O01_re": "0(0.5)",
+            "O02_re": "0(0.5)",
+            "O10_re": "0(0.5)",
+            "O11_re": "1(1.0)",
+            "O12_re": "0(0.5)",
+            "O20_re": "0(0.5)",
+            "O21_re": "0(0.5)",
+            "O22_re": "1(1.0)"
+          },
+          "fitting_form": "NonBreit",
+          "pt2_windows_by_state": [
+            {
+              "initial": {
+                "tmin": 8,
+                "tmax": 16
+              },
+              "final": {
+                "tmin": 5,
+                "tmax": 13
+              }
+            }
+          ],
+          "fit_scope": [
+            "2pt",
+            "3pt_over_2pt"
+          ],
+          "nstate": {
+            "2pt": [
+              2
+            ],
+            "3pt_over_2pt": [
+              2
+            ]
+          },
+          "prior_width": [
+            1.0
+          ],
+          "model_average": false,
+          "sample_prior_mode": "center_posterior",
+          "posterior_prior_error_scale": 3.0,
+          "chained_prior_error_scale": 1.0,
+          "tune_z_values": [
+            0,
+            -8,
+            8,
+            -16,
+            16,
+            -32,
+            32
+          ]
+        },
+        {
+          "id": "ca_qx0qy-2qz-2",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "2pt_PX4PY2PZ2"
+              },
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "2pt_PX4PY0PZ0"
+              },
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "3pt_qx0qy-2qz-2"
+              }
+            ]
+          },
+          "pt3_windows": [
+            {
+              "tsep_ls": [
+                9,
+                12,
+                15
+              ],
+              "tau_cut": 4
+            }
+          ],
+          "priors": {
+            "log(E0_i)": "-0.72404862(0.20)",
+            "log(E0_f)": "-0.92286260(0.20)",
+            "log(dE1_i)": "-2.52655059(0.50)",
+            "log(dE1_f)": "-2.36070149(0.50)",
+            "O00_re": "0(1.0)",
+            "O01_re": "0(0.5)",
+            "O02_re": "0(0.5)",
+            "O10_re": "0(0.05)",
+            "O11_re": "0(1.0)",
+            "O12_re": "0(0.5)",
+            "O20_re": "0(0.5)",
+            "O21_re": "0(0.5)",
+            "O22_re": "0(1.0)"
+          },
+          "fitting_form": "NonBreit",
+          "pt2_windows_by_state": [
+            {
+              "initial": {
+                "tmin": 8,
+                "tmax": 16
+              },
+              "final": {
+                "tmin": 5,
+                "tmax": 13
+              }
+            }
+          ],
+          "fit_scope": [
+            "2pt",
+            "3pt_over_2pt"
+          ],
+          "nstate": {
+            "2pt": [
+              2
+            ],
+            "3pt_over_2pt": [
+              2
+            ]
+          },
+          "prior_width": [
+            1.0
+          ],
+          "model_average": false,
+          "sample_prior_mode": "center_posterior",
+          "posterior_prior_error_scale": 3.0,
+          "chained_prior_error_scale": 1.0,
+          "tune_z_values": [
+            0,
+            -8,
+            8,
+            -16,
+            16,
+            -32,
+            32
+          ]
+        },
+        {
+          "id": "ca_p0",
+          "fitting_form": "Breit",
+          "inputs": {
+            "correlators": [
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "2pt_PX0PY0PZ0"
+              },
+              {
+                "json": "examples/pion_gpd_gi_correlator.json",
+                "id": "3pt_PX0_qx0qy0qz0"
+              }
+            ]
+          },
+          "pt2_windows": [
+            {
+              "tmin": 4,
+              "tmax": 12
+            }
+          ],
+          "pt3_windows": [
+            {
+              "tsep_ls": [
+                9,
+                12,
+                15,
+                18
+              ],
+              "tau_cut": 4
+            }
+          ],
+          "fit_scope": [
+            "2pt",
+            "3pt_over_2pt"
+          ],
+          "nstate": {
+            "2pt": [
+              2
+            ],
+            "3pt_over_2pt": [
+              3
+            ]
+          },
+          "prior_width": [
+            1.0
+          ],
+          "model_average": false,
+          "sample_prior_mode": "center_posterior",
+          "posterior_prior_error_scale": 3.0,
+          "chained_prior_error_scale": 1.0,
+          "tune_z_values": [
+            -32,
+            -16,
+            0,
+            16,
+            32
+          ]
+        }
+      ]
+    },
+    "renormalization": {
+      "defaults": {
+        "strategy": "external_denominator",
+        "type": "apply",
+        "scheme": "hybrid",
+        "zs_fm": 0.12,
+        "m0_gev": 0.1922,
+        "delta_m_gev": 0.7438,
+        "normalization": false
+      },
+      "jobs": [
+        {
+          "id": "rn_qx0qy0qz0",
+          "inputs": {
+            "target": "ca_q0",
+            "denominator": "ca_p0"
+          }
+        },
+        {
+          "id": "rn_qx0qy-1qz0",
+          "inputs": {
+            "target": "ca_qx0qy-1qz0",
+            "denominator": "ca_p0"
+          }
+        },
+        {
+          "id": "rn_qx0qy-1qz-1",
+          "inputs": {
+            "target": "ca_qx0qy-1qz-1",
+            "denominator": "ca_p0"
+          }
+        },
+        {
+          "id": "rn_qx0qy-2qz0",
+          "inputs": {
+            "target": "ca_qx0qy-2qz0",
+            "denominator": "ca_p0"
+          }
+        },
+        {
+          "id": "rn_qx0qy-2qz-1",
+          "inputs": {
+            "target": "ca_qx0qy-2qz-1",
+            "denominator": "ca_p0"
+          }
+        },
+        {
+          "id": "rn_qx0qy-2qz-2",
+          "inputs": {
+            "target": "ca_qx0qy-2qz-2",
+            "denominator": "ca_p0"
+          }
+        }
+      ]
+    },
+    "fourier_transform": {
+      "defaults": {
+        "quasi_y_ls": {
+          "start": -2.0,
+          "stop": 2.0,
+          "num": 800
+        },
+        "zmin_fm": [
+          0.16
+        ],
+        "zmax_fm": [
+          0.24
+        ],
+        "zmax_ext_fm": 2.56,
+        "smooth": "linear",
+        "scheme_scan": {
+          "order": [
+            "LA",
+            "NLA"
+          ],
+          "sector": "valence",
+          "Lambda0_gev": 0.5,
+          "posterior_prior_error_scale": [
+            3.0
+          ],
+          "model_average": true,
+          "q_min": 0.0,
+          "max_schemes": 1
+        },
+        "gpd_min_zmin_fm": 0.08
+      },
+      "jobs": [
+        {
+          "id": "ft_qx0qy0qz0",
+          "inputs": {
+            "input": "rn_qx0qy0qz0"
+          },
+          "zmin_fm": [
+            0.28
+          ],
+          "zmax_fm": [
+            0.6
+          ],
+          "zmax_ext_fm": 8.0,
+          "scheme_scan": {
+            "order": [
+              "LA",
+              "NLA"
+            ],
+            "sector": "valence",
+            "Lambda0_gev": 0.4,
+            "posterior_prior_error_scale": [
+              3.0
+            ],
+            "model_average": true,
+            "q_min": 0.05,
+            "max_schemes": 1
+          }
+        },
+        {
+          "id": "ft_qx0qy-1qz0",
+          "inputs": {
+            "input": "rn_qx0qy-1qz0"
+          },
+          "zmin_fm": [
+            0.2
+          ],
+          "zmax_fm": [
+            0.6
+          ],
+          "zmax_ext_fm": 8.0,
+          "scheme_scan": {
+            "order": [
+              "LA",
+              "NLA"
+            ],
+            "sector": "valence",
+            "Lambda0_gev": 0.2,
+            "posterior_prior_error_scale": [
+              3.0
+            ],
+            "model_average": true,
+            "q_min": 0.05,
+            "max_schemes": 1
+          }
+        },
+        {
+          "id": "ft_qx0qy-1qz-1",
+          "inputs": {
+            "input": "rn_qx0qy-1qz-1"
+          },
+          "zmin_fm": [
+            0.12
+          ],
+          "zmax_fm": [
+            0.44
+          ],
+          "zmax_ext_fm": 2.56,
+          "scheme_scan": {
+            "order": [
+              "LA",
+              "NLA"
+            ],
+            "sector": "valence",
+            "Lambda0_gev": 0.0,
+            "posterior_prior_error_scale": [
+              3.0
+            ],
+            "model_average": true,
+            "q_min": 0.05,
+            "max_schemes": 1
+          }
+        },
+        {
+          "id": "ft_qx0qy-2qz0",
+          "inputs": {
+            "input": "rn_qx0qy-2qz0"
+          },
+          "zmin_fm": [
+            0.16
+          ],
+          "zmax_fm": [
+            0.28
+          ],
+          "zmax_ext_fm": 2.56,
+          "scheme_scan": {
+            "order": [
+              "LA",
+              "NLA"
+            ],
+            "sector": "valence",
+            "Lambda0_gev": 0.2,
+            "posterior_prior_error_scale": [
+              3.0
+            ],
+            "model_average": true,
+            "q_min": 0.05,
+            "max_schemes": 1
+          }
+        },
+        {
+          "id": "ft_qx0qy-2qz-1",
+          "inputs": {
+            "input": "rn_qx0qy-2qz-1"
+          },
+          "zmin_fm": [
+            0.12
+          ],
+          "zmax_fm": [
+            0.36
+          ],
+          "zmax_ext_fm": 2.56,
+          "scheme_scan": {
+            "order": [
+              "LA",
+              "NLA"
+            ],
+            "sector": "valence",
+            "Lambda0_gev": 1.2,
+            "posterior_prior_error_scale": [
+              3.0
+            ],
+            "model_average": true,
+            "q_min": 0.05,
+            "max_schemes": 1
+          }
+        },
+        {
+          "id": "ft_qx0qy-2qz-2",
+          "inputs": {
+            "input": "rn_qx0qy-2qz-2"
+          },
+          "zmin_fm": [
+            0.08
+          ],
+          "zmax_fm": [
+            0.24
+          ],
+          "zmax_ext_fm": 2.56,
+          "scheme_scan": {
+            "order": [
+              "LA",
+              "NLA"
+            ],
+            "sector": "valence",
+            "Lambda0_gev": 1.4,
+            "posterior_prior_error_scale": [
+              3.0
+            ],
+            "model_average": true,
+            "q_min": 0.05,
+            "max_schemes": 1
+          }
+        }
+      ]
+    },
+    "matching": {
+      "defaults": {
+        "order": "nlo",
+        "mu": 2.0,
+        "lc_x_ls": {
+          "start": 0.0,
+          "stop": 1.0
+        },
+        "resummation": "",
+        "kernel_parameters": {
+          "eps": 1e-12
+        }
+      },
+      "jobs": [
+        {
+          "id": "mt_qx0qy-1qz0",
+          "inputs": {
+            "quasi": "ft_qx0qy-1qz0"
+          }
+        },
+        {
+          "id": "mt_qx0qy-1qz-1",
+          "inputs": {
+            "quasi": "ft_qx0qy-1qz-1"
+          }
+        },
+        {
+          "id": "mt_qx0qy-2qz0",
+          "inputs": {
+            "quasi": "ft_qx0qy-2qz0"
+          }
+        },
+        {
+          "id": "mt_qx0qy-2qz-1",
+          "inputs": {
+            "quasi": "ft_qx0qy-2qz-1"
+          }
+        },
+        {
+          "id": "mt_qx0qy-2qz-2",
+          "inputs": {
+            "quasi": "ft_qx0qy-2qz-2"
+          }
+        },
+        {
+          "id": "mt_qx0qy0qz0",
+          "inputs": {
+            "quasi": "ft_qx0qy0qz0"
+          }
+        }
+      ]
+    }
+  }
+}

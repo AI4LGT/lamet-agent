@@ -30,8 +30,9 @@ def effective_zmin_fm(context: ToolContext, z_grid_step_fm: float) -> list[float
     offset = int(context.params["tail_window_step_offset"])
     lower = [shifted_zmin_fm(value, offset, z_grid_step_fm) for value in context.params["zmin_fm"]]
     target = str(context.manifest["metadata"]["target_observable"]).lower()
-    if target == "gpd" and any(value < GPD_MIN_ZMIN_FM for value in lower):
-        raise ValueError("GPD tail fits require effective zmin_fm >= 0.5 fm after tail_window_step_offset")
+    minimum = context.params.get("gpd_min_zmin_fm", GPD_MIN_ZMIN_FM)
+    if target == "gpd" and any(value < minimum for value in lower):
+        raise ValueError(f"GPD tail fits require effective zmin_fm >= {minimum:g} fm after tail_window_step_offset")
     return lower
 
 
@@ -65,7 +66,7 @@ def derive_conventions(attrs: Mapping[str, object], *, target_observable: str, s
             raise ValueError("GPD Fourier input must carry supported polarization provenance")
         if sector not in {"sea", "valence", "singlet", "full"}:
             raise ValueError("GPD Fourier sector must be sea, valence, singlet, or full")
-        source_component, output_scale = str(attrs.get("fitting_component", "both")), 1.0
+        source_component, output_scale = str(attrs.get("fitting_component", attrs.get("source_component", "both"))), 1.0
     else:
         raise ValueError("the migrated Fourier conventions support PDF, DA, and GPD targets")
     return {

@@ -51,10 +51,10 @@ supplied positive-z grid. Follow this selection policy in order of priority:
    point at or just above 0.5 fm, then provide progressively larger grid points
    so that the tail fit can test when chi2/dof stops improving significantly.
    Recommend about 4--5 successive zmin grid points when the input coverage
-   allows it, rather than only one or two. Never recommend raw zmin_fm below
-   0.5 fm. Runtime later applies `tail_window_step_offset * z_grid_step_fm`; effective
+   allows it, rather than only one or two. Use a minimum raw zmin_fm of 0.5 fm unless the GPD job specifies
+   a different `gpd_min_zmin_fm`. Runtime later applies `tail_window_step_offset * z_grid_step_fm`; effective
    zmin values must remain nonnegative and lie on the input grid. For GPD,
-   effective zmin values must be at least 0.5 fm, including authored ranges
+   effective zmin values must respect `gpd_min_zmin_fm` (default 0.5 fm), including authored ranges
    and systematic variations. Choose raw GPD starts from `eligible_raw_zmin_fm` when supplied.
    Other observables may use authored runtime ranges including zero.
 3. Prefer candidate pairs with the same large zmax and ordered increasing

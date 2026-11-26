@@ -79,6 +79,7 @@ def dataset_key(candidate: dict[str, Any]) -> tuple[Any, ...]:
     window = candidate.get("window") if isinstance(candidate.get("window"), dict) else {}
     tseps = candidate.get("tsep_values")
     tsep_key = tuple(int(value) for value in tseps) if isinstance(tseps, (list, tuple)) else ()
+    final_window = window.get("pt2_by_state", {}).get("final", window)
     tau_min = window.get("tau_min")
     scope = candidate.get("fit_scope", [])
     scope_values = list(scope) if isinstance(scope, (list, tuple)) else [str(scope)]
@@ -88,6 +89,8 @@ def dataset_key(candidate: dict[str, Any]) -> tuple[Any, ...]:
         scope_key,
         int(window["tmin"]) if window.get("tmin") is not None else -1,
         int(window["tmax"]) if window.get("tmax") is not None else -1,
+        final_window.get("tmin", -1),
+        final_window.get("tmax", -1),
         int(tau_min) if tau_min is not None else -1,
         tsep_key,
     )

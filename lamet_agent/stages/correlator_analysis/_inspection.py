@@ -72,9 +72,16 @@ def run(context: ToolContext, *, selected_ids: list[str] | None = None) -> dict[
     fit_scope = parse_fit_scope(context.params["fit_scope"]) if context.params.get("fit_scope") else None
     scale_inspection = None
     if fit_scope is not None and fit_scope.needs_pt3_data:
+        scale_windows = context.params["pt2_windows"]
+        if context.params.get("pt2_windows_by_state"):
+            scale_windows = [
+                window
+                for pair in context.params["pt2_windows_by_state"]
+                for window in (pair["initial"], pair["final"])
+            ]
         scale_inspection = _automatic_correlator_rescale(
             resampled,
-            context.params["pt2_windows"],
+            scale_windows,
         )
         context.state["correlator_scale_inspection"] = scale_inspection
         context.state["correlator_rescale"] = scale_inspection["correlator_rescale"]

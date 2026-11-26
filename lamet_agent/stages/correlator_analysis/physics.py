@@ -196,8 +196,8 @@ def matrix_element_fcn(x: Mapping[str, Any], parameters: Mapping[str, Any]) -> n
             elif form == "Breit":
                 values.append(_two_point_model(x["pt2_t"], parameters, extent, atom_n_states))
             else:
-                values.append(_two_point_model(x["pt2_t"], parameters, extent, atom_n_states, "_i"))
-                values.append(_two_point_model(x["pt2_t"], parameters, extent, atom_n_states, "_f"))
+                values.append(_two_point_model(x.get("pt2_t_i", x["pt2_t"]), parameters, extent, atom_n_states, "_i"))
+                values.append(_two_point_model(x.get("pt2_t_f", x["pt2_t"]), parameters, extent, atom_n_states, "_f"))
         elif atom == "3pt":
             for component in components:
                 values.append(
@@ -258,6 +258,7 @@ def matrix_element_prior(
     scope: str | tuple[str, ...] | list[str],
     components: tuple[str, ...],
     width_scale: float,
+    target_observable: str | None = None,
     denominator_kind: str = "external_2pt",
     priors: Mapping[str, Any] | None = None,
     conditioning: Mapping[str, float] | None = None,
@@ -283,11 +284,12 @@ def matrix_element_prior(
         else:
             matrix_indices = [(sink, source) for sink in range(matrix_n_states) for source in range(matrix_n_states)]
         prefixes = ("O", "D") if "3pt_over_3pt" in atoms else ("O",)
+        matrix_components = components if target_observable == "gpd" else ("re", "im")
         for prefix in prefixes:
             for row, column in matrix_indices:
                 if prefix == "D" and row == 0 and column == 0:
                     continue
-                components_to_prior = ("re", "im") if prefix == "O" else ("re",)
+                components_to_prior = matrix_components if prefix == "O" else ("re",)
                 for component in components_to_prior:
                     prior.setdefault(f"{prefix}{row}{column}_{component}", gv.gvar(1.0, 10.0 * width_scale))
     if "FH" in atoms:
@@ -553,6 +555,8 @@ def fit_matrix_element_samples(
     components: str,
     tmin: int,
     tmax: int,
+    pt2_windows_by_state: Mapping[str, Mapping[str, int]] | None = None,
+    target_observable: str | None = None,
     tsep_values: list[int],
     tau_min: int,
     n_states: Mapping[str, int] | int,
@@ -632,11 +636,17 @@ def fit_matrix_element_samples(
     extent = int(initial.ensemble.L_t)
     if extent < 1:
         raise ValueError("matrix-element fitting requires the temporal extent")
-    times = np.asarray(initial.coords["t"], dtype=int)
-    pt2_mask = (times >= tmin) & (times < tmax)
+    times_i = np.asarray(initial.coords["t"], dtype=int)
+    times_f = np.asarray(final.coords["t"], dtype=int)
+    common_window = {"tmin": int(tmin), "tmax": int(tmax)}
+    windows_by_state = pt2_windows_by_state or {"initial": common_window, "final": common_window}
+    window_i = windows_by_state.get("initial", common_window)
+    window_f = windows_by_state.get("final", common_window)
+    pt2_mask_i = (times_i >= int(window_i["tmin"])) & (times_i < int(window_i["tmax"]))
+    pt2_mask_f = (times_f >= int(window_f["tmin"])) & (times_f < int(window_f["tmax"]))
     pt2_n_states = atom_state_count(atom_counts, "2pt") if "2pt" in pipeline.atom_set else max(atom_counts.values())
-    if np.count_nonzero(pt2_mask) < 2 * pt2_n_states:
-        raise ValueError("the two-point window must contain at least 2*n_states points")
+    if np.count_nonzero(pt2_mask_i) < 2 * pt2_n_states or np.count_nonzero(pt2_mask_f) < 2 * pt2_n_states:
+        raise ValueError("each two-point state window must contain at least 2*n_states points")
     available_tseps = np.asarray(three_point.coords["tsep"], dtype=int)
     available_tau = np.asarray(three_point.coords["tau"], dtype=int)
     if not tsep_values or any(np.count_nonzero(available_tseps == tsep) != 1 for tsep in tsep_values):
@@ -655,9 +665,10 @@ def fit_matrix_element_samples(
     ratios: dict[int, np.ndarray] = {}
     self_ratios: dict[int, np.ndarray] = {}
     for tsep in tsep_values:
-        time_index = np.flatnonzero(times == tsep)
+        time_index = np.flatnonzero(times_i == tsep)
+        final_time_index = np.flatnonzero(times_f == tsep)
         tsep_index = np.flatnonzero(available_tseps == tsep)
-        if time_index.size != 1 or tsep_index.size != 1:
+        if time_index.size != 1 or final_time_index.size != 1 or tsep_index.size != 1:
             raise ValueError(f"missing exact two-/three-point coordinate for tsep={tsep}")
         three_slice = three_values[:, tsep_index[0], :, :]
         if origin_index is not None:
@@ -673,24 +684,28 @@ def fit_matrix_element_samples(
         else:
             valid_tau = available_tau <= tsep
             reflected = tsep - available_tau[valid_tau]
-            if any(np.count_nonzero(times == value) != 1 for value in reflected):
+            if any(np.count_nonzero(times_i == value) != 1 for value in reflected):
                 raise ValueError("NonBreit ratio needs exact t and tsep-t two-point coordinates")
-            reflected_indices = np.asarray([np.flatnonzero(times == value)[0] for value in reflected])
-            tau_time_indices = np.asarray([np.flatnonzero(times == value)[0] for value in available_tau[valid_tau]])
+            if any(np.count_nonzero(times_f == value) != 1 for value in reflected):
+                raise ValueError("NonBreit ratio needs exact t and tsep-t two-point coordinates")
+            reflected_indices_i = np.asarray([np.flatnonzero(times_i == value)[0] for value in reflected])
+            reflected_indices_f = np.asarray([np.flatnonzero(times_f == value)[0] for value in reflected])
+            tau_time_indices_i = np.asarray([np.flatnonzero(times_i == value)[0] for value in available_tau[valid_tau]])
+            tau_time_indices_f = np.asarray([np.flatnonzero(times_f == value)[0] for value in available_tau[valid_tau]])
             correction = (
-                initial_values[:, reflected_indices]
-                * final_values[:, tau_time_indices]
-                * final_values[:, time_index[0], None]
+                initial_values[:, reflected_indices_i]
+                * final_values[:, tau_time_indices_f]
+                * final_values[:, final_time_index[0], None]
                 / (
-                    final_values[:, reflected_indices]
-                    * initial_values[:, tau_time_indices]
+                    final_values[:, reflected_indices_f]
+                    * initial_values[:, tau_time_indices_i]
                     * initial_values[:, time_index[0], None]
                 )
             )
             ratio = np.zeros_like(three_slice)
             ratio[:, valid_tau, :] = (
                 three_slice[:, valid_tau, :]
-                / final_values[:, time_index[0], None, None]
+                / final_values[:, final_time_index[0], None, None]
                 * np.sqrt(correction[:, :, None])
             )
             ratios[tsep] = ratio
@@ -756,7 +771,9 @@ def fit_matrix_element_samples(
                     "components": selected_components,
                     "tau_min": tau_min,
                     "family": "ordinary",
-                    "pt2_t": times[pt2_mask],
+                    "pt2_t": times_i[pt2_mask_i],
+                    "pt2_t_i": times_i[pt2_mask_i],
+                    "pt2_t_f": times_f[pt2_mask_f],
                     "ratio_t": np.asarray(ratio_t, dtype=float),
                     "ratio_tau": np.asarray(ratio_tau, dtype=float),
                     "fh_t": np.asarray(tsep_values[:-1], dtype=float),
@@ -765,9 +782,9 @@ def fit_matrix_element_samples(
                 pieces: list[np.ndarray] = []
                 for atom in atoms:
                     if atom == "2pt":
-                        pieces.append(np.real(initial_values[:, pt2_mask]) * correlator_rescale)
+                        pieces.append(np.real(initial_values[:, pt2_mask_i]) * correlator_rescale)
                         if fitting_form == "NonBreit":
-                            pieces.append(np.real(final_values[:, pt2_mask]) * correlator_rescale)
+                            pieces.append(np.real(final_values[:, pt2_mask_f]) * correlator_rescale)
                     elif atom in {"3pt", "3pt_over_2pt", "3pt_over_3pt"}:
                         source_values = (
                             selected_raw
@@ -798,6 +815,7 @@ def fit_matrix_element_samples(
                     form=fitting_form,
                     scope=atoms,
                     components=selected_components,
+                    target_observable=target_observable,
                     width_scale=prior_width,
                     priors=priors,
                     conditioning=conditioning,
