@@ -154,3 +154,21 @@ wheels contain the implementation and paired NNLO coefficient document; the
 repository-level guide and digitization benchmark are not wheel resources.
 The [paper benchmark](../benchmarks/paper2312/README.md) is run from a repository
 checkout with the package installed and is separate from production sample fits.
+
+## End-to-end integration coverage
+
+`tests/unit/test_single_spacing_pipeline.py` runs synthetic bootstrap inputs
+through the public manifest runner: mass fit, hybrid application, Fourier tail
+fit/transform, and fixed-order NLO matching, including all NetCDF outputs and
+stage reports. It exercises NLO C0 for a PDF and NNLO C0 for a nonforward GPD
+at xi=0.125 with exchanged source/sink flows. This is an interface regression;
+the mixed perturbative orders in the GPD case do not establish a precision
+prescription. The authored smoke-test tail scan uses q_min=0 and smooth=none
+so it tests numerical execution without LLM range selection, not fit quality
+or large-distance extrapolation accuracy.
+
+The existing GPD matching kernel requires explicit `kernel_parameters.skewness`
+and currently rejects zero skewness. Set it consistently with the input momenta.
+Single-spacing renormalization itself allows zero skewness; that does not remove
+the downstream kernel restriction. Keep the usual Fourier provenance, including
+hadron, polarization, parton, momentum, and exchanged GPD flows when required.
