@@ -52,7 +52,7 @@ equal-weight average over the authored points. This follows the paper's
 averaging prescription rather than a covariance-weighted constant fit. No
 point selection, plateau certification or extrapolation is automatic.
 
-NLO+RGR uses kappa=0.8,1,1.2. The factor output has one `scale_factor` axis;
+Both RGR orders use kappa=0.8,1,1.2. The factor output has one `scale_factor` axis;
 these are deterministic systematic variants, not extra statistical replicas.
 The application job chooses a stored variant and divides every target
 coordinate by that sample's factor. Run all three application jobs to propagate
@@ -110,7 +110,7 @@ This adds residual-factor extraction and application, not an end-to-end
 gauge-invariant Boer-Mulders analysis. Existing CG ratio workflows and their
 matching kernels retain their conventions; do not feed GI MSbar results to a
 CG ratio matching kernel. Soft factors, CS evolution and hard matching remain
-separate. Candidate NNLO finite terms and LRR are outside this implementation.
+separate. The notebook NNLO extension is described below. LRR remains outside this implementation.
 
 Synthetic tests exercise coefficient normalization, independent RG quadrature,
 scale variation, complex application, axis order, statistical correlations,
@@ -125,3 +125,46 @@ kernel's consistent fixed-flavor prescription by up to 2.8% in the compared
 four-point windows. The benchmark is an explicit historical prescription,
 not a selectable production coupling mode. Its independent Around-error
 averaging is not used in sample-based production extraction.
+
+
+### NNLO boundary coefficient with RGR
+
+Select `order: "nnlo_rgr"` in the extraction job (`"nnlo"` selects fixed order).
+The Wilson-loop division remains an input requirement and is not applied twice.
+This option ports the **NNLO Fixed order** module of the supplied `TMD(2).nb`
+(version 2, 2026-11-14), also exported as `TMD_NNLO.wl`. It is an additional
+notebook result, not an NNLO zero-momentum formula attributed to arXiv:2412.19988.
+
+With `a_s = alpha_s/(4*pi)`, `r=z/b`, and
+`ell=log(mu^2*(z^2+b^2)*exp(2*EulerGamma)/4)` (distances in GeV^-1),
+
+```text
+C_NNLO = 1 + a_s*CF*(3*ell+1-4*r*atan(r))
+         + a_s^2*(CF^2*HFF + CF*CA*HFA + CF*TF*n_f*HFf).
+C_NNLO+RGR(mu) = U(mu,mu0) * C_NNLO(mu0),
+mu0 = kappa * 2*exp(-EulerGamma)/sqrt(z^2+b^2).
+```
+
+`nnlo_rgr` uses the existing **two-loop beta function and two-loop endpoint
+anomalous dimension (NLL evolution)**. It upgrades the fixed-order boundary to
+NNLO; it does not claim NNLL evolution. Supply `alpha_s(mu)` in the same explicit
+fixed-flavor convention as the other extraction modes. The notebook's
+threshold-running `alpha_sNNLO` function is not silently substituted.
+Boundary logarithms are retained at each of the 0.8/1.0/1.2 scale variants.
+The sample-wise average and application of the resulting factor are unchanged.
+
+The finite remainder uses the notebook's ordered same-side integral. Each
+absolute `z/b` is cached; radial order 48, kernel order 64, and log range 12
+are independently refined to 72, 96, and 14, and then jointly refined.
+All four differences from the initial value must be at most 1e-5 in the
+same-side sum; otherwise extraction fails. The jointly refined value is used.
+This is a numerical stability check, not a certified integration error bound.
+It is separate from perturbative scale variation and statistical uncertainty.
+The numerical prescription and boundary source are recorded in `zo_settings`.
+
+The notebook result assumes massless, zero external momentum, pure dimensional
+regularization, the nonsinglet gamma-t projection, and MSbar renormalization.
+Its equivalence to a separately taken finite-momentum limit remains unestablished.
+The reference tests check the notebook's color coefficients and ordered kernel,
+independent integration refinements, two-loop RG logarithms, sign symmetry,
+and manifest-driven extraction/application with correlated replicas.
