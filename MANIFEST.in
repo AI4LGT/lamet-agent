@@ -1,2 +1,3 @@
 include README.md
 include DEVELOPMENT.md
+include docs/single-spacing-self-renormalization.md

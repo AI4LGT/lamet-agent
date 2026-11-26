@@ -607,3 +607,11 @@ hard modulus/phase, and soft matrices before the cut product and signed DGLAP.
 Both new modes default to fractional sharp-cut cell integration; `point` is
 available for reference comparisons. See the companion kernel documents for
 regulator defaults, scale guards, and the finite-cut matching limitation.
+
+## Single-spacing collinear renormalization
+
+The renormalization stage supports `strategy: "single_spacing_self_renormalization"`
+for gauge-invariant gamma-t quark PDFs and GPDs, following arXiv:2312.10829.
+Fit a zero-momentum PDF reference at one lattice spacing, then apply the
+sample-bearing mass subtraction in the hybrid-ratio scheme. See
+[the prescription, inputs, and manifest example](docs/single-spacing-self-renormalization.md).

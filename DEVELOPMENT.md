@@ -1033,3 +1033,16 @@ hard modulus/phase, and soft matrices before the cut product and signed DGLAP.
 Both new modes default to fractional sharp-cut cell integration; `point` is
 available for reference comparisons. See the companion kernel documents for
 regulator defaults, scale guards, and the finite-cut matching limitation.
+
+## Single-spacing mass subtraction
+
+The `single_spacing_self_renormalization` strategy is stage-owned and independent
+of the existing multi-spacing fit/remapping path. `_single_spacing_physics.py`
+implements correlated replica fits and hybrid-ratio application;
+`_single_spacing.py` publishes the mass artifact and diagnostics. A `parameter`
+axis distinguishes the GeV-valued masses from multi-spacing `(a,z)` factors.
+Application verifies the reference sample/grid fingerprint, ensemble, operator
+scope and replica lineage before aligning independent jackknife groups.
+The authored OPE points determine the result; the optional scan is diagnostic.
+See `docs/single-spacing-self-renormalization.md` for the public contract and
+`tests/unit/test_single_spacing_renormalization.py` for the physical invariants.
