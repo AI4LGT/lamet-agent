@@ -201,8 +201,8 @@ def test_invalid_application_and_domain():
         coefficient(0, 1.0)
     with pytest.raises(ValueError, match="b_fm"):
         coefficient(0, 0)
-    with pytest.raises(ValueError, match="NNLO"):
-        coefficient(0, 0.2, order="nnlo")
+    with pytest.raises(ValueError, match="order"):
+        coefficient(0, 0.2, order="nnnlo")
 
 
 def test_contract_defaults_and_checks():
@@ -224,12 +224,17 @@ def test_contract_defaults_and_checks():
     assert evaluate_checks(CHECKS, context)
 
 
-def test_manifest_netcdf_and_report(tmp_path, monkeypatch):
+@pytest.mark.parametrize("order", ["nlo_rgr", "nnlo_rgr"])
+def test_manifest_netcdf_and_report(tmp_path, monkeypatch, order):
     from lamet_agent.agent import create_session
     from lamet_agent.manifest import load_manifest
 
     monkeypatch.chdir(tmp_path)
     ref, target, _ = data()
+    if order == "nnlo_rgr":
+        z, b = np.asarray(ref.coords["z"]), np.asarray(ref.coords["bT"])
+        ratio = coefficient(z[:, None], b[None, :], order=order) / coefficient(z[:, None], b[None, :])
+        ref.array.data *= ratio
     ref.to_netcdf("ref.nc")
     target.to_netcdf("target.nc")
     jobs = [
@@ -251,8 +256,11 @@ def test_manifest_netcdf_and_report(tmp_path, monkeypatch):
             bin_size=1,
             sample_error_mode="variance",
         ),
-        "stages": {"renormalization": {"defaults": dict(strategy="tmd_zo", normalization=False, mu=2.0), "jobs": jobs}},
+        "stages": {"renormalization": {
+            "defaults": dict(strategy="tmd_zo", normalization=False, mu=2.0), "jobs": jobs,
+        }},
     }
+    jobs[0]["order"] = order
     path = tmp_path / "manifest.json"
     path.write_text(json.dumps(document))
     manifest = load_manifest(path)
@@ -271,3 +279,51 @@ def test_manifest_netcdf_and_report(tmp_path, monkeypatch):
         saved = EnsembleData.from_netcdf(job.artifact_directory / "output.nc")
         np.testing.assert_allclose(saved.values, result["outputs"][job.job_id].values)
     assert "renormalization" in result["stage_reports"]
+
+
+@pytest.mark.parametrize("r,same,expected", [
+    (0, -7.292168743823139, [-43.57082726277899, 11.864704058081513, -6.5]),
+    (0.3, -6.626234678070436, [-45.63064769671533, 10.602093016258188, -5.749650701909627]),
+    (1, -2.5742908362059085, [-54.454219141089865, 5.531681560780582, -1.5003847072297136]),
+])
+def test_nnlo_notebook_color_references_and_refinement(r, same, expected):
+    from lamet_agent.kernels.tmd.zo_nnlo import color_coefficients, checked_same_side_sum
+
+    np.testing.assert_allclose(color_coefficients(r, 0, same), expected, atol=1e-12)
+    np.testing.assert_allclose(color_coefficients(-r, 0, same), expected, atol=1e-12)
+    assert checked_same_side_sum(r) == pytest.approx(same, abs=2e-6)
+
+
+def test_nnlo_ordered_kernel_reference():
+    from lamet_agent.kernels.tmd.zo_nnlo import _kernel
+
+    assert _kernel([0.7, 0.2], [0.7, 1.3], 96) == pytest.approx(-0.08596842094954901, abs=1e-12)
+
+
+def test_nnlo_logs_satisfy_two_loop_rg_and_rgr_boundary():
+    from lamet_agent.kernels.tmd.zo_nnlo import color_coefficients
+
+    # Coefficient of a_s^2 in dC/dln(mu) = gamma C, including running of a_s.
+    r, ell, nf, eps = 0.3, 0.7, 3, 1e-5
+    colors = np.array([16/9, 4, 2*nf/3])
+    derivative = (np.dot(colors, color_coefficients(r, ell+eps, -6.6))
+                  - np.dot(colors, color_coefficients(r, ell-eps, -6.6))) / eps
+    one = 4/3 * (3*ell+1-4*r*np.arctan(r))
+    gamma1 = 4/3 * (4/3*(-5+16*np.pi**2/3)+3*(49/3-4*np.pi**2/3)-20/3*0.5*nf)
+    assert derivative == pytest.approx(gamma1 + (8 + 2*9)*one, rel=1e-9)
+    z, b, mu, alpha = 0.08, 0.16, 2.0, 0.293
+    natural = 2*np.exp(-np.euler_gamma)*HC/np.hypot(z, b)
+    for k in (0.8, 1.0, 1.2):
+        a0, u = _evolve(mu, alpha, k*natural, nf)
+        expected = coefficient(z, b, mu=k*natural, alpha_s=a0, order="nnlo") * u
+        assert coefficient(z, b, order="nnlo_rgr", scale_factor=k) == pytest.approx(expected, rel=1e-12)
+    np.testing.assert_allclose(coefficient(-z, b, order="nnlo_rgr"), coefficient(z, b, order="nnlo_rgr"))
+
+
+def test_nnlo_refinement_failure_rejected(monkeypatch):
+    from lamet_agent.kernels.tmd import zo_nnlo
+
+    zo_nnlo.checked_same_side_sum.cache_clear()
+    monkeypatch.setattr(zo_nnlo, "same_side_sum", lambda r, n=48, k=64, t=12.0: float(n))
+    with pytest.raises(ValueError, match="refinement"):
+        zo_nnlo.checked_same_side_sum(0.12345)
