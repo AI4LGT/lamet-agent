@@ -3538,6 +3538,7 @@ def test_matching_terminal_writes_original_quasi_matched_plot_pair(tmp_path) -> 
         attrs={
             "renormalization_scheme": "ratio",
             "momentum_gev": 1.722,
+            "longitudinal_direction": "[0,0,1]",
             "sample_error_mode": "covariance",
             "source_component": "re",
             "output_component": "re",
@@ -3645,8 +3646,8 @@ def test_matching_plot_crops_even_quasi_to_nonnegative_x(monkeypatch, tmp_path) 
         np.random.default_rng(1),
     )
     tool.run(context)
-    assert plotted[0][0] == r"quasi, $P_z=1.72\,\mathrm{GeV}$"
-    assert plotted[1][0] == "light-cone"
+    assert plotted[0][0] == r"quasi, $P=1.72\,\mathrm{GeV}$"
+    assert plotted[1][0] == r"light-cone, $P=1.72\,\mathrm{GeV}$"
     for _label, coordinates in plotted:
         np.testing.assert_allclose(coordinates, [0.0, 0.5])
     assert limits[0]["xlim"][0] >= -0.01

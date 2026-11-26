@@ -52,28 +52,26 @@ def kinematic_series_label(
 ) -> str:
     """Format one common kinematic label for PDF/DA and GPD stage plots."""
     spacing = float(spacing_fm) if isinstance(spacing_fm, Real) and not isinstance(spacing_fm, bool) else float("nan")
-    if not math.isfinite(spacing) or spacing <= 0.0:
-        return fallback
-    spacing_label = rf"$a={spacing:.2f}\,\mathrm{{fm}}$"
+    spacing_label = rf", $a={spacing:.2f}\,\mathrm{{fm}}$" if math.isfinite(spacing) and spacing > 0.0 else ""
     target = str(attrs.get("target_observable", attrs.get("observable", ""))).lower()
     is_gpd = target == "gpd" or str(attrs.get("fitting_form", "")).lower() == "nonbreit"
     if is_gpd:
         xi = attrs.get("xi")
         if not isinstance(xi, Real) or isinstance(xi, bool) or not math.isfinite(float(xi)):
             if attrs.get("momentum_gev") == 0.0 and attrs.get("t_gev2") == 0.0:
-                return rf"$Q^2=0.00\,\mathrm{{GeV}}^2$, $\xi$ undefined, {spacing_label}"
+                return rf"$Q^2=0.00\,\mathrm{{GeV}}^2$, $\xi$ undefined{spacing_label}"
             return fallback
         if coordinate == "Q2":
-            return rf"$\xi={float(xi):.2f}$, {spacing_label}"
+            return rf"$\xi={float(xi):.2f}${spacing_label}"
         t_value = attrs.get("t_gev2")
         if not isinstance(t_value, Real) or isinstance(t_value, bool) or not math.isfinite(float(t_value)):
             return fallback
         q2 = 0.0 if float(t_value) == 0.0 else -float(t_value)
-        return rf"$Q^2={q2:.2f}\,\mathrm{{GeV}}^2$, $\xi={float(xi):.2f}$, {spacing_label}"
+        return rf"$Q^2={q2:.2f}\,\mathrm{{GeV}}^2$, $\xi={float(xi):.2f}${spacing_label}"
     momentum = attrs.get("momentum_gev")
     if isinstance(momentum, Real) and not isinstance(momentum, bool) and math.isfinite(float(momentum)):
         symbol = r"P_z" if attrs.get("longitudinal_direction") is not None else "P"
-        return rf"${symbol}={float(momentum):.2f}\,\mathrm{{GeV}}$, {spacing_label}"
+        return rf"${symbol}={float(momentum):.2f}\,\mathrm{{GeV}}${spacing_label}"
     return fallback
 
 
