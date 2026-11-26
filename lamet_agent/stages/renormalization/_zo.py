@@ -93,7 +93,7 @@ def extract(reference, *, points_fm, mu=2.0, alpha_s=0.293, n_f=3, order="nlo_rg
     selected = selected.real
     if np.any(selected <= 0):
         raise ValueError("reference replicas must be positive in the extraction window")
-    scales = [0.8, 1.0, 1.2] if order == "nlo_rgr" else [1.0]
+    scales = [0.8, 1.0, 1.2] if order.endswith("_rgr") else [1.0]
     c = np.stack(
         [
             coefficient(
@@ -112,6 +112,12 @@ def extract(reference, *, points_fm, mu=2.0, alpha_s=0.293, n_f=3, order="nlo_rg
     effective = selected[:, None, :] / c[None, :, :]
     averages = effective.mean(axis=2)
     settings = dict(mu=mu, alpha_s=alpha_s, n_f=n_f, order=order, min_scale_gev=min_scale_gev)
+    if order.startswith("nnlo"):
+        settings.update(
+            boundary_source="TMD(2).nb v2 / TMD_NNLO.wl; massless pure-DR nonsinglet gamma-t",
+            rgr_accuracy="two-loop beta and endpoint anomalous dimension; NLL" if order.endswith("_rgr") else "none",
+            quadrature="48/64/12 refined independently and jointly to 72/96/14; absolute S tolerance 1e-5",
+        )
     attrs = {
         **reference.attrs,
         "strategy": "tmd_zo",

@@ -22,7 +22,7 @@ PARAM_RULES = (
     Depends("tmd_zo.fit", "points_fm", physics=PHYSICS),
     Value("tmd_zo.fit.points_fm", list, physics=PHYSICS),
     Recommends("tmd_zo.fit", "order", default="nlo_rgr", physics=PHYSICS),
-    Value("tmd_zo.fit.order", Literal["nlo", "nlo_rgr"], physics=PHYSICS),
+    Value("tmd_zo.fit.order", Literal["nlo", "nlo_rgr", "nnlo", "nnlo_rgr"], physics=PHYSICS),
     Depends("tmd_zo.fit", "alpha_s", physics="Supply alpha_s(mu) in the fixed-flavor scheme."),
     Value("tmd_zo.fit.alpha_s", (int, float), physics=PHYSICS),
     Depends("tmd_zo.fit", "n_f", physics="Fixed active-flavor count, shared by running and anomalous dimension."),
