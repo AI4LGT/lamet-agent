@@ -25,7 +25,9 @@ positive gaps; its prior is retained during posterior-prior refinement.
 
 Recommend compact candidate lists for whichever Fourier tail-fit boundaries are
 requested by the response schema. Use only exact coordinates present in the
-supplied positive-z grid. Follow this selection policy in order of priority:
+supplied positive-z grid. Do not require a monotonic or positive segment for any channel;
+zero crossings and physical oscillations are allowed. Follow this selection
+policy in order of priority:
 
 1. Keep zmax_fm as large as the usable measured positive-z coverage permits,
    preferably the largest valid grid point. Include essentially all effective
@@ -44,11 +46,12 @@ supplied positive-z grid. Follow this selection policy in order of priority:
      with a large amplitude, rather than merely fluctuating within the error
      band around zero.
 
-   Oscillations are not by themselves a reason to reject a point: an oscillating tail is
-   acceptable when its envelope is decreasing and it is converging toward
-   zero. In contrast, an oscillation that is consistent with zero followed by
-   a later, large-amplitude excursion away from zero without a plausible local
-   trend is pathological; place zmax before that unsupported excursion.
+   Do not search for a monotonic segment or require a decreasing measured
+   envelope. The positive mass-gap prior automatically damps the asymptotic
+   oscillation amplitude through exp[-gap*|z|/(hbar c)]. This does not remove
+   physical phases, zero crossings, or all finite-distance turning points.
+   Judge candidate windows using the fit diagnostics below; a change of sign
+   or a noisy late excursion alone is not a range veto.
 2. Use raw zmin_fm as the main scan direction. Start at the first available grid
    point at or just above 0.5 fm, then provide progressively larger grid points
    so that the tail fit can test when chi2/dof stops improving significantly.
