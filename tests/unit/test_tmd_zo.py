@@ -300,6 +300,33 @@ def test_nnlo_ordered_kernel_reference():
     assert _kernel([0.7, 0.2], [0.7, 1.3], 96) == pytest.approx(-0.08596842094954901, abs=1e-12)
 
 
+@pytest.mark.parametrize("r,reference", [
+    (0, -7.292168743823139), (0.3, -6.626234678070436),
+    (1, -2.5742908362059085), (1.5, -0.02767648935207423),
+    (2, 1.8096439690216441), (2.5, 3.127473067668014),
+])
+def test_closed_remainder_against_independent_quadrature(r, reference):
+    from lamet_agent.kernels.tmd.zo_nnlo import analytic_same_side_sum
+
+    assert analytic_same_side_sum(r) == pytest.approx(reference, abs=5e-6)
+    assert analytic_same_side_sum(-r) == analytic_same_side_sum(r)
+
+
+def test_nnlo_p17_range_does_not_use_quadrature(monkeypatch):
+    from lamet_agent.kernels.tmd import zo_nnlo
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("production must use the closed expression")
+
+    monkeypatch.setattr(zo_nnlo, "checked_same_side_sum", forbidden)
+    z = np.array([0.15, 0.20, 0.25])
+    for k in (0.8, 1, 1.2):
+        result = coefficient(z, 0.1, order="nnlo_rgr", scale_factor=k, min_scale_gev=0.6)
+        assert np.all(np.isfinite(result)) and np.all(result > 0)
+    with pytest.raises(ValueError, match="below min_scale"):
+        coefficient(0.25, 0.1, order="nnlo_rgr", scale_factor=0.8)
+
+
 def test_nnlo_logs_satisfy_two_loop_rg_and_rgr_boundary():
     from lamet_agent.kernels.tmd.zo_nnlo import color_coefficients
 
