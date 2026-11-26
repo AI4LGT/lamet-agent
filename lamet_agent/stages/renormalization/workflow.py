@@ -16,6 +16,11 @@ def run(context: ToolContext, _session: LlmSession) -> None:
         apply_tmd(context)
         return
     inspect(context)
+    if context.params["strategy"] == "single_spacing_self_renormalization":
+        from lamet_agent.stages.renormalization._single_spacing import run as single_spacing
+
+        single_spacing(context)
+        return
     (fit if context.params["type"] == "fit" else apply)(context)
 
 

@@ -1,0 +1,22 @@
+{
+  "source": "https://arxiv.org/html/2312.10829v2",
+  "figure": 1,
+  "delta_m_gev": 0.6679267850069688,
+  "B": 2.434737814088408,
+  "diagonal_only_mass_error_gev": 0.002445408213185624,
+  "residual_scaled_diagonal_mass_error_gev": 0.009954751582008056,
+  "chi2_diagonal": 165.71358797167673,
+  "dof": 10,
+  "unweighted_delta_m_gev": 0.6366318249154023,
+  "published_red_curve_delta_m_gev": 0.6678846295635057,
+  "paper_delta_m_gev": 0.668,
+  "paper_mass_error_gev": 0.01,
+  "alpha_s_at_2_gev": 0.29907048418634663,
+  "m0_max_abs_difference_gev": 0.006329325639562233,
+  "limitations": [
+    "No covariance recovered; diagonal error is not the paper uncertainty.",
+    "Cubic interpolation is a reconstruction choice; paper does not specify interpolation details.",
+    "m0 digitization precision about 1-2 pixels (0.003-0.006 GeV).",
+    "RGR/LRR curves and final PDFs/GPDs are not reproduced by this benchmark."
+  ]
+}

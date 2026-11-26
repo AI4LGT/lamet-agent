@@ -221,6 +221,9 @@ Implemented stage families, normally authored in this order, are:
 6. `extrapolation`
 7. `review`
 
+For the one-spacing PDF/GPD mass-fit and hybrid-ratio path, see
+[Single-spacing collinear renormalization](#single-spacing-collinear-renormalization).
+
 A partial workflow may omit unneeded stages. The order of keys under `stages`
 is the execution order; there is no separate `metadata.stages` list.
 
@@ -418,7 +421,7 @@ For correlator inputs that use a descriptor JSON record, see
 [Standard Correlator HDF5 Format](#standard-correlator-hdf5-format) for the
 input-file conventions.
 
-Correlator, self-renormalization, and extrapolation fits accept partial named
+Correlator, multi-spacing `self_renormalization`, and extrapolation fits accept partial named
 Gaussian overrides as gvar strings, for example `"priors": {"E0": "0.3(0.1)"}`.
 Missing parameters keep their defaults and unused names are ignored. See
 [Configurable fit priors](docs/fit-priors.md) for stage-specific names and units,
@@ -607,3 +610,11 @@ hard modulus/phase, and soft matrices before the cut product and signed DGLAP.
 Both new modes default to fractional sharp-cut cell integration; `point` is
 available for reference comparisons. See the companion kernel documents for
 regulator defaults, scale guards, and the finite-cut matching limitation.
+
+## Single-spacing collinear renormalization
+
+The renormalization stage supports `strategy: "single_spacing_self_renormalization"`
+for gauge-invariant gamma-t quark PDFs and GPDs, following arXiv:2312.10829.
+Fit a zero-momentum PDF reference at one lattice spacing, then apply the
+sample-bearing mass subtraction in the hybrid-ratio scheme. See
+[the prescription, inputs, and manifest example](docs/single-spacing-self-renormalization.md).

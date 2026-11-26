@@ -112,7 +112,7 @@ def _nonnegative_finite(value: int | float) -> bool:
 # fmt: off
 PARAM_RULES = (
     Depends("", "strategy", physics="Renormalization factors are either supplied through an external denominator or extracted by fitting reference matrix elements in the self-renormalization workflow."),
-    Value("strategy", Literal["external_denominator", "self_renormalization", "tmd_ratio"], physics="Selects external factors, self-renormalization, or the Coulomb-gauge TMD ratio prescription."),
+    Value("strategy", Literal["external_denominator", "self_renormalization", "single_spacing_self_renormalization", "tmd_ratio"], physics="Selects external factors, multi-spacing or single-spacing self-renormalization, or the Coulomb-gauge TMD ratio prescription."),
     Provides("", "external_denominator", "strategy", physics="External-denominator jobs apply a renormalization factor determined outside this workflow to the target matrix element."),
     Provides("", "self_renormalization", "strategy", physics="Self-renormalization jobs extract a reusable factor from reference matrix elements and apply it to target matrix elements."),
     Provides("", "tmd_ratio", "strategy", physics="TMD ratios retain the common local-current and zero-momentum reference uncertainties."),
@@ -171,6 +171,36 @@ PARAM_RULES = (
     Value("self_renormalization.hybrid.zs_fm", (int, float), physics="The self-hybrid switching distance is a finite positive physical distance in fm and must lie on the z grid.", validator=_positive),
 )
 
+_SINGLE = "single_spacing_self_renormalization"
+_SINGLE_PHYSICS = "arXiv:2312.10829 fits a long-distance mass and a short-distance residual mass at one lattice spacing; their sum enters the collinear PDF/GPD hybrid ratio."
+PARAM_RULES += (
+    Provides("", _SINGLE, "strategy", physics=_SINGLE_PHYSICS),
+    Depends(_SINGLE, "type", physics=_SINGLE_PHYSICS),
+    Value(f"{_SINGLE}.type", Literal["fit", "apply"], physics=_SINGLE_PHYSICS),
+    Recommends(_SINGLE, "scheme", default="hybrid", physics=_SINGLE_PHYSICS),
+    Value(f"{_SINGLE}.scheme", Literal["hybrid"], physics=_SINGLE_PHYSICS),
+    Provides(_SINGLE, "fit", f"{_SINGLE}.type", physics=_SINGLE_PHYSICS),
+    Provides(_SINGLE, "apply", f"{_SINGLE}.type", physics=_SINGLE_PHYSICS),
+    Depends(f"{_SINGLE}.fit", "kernel_id", physics="The zero-momentum PDF Wilson coefficient fixes the residual mass prescription."),
+    Value(f"{_SINGLE}.fit.kernel_id", str, physics=_SINGLE_PHYSICS),
+    Depends(f"{_SINGLE}.fit", "mu", physics=_SINGLE_PHYSICS),
+    Value(f"{_SINGLE}.fit.mu", (int, float), validator=_positive, physics=_SINGLE_PHYSICS),
+    Recommends(f"{_SINGLE}.fit", "kernel_parameters", default={}, physics=_SINGLE_PHYSICS),
+    Value(f"{_SINGLE}.fit.kernel_parameters", dict, physics=_SINGLE_PHYSICS),
+    Depends(f"{_SINGLE}.fit", "long_distance_window_fm", physics="Explicit two-endpoint window for fitting B exp(-delta_m z); the paper uses [0.54,1.53] fm."),
+    Value(f"{_SINGLE}.fit.long_distance_window_fm", list, physics=_SINGLE_PHYSICS),
+    Depends(f"{_SINGLE}.fit", "short_distance_points_fm", physics="Explicit positive OPE fit points select the residual mass. Interpolate the real reference matrix element, retaining replica covariance."),
+    Value(f"{_SINGLE}.fit.short_distance_points_fm", list, physics=_SINGLE_PHYSICS),
+    Recommends(f"{_SINGLE}.fit", "svdcut", default=1e-10, physics=_SINGLE_PHYSICS),
+    Value(f"{_SINGLE}.fit.svdcut", (int, float), validator=lambda v: 0 < v < 1, physics=_SINGLE_PHYSICS),
+    Recommends(f"{_SINGLE}.fit", "scan_centers_fm", default=[], physics="Diagnostic three-point mass scan; no automatic plateau selection."),
+    Value(f"{_SINGLE}.fit.scan_centers_fm", list, physics=_SINGLE_PHYSICS),
+    Recommends(f"{_SINGLE}.fit", "scan_half_width_fm", default=0.02, physics="Paper's local fit points are z-0.02, z, z+0.02 fm."),
+    Value(f"{_SINGLE}.fit.scan_half_width_fm", (int, float), validator=_positive, physics=_SINGLE_PHYSICS),
+    Depends(f"{_SINGLE}.apply", "zs_fm", physics=_SINGLE_PHYSICS),
+    Value(f"{_SINGLE}.apply.zs_fm", (int, float), validator=_positive, physics=_SINGLE_PHYSICS),
+)
+
 INPUT_RULES = ()
 
 JOB_CONDITIONAL_RULES = (
@@ -209,6 +239,24 @@ JOB_CONDITIONAL_RULES = (
 # fmt: on
 # ruff: enable[E501]
 
+JOB_CONDITIONAL_RULES += (
+    Depends(f"{_SINGLE}.fit", "inputs", physics=_SINGLE_PHYSICS),
+    Depends(f"{_SINGLE}.fit.inputs", "reference", physics=_SINGLE_PHYSICS),
+    Source(
+        f"{_SINGLE}.fit.inputs.reference",
+        physics="One positive real zero-momentum gauge-invariant gamma-t PDF reference at one lattice spacing.",
+    ),
+    Depends(f"{_SINGLE}.apply", "inputs", physics=_SINGLE_PHYSICS),
+    Depends(f"{_SINGLE}.apply.inputs", "target", physics=_SINGLE_PHYSICS),
+    Depends(f"{_SINGLE}.apply.inputs", "denominator", physics=_SINGLE_PHYSICS),
+    Depends(f"{_SINGLE}.apply.inputs", "masses", physics=_SINGLE_PHYSICS),
+    Source(
+        f"{_SINGLE}.apply.inputs.target", physics="A collinear unpolarized PDF or GPD with the same lattice operator."
+    ),
+    Source(f"{_SINGLE}.apply.inputs.denominator", physics="The zero-momentum reference used in the mass fit."),
+    Source(f"{_SINGLE}.apply.inputs.masses", physics="Sample-bearing output of a single-spacing mass fit."),
+)
+
 
 def check_path(context: CheckContext) -> Issue | None:
     physics = (
@@ -218,6 +266,14 @@ def check_path(context: CheckContext) -> Issue | None:
     params = context.params
     strategy = params.get("strategy")
     job_type = params.get("type")
+    if strategy == _SINGLE:
+        if job_type == "fit" and params.get("normalization"):
+            return Issue(
+                "normalization",
+                "must be false for the mass fit; constant reference normalization is fitted",
+                _SINGLE_PHYSICS,
+            )
+        return None
     if strategy == "tmd_ratio" and params.get("normalization"):
         return Issue("normalization", "must be false for explicit TMD local-current normalization", physics)
     if job_type == "fit" and strategy != "self_renormalization":
@@ -236,6 +292,8 @@ def check_hybrid(context: CheckContext) -> Issue | None:
         "Hybrid renormalization separates short- and long-distance treatments at an explicit switching distance; "
         "the external branch also requires its mass-subtraction parameters and coordinate-dependent denominator."
     )
+    if params.get("strategy") == _SINGLE and params.get("type") == "fit":
+        return None
     if params.get("scheme") == "hybrid":
         missing = ["zs_fm"] if "zs_fm" not in params else []
         if missing:
@@ -261,10 +319,11 @@ def check_inputs(context: CheckContext) -> Issue | None:
     scheme = params.get("scheme")
     job_type = params.get("type")
     expected = (
-        {"target", "denominator" if params.get("operation") == "apply" else "local"}
+        {"target", "denominator", "masses"}
+        if strategy == _SINGLE and job_type == "apply"
+        else {"target", "denominator" if params.get("operation") == "apply" else "local"}
         if strategy == "tmd_ratio"
-        else
-        {"target", "denominator"}
+        else {"target", "denominator"}
         if strategy == "external_denominator"
         else {"reference"}
         if job_type == "fit"
@@ -308,7 +367,7 @@ def check_inputs(context: CheckContext) -> Issue | None:
 
 def check_kernel(context: CheckContext) -> list[Issue] | Issue | None:
     params = context.params
-    if params.get("strategy") != "self_renormalization":
+    if params.get("strategy") not in {"self_renormalization", _SINGLE}:
         return None
     kernel_id = params.get("kernel_id")
     if not isinstance(kernel_id, str):
@@ -333,6 +392,8 @@ def check_kernel(context: CheckContext) -> list[Issue] | Issue | None:
 
 def _check_scale(context: CheckContext) -> Issue | None:
     params = context.params
+    if params.get("strategy") == _SINGLE:
+        return None  # The fit declares mu; application inherits its exact prescription.
     scheme = params.get("scheme")
     strategy = params.get("strategy")
     is_fit = params.get("type") == "fit"
@@ -354,6 +415,36 @@ def _check_scale(context: CheckContext) -> Issue | None:
     return None
 
 
+def check_single_spacing(context: CheckContext) -> list[Issue]:
+    params = context.params
+    if params.get("strategy") != _SINGLE:
+        return []
+    issues = []
+    if params.get("type") == "fit":
+        for name, minimum in (("long_distance_window_fm", 2), ("short_distance_points_fm", 3), ("scan_centers_fm", 0)):
+            values = params.get(name)
+            if not isinstance(values, list):
+                continue
+            valid = (
+                len(values) >= minimum
+                and all(type(v) in (int, float) and _positive(v) for v in values)
+                and all(a < b for a, b in zip(values, values[1:]))
+            )
+            if name == "long_distance_window_fm":
+                valid = valid and len(values) == 2
+            if not valid:
+                issues.append(Issue(name, "requires strictly increasing finite positive coordinates", _SINGLE_PHYSICS))
+        kernel = params.get("kernel_id", "")
+        if isinstance(kernel, str) and not kernel.startswith("z_msbar_pdf_"):
+            issues.append(
+                Issue("kernel_id", "requires a zero-momentum unpolarized PDF Wilson coefficient", _SINGLE_PHYSICS)
+            )
+        options = params.get("kernel_parameters", {})
+        if isinstance(options, dict) and {"mu", "z_fm"}.intersection(options):
+            issues.append(Issue("kernel_parameters", "must not override mu or z_fm", _SINGLE_PHYSICS))
+    return issues
+
+
 JOB_RULES = stage_job_rules(PARAM_RULES, INPUT_RULES, JOB_CONDITIONAL_RULES)
 
-CHECKS = (check_path, check_hybrid, check_inputs, check_kernel, _check_scale)
+CHECKS = (check_path, check_hybrid, check_inputs, check_kernel, _check_scale, check_single_spacing)

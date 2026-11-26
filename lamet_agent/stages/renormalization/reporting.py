@@ -141,6 +141,18 @@ def _method_text(records: tuple[StageReportRecord, ...]) -> list[str]:
                 "sample-bearing scalar. Shared bootstrap groups retain their correlations across all jobs; "
                 "independent groups use separate random streams within one common replica frame."
             )
+        elif strategy == "single_spacing_self_renormalization":
+            title = "Single-spacing self-renormalization (hybrid ratio)"
+            formula = (
+                "Following [arXiv:2312.10829](https://arxiv.org/abs/2312.10829), fit the real "
+                "zero-momentum PDF reference to $B e^{-\\delta m |z|}$ at long distance, then fit "
+                "$\\ln(C_0/h^B)-\\delta m |z|=m_0|z|+c$ at explicitly selected short distances. "
+                "Lengths in these formulas are in inverse GeV. The ratio uses the reference at $|z|$ "
+                "below the switch; above it, divide by the reference at $z_s$ and multiply by "
+                "$e^{(\\delta m+m_0)(|z|-z_s)}$. Mass and denominator uncertainties are propagated "
+                "replica by replica. GPD local form factors are preserved. The diagnostic scan does "
+                "not automatically establish a plateau or remove finite-spacing errors."
+            )
         elif strategy == "self_renormalization":
             title = f"Self-renormalization ({scheme_label} prescription)"
             formula = _SELF_HYBRID if scheme == "hybrid" else _SELF_MSBAR if scheme == "msbar" else _SELF_RATIO
@@ -344,6 +356,8 @@ def _coverage_text(record: StageReportRecord, diagnostics: dict[str, Any]) -> st
 
 
 def _operation_label(record: StageReportRecord) -> str:
+    if record.params.get("strategy") == "single_spacing_self_renormalization" and record.params["type"] == "fit":
+        return "Fit single-spacing mass parameters"
     if record.params.get("strategy") == "tmd_ratio":
         return str(record.params["operation"])
     if record.params["type"] == "fit":
@@ -352,6 +366,8 @@ def _operation_label(record: StageReportRecord) -> str:
 
 
 def _physical_result_label(record: StageReportRecord) -> str:
+    if record.params.get("strategy") == "single_spacing_self_renormalization" and record.params["type"] == "fit":
+        return r"$\delta m, m_0, \delta m+m_0$ (GeV)"
     return r"$Z_R(z,a)$" if record.params["type"] == "fit" else r"$h^R(z)$"
 
 
@@ -365,6 +381,8 @@ def _prescription_label(record: StageReportRecord) -> str:
     scheme = _SCHEME_LABELS.get(str(record.params.get("scheme")), str(record.params.get("scheme")))
     if record.params.get("strategy") == "tmd_ratio":
         return "CG TMD ratio"
+    if record.params.get("strategy") == "single_spacing_self_renormalization":
+        return "Single-spacing self-renormalization, hybrid"
     if record.params.get("strategy") == "self_renormalization":
         return f"Self-renormalization, {scheme}"
     return f"External denominator, {scheme}"
@@ -462,7 +480,7 @@ def _fit_validation_lines(
         "## Self-renormalization Factor Validation",
         "",
         "The reusable factor is considered available when the reference fit and short-distance matching complete "
-        "and a sample-bearing $Z_R(z,a)$ output is published.",
+        "and a sample-bearing factor or single-spacing mass-parameter output is published.",
         "",
         "| job | reference fit | short-distance matching | samples | coverage |",
         "|---|---|---|---:|---|",
@@ -524,6 +542,31 @@ def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_direc
         diagnostics = record.summary.get("diagnostics", {})
         output_grid = describe_grid(record.output.coords.get("z", record.output.coords.get("a", [])), symbol="z")
         lines.extend(["", f"## `{record.job_id}`", "", "### Result", ""])
+        if params.get("strategy") == "single_spacing_self_renormalization" and params["type"] == "fit":
+            lines.extend(["| parameter | mean | statistical uncertainty |", "|---|---:|---:|"])
+            for name, estimate in diagnostics.get("masses", {}).items():
+                lines.append(f"| {name} | {format_value(estimate['mean'])} | {format_value(estimate['sdev'])} |")
+            lines.extend(
+                [
+                    "",
+                    f"Long-distance window (fm): {diagnostics.get('long_distance_window_fm')}.",
+                    f"Selected OPE points (fm): {diagnostics.get('short_distance_points_fm')}.",
+                    "Scan points are correlated diagnostics, not independent determinations.",
+                ]
+            )
+            if diagnostics.get("scan"):
+                lines.extend(
+                    ["", "| center (fm) | m0 (GeV) | error | total mass (GeV) | error |", "|---:|---:|---:|---:|---:|"]
+                )
+                for point in diagnostics["scan"]:
+                    lines.append(
+                        "| "
+                        + " | ".join(
+                            format_value(point[key])
+                            for key in ("center_fm", "m0_gev", "m0_sdev_gev", "total_mass_gev", "total_mass_sdev_gev")
+                        )
+                        + " |"
+                    )
         if params["type"] == "fit":
             quality = diagnostics.get("fit_quality", {})
             reference_quality = _quality_text(quality.get("reference")) if isinstance(quality, dict) else "not recorded"
