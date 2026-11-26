@@ -96,10 +96,10 @@ def coefficient(z_fm, b_fm, *, mu=2.0, alpha_s=0.293, n_f=3, order="nlo_rgr", sc
     bracket = 3 * np.log(boundary / natural) - 2 * z / b * np.arctan(z / b) + 0.5
     fixed = 1 + alphas * CF / (2 * np.pi) * bracket
     if order.startswith("nnlo"):
-        from lamet_agent.kernels.tmd.zo_nnlo import checked_same_side_sum, color_coefficients
+        from lamet_agent.kernels.tmd.zo_nnlo import analytic_same_side_sum, color_coefficients
 
         ratios = z / b
-        same = np.array([checked_same_side_sum(float(r)) for r in ratios.flat]).reshape(z.shape)
+        same = np.array([analytic_same_side_sum(float(r)) for r in ratios.flat]).reshape(z.shape)
         hff, hfa, hfferm = color_coefficients(ratios, 2 * np.log(boundary / natural), same)
         fixed += (alphas / (4 * np.pi))**2 * (CF**2 * hff + CF * CA * hfa + CF * TF * n_f * hfferm)
     result = fixed * evolution

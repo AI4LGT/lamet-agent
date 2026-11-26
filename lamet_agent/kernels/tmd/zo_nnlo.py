@@ -1,13 +1,36 @@
-"""Wilson-loop-divided zero-momentum coefficient from TMD(2).nb / TMD_NNLO.wl.
+"""Wilson-loop-divided zero-momentum coefficient from TMD_V3.nb.
 
 Massless pure-DR, nonsinglet gamma-t prescription. The finite same-side
-remainder is numerical; this is not a finite-external-momentum limit.
+remainder is analytic; this is not a finite-external-momentum limit.
 """
 
 from functools import lru_cache
 
 import numpy as np
 from scipy.special import spence, zeta
+from mpmath import mp
+
+
+@lru_cache(maxsize=256)
+def analytic_same_side_sum(r):
+    """Closed Sigma(r) from TMD_V3.nb, qTMDNNLOClosed-2.
+
+    Principal polylogarithms, finite real r=z/b. Extra working precision
+    protects the cancellations at large |r|. Numerical quadrature below is
+    retained only as an independent diagnostic, not used in extraction.
+    """
+    r = abs(float(r))
+    if not np.isfinite(r):
+        raise ValueError("finite real r is required")
+    ctx = mp.clone()
+    ctx.dps = 40 + 4 * max(0, int(np.ceil(np.log10(max(1, r)))))
+    theta = ctx.atan(r)
+    w = -ctx.exp(2j * theta)
+    result = (3*ctx.pi**2/2 - 4*ctx.zeta(3) - 2*theta**2
+              - 2*(ctx.pi**2-4*theta**2)*ctx.log(2*ctx.cos(theta))
+              + 8*theta*ctx.im(ctx.polylog(2, w))
+              + 4*ctx.re(ctx.polylog(3, w)))
+    return float(result)
 
 
 @lru_cache(maxsize=16)

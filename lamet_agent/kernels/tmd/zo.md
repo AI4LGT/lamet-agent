@@ -39,12 +39,12 @@ matching or Collins-Soper evolution.
 
 ## NNLO notebook extension
 
-`zo_nnlo.py` ports the NNLO Fixed order module of `TMD(2).nb` v2 and
-`TMD_NNLO.wl` (2026-11-14), including the numerical same-side remainder.
+`zo_nnlo.py` ports the NNLO Fixed order module of `TMD_V3.nb`, including
+the closed principal-polylogarithm same-side remainder (`qTMDNNLOClosed-2`).
 `order="nnlo"` uses its fixed-order coefficient; `order="nnlo_rgr"` evolves
 that NNLO boundary with the three-loop beta function and three-loop endpoint
 anomalous dimension (NNLL evolution). This source is separate from arXiv:2412.19988.
-See `docs/tmd-zo-extraction.md` for the subtraction, numerical refinement,
+See `docs/tmd-zo-extraction.md` for the subtraction, analytic evaluation,
 fixed-flavor conventions, and massless pure-DR limitations.
 
 
