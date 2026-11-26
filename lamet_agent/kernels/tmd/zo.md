@@ -42,9 +42,16 @@ matching or Collins-Soper evolution.
 `zo_nnlo.py` ports the NNLO Fixed order module of `TMD(2).nb` v2 and
 `TMD_NNLO.wl` (2026-11-14), including the numerical same-side remainder.
 `order="nnlo"` uses its fixed-order coefficient; `order="nnlo_rgr"` evolves
-that NNLO boundary with the existing two-loop beta and anomalous dimension
-(NLL, not NNLL evolution). This source is separate from arXiv:2412.19988.
+that NNLO boundary with the three-loop beta function and three-loop endpoint
+anomalous dimension (NNLL evolution). This source is separate from arXiv:2412.19988.
 See `docs/tmd-zo-extraction.md` for the subtraction, numerical refinement,
 fixed-flavor conventions, and massless pure-DR limitations.
 
 
+
+The three-loop endpoint anomalous dimension is -2 times the HQET current
+result in [arXiv:2311.09894v3](https://arxiv.org/pdf/2311.09894v3),
+Eq. (3.3), retaining terms through alpha_s^3. The sign and factor two use
+d ln C/d ln mu = -2 gamma_j. Three-loop SU(3) running adds
+beta2=2857/2-5033*n_f/18+325*n_f^2/54 in the alpha_s/(4*pi) expansion.
+The loop count is part of the evolution-cache key.

@@ -8,6 +8,7 @@ from functools import lru_cache
 
 import numpy as np
 from scipy.integrate import solve_ivp
+from scipy.special import zeta
 
 from lamet_agent.kernels.implementation import HBAR_C_GEV_FM
 
@@ -26,21 +27,38 @@ def validate_settings(mu=2.0, alpha_s=0.293, n_f=3, order="nlo_rgr", min_scale_g
         raise ValueError("order must be nlo, nlo_rgr, nnlo, or nnlo_rgr")
 
 
-def anomalous_dimension(alpha_s, n_f):
-    """-2 times the HQET current gamma; positive 6 CF a_s at one loop."""
+def anomalous_dimension(alpha_s, n_f, loops=2):
+    """-2 gamma_j(HQET), arXiv:2311.09894v3 Eq. (3.3), both endpoints."""
+    if loops not in (2, 3):
+        raise ValueError("RGR loops must be 2 or 3")
     a = alpha_s / (4 * np.pi)
     gamma1 = CF * (CF * (-5 + 16 * np.pi**2 / 3) + CA * (49 / 3 - 4 * np.pi**2 / 3) - 20 / 3 * TF * n_f)
-    return 6 * CF * a + gamma1 * a**2
+    result = 6 * CF * a + gamma1 * a**2
+    if loops == 3:
+        # Coefficient of a_s^3 in the single HQET current anomalous dimension.
+        gamma_j2 = CF * (
+            -CF**2 * (36*zeta(3) + 8*np.pi**4/9 - 32*np.pi**2/3 + 37/2)
+            + CF*CA/3 * (142*zeta(3) - 8*np.pi**4/15 - 592*np.pi**2/9 - 655/12)
+            - CA**2/3 * (22*zeta(3) + 4*np.pi**4/5 - 130*np.pi**2/9 - 1451/36)
+            - 2*CF*TF*n_f/3 * (88*zeta(3) - 112*np.pi**2/9 - 235/3)
+            + 8*CA*TF*n_f/3 * (19*zeta(3) - 7*np.pi**2/9 - 64/9)
+            + 140/27 * (TF*n_f)**2
+        )
+        result -= 2 * gamma_j2 * a**3
+    return result
 
 
 @lru_cache(maxsize=4096)
-def _evolve(mu, alpha_s, mu0, n_f):
+def _evolve(mu, alpha_s, mu0, n_f, loops=2):
+    if loops not in (2, 3):
+        raise ValueError("RGR loops must be 2 or 3")
     beta0, beta1 = 11 - 2 * n_f / 3, 102 - 38 * n_f / 3
+    beta2 = 2857/2 - 5033*n_f/18 + 325*n_f**2/54 if loops == 3 else 0.0
 
     def rhs(t, y):
         alpha = y[0]
         a = alpha / (4 * np.pi)
-        return [-2 * alpha * (beta0 * a + beta1 * a**2), anomalous_dimension(alpha, n_f)]
+        return [-2 * alpha * (beta0*a + beta1*a**2 + beta2*a**3), anomalous_dimension(alpha, n_f, loops)]
 
     def strong_coupling(t, y):
         return 1 - y[0]
@@ -71,7 +89,9 @@ def coefficient(z_fm, b_fm, *, mu=2.0, alpha_s=0.293, n_f=3, order="nlo_rgr", sc
     alphas, evolution = np.full(z.shape, alpha_s), np.ones(z.shape)
     if order.endswith("_rgr"):
         for index in np.ndindex(z.shape):
-            alphas[index], evolution[index] = _evolve(mu, alpha_s, float(boundary[index]), n_f)
+            alphas[index], evolution[index] = _evolve(
+                mu, alpha_s, float(boundary[index]), n_f, loops=3 if order == "nnlo_rgr" else 2,
+            )
     # Keep the boundary log, including 2 ln(scale_factor) away from the natural scale.
     bracket = 3 * np.log(boundary / natural) - 2 * z / b * np.arctan(z / b) + 0.5
     fixed = 1 + alphas * CF / (2 * np.pi) * bracket
