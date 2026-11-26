@@ -145,9 +145,9 @@ C_NNLO+RGR(mu) = U(mu,mu0) * C_NNLO(mu0),
 mu0 = kappa * 2*exp(-EulerGamma)/sqrt(z^2+b^2).
 ```
 
-`nnlo_rgr` uses the existing **two-loop beta function and two-loop endpoint
-anomalous dimension (NLL evolution)**. It upgrades the fixed-order boundary to
-NNLO; it does not claim NNLL evolution. Supply `alpha_s(mu)` in the same explicit
+`nnlo_rgr` uses the **three-loop beta function and three-loop endpoint
+anomalous dimension (NNLL evolution)** with the NNLO boundary.
+`nlo_rgr` retains two-loop running and two-loop anomalous dimension (NLL). Supply `alpha_s(mu)` in the same explicit
 fixed-flavor convention as the other extraction modes. The notebook's
 threshold-running `alpha_sNNLO` function is not silently substituted.
 Boundary logarithms are retained at each of the 0.8/1.0/1.2 scale variants.
