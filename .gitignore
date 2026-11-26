@@ -23,6 +23,7 @@ runs/
 temp/
 examples/fake_data/data/
 **/*.key
+**/*.zip
 data*/
 artifacts/
 examples/artifacts/
