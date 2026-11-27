@@ -43,18 +43,23 @@ def run(context: ToolContext, *, tune_z_values: list[float]) -> dict[str, object
     }[context.params["component"]]
     candidates: list[dict[str, object]] = []
     fit_scope = list(settings["fit_scope"])
+    state_windows = settings.get("pt2_windows_by_state") or [
+        {"initial": window, "final": window} for window in settings["pt2_windows"]
+    ]
     authored = sorted(
         product(
             nstate_combinations(context.params["nstate"], fit_scope),
             settings["prior_width"],
-            settings["pt2_windows"],
+            state_windows,
             settings["pt3_windows"],
         ),
         key=lambda item: (
             tuple(int(item[0][atom]) for atom in parse_fit_scope(fit_scope).atoms),
             float(item[1]),
-            int(item[2]["tmin"]),
-            int(item[2]["tmax"]),
+            int(item[2]["initial"]["tmin"]),
+            int(item[2]["initial"]["tmax"]),
+            int(item[2]["final"]["tmin"]),
+            int(item[2]["final"]["tmax"]),
             tuple(int(value) for value in item[3]["tsep_ls"]),
             int(item[3]["tau_cut"]),
         ),
@@ -75,8 +80,8 @@ def run(context: ToolContext, *, tune_z_values: list[float]) -> dict[str, object
             "fit_scope": fit_scope,
             "observable": "matrix_element",
             "window": {
-                "tmin": int(pt2_window["tmin"]),
-                "tmax": int(pt2_window["tmax"]),
+                **pt2_window["initial"],
+                **({"pt2_by_state": pt2_window} if settings.get("pt2_windows_by_state") else {}),
                 "tau_min": int(pt3_window["tau_cut"]),
             },
             "tsep_values": tseps,
@@ -94,8 +99,10 @@ def run(context: ToolContext, *, tune_z_values: list[float]) -> dict[str, object
                     fitting_form=str(settings["fitting_form"]),
                     fit_scope=fit_scope,
                     components=component,
-                    tmin=int(pt2_window["tmin"]),
-                    tmax=int(pt2_window["tmax"]),
+                    tmin=int(pt2_window["initial"]["tmin"]),
+                    tmax=int(pt2_window["initial"]["tmax"]),
+                    pt2_windows_by_state=pt2_window,
+                    target_observable=context.manifest["metadata"].get("target_observable"),
                     tsep_values=tseps,
                     tau_min=int(pt3_window["tau_cut"]),
                     n_states=dict(nstate),

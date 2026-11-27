@@ -9,7 +9,7 @@ import numpy as np
 
 from lamet_agent.agent import ToolContext
 from lamet_agent.data import EnsembleData
-from lamet_agent.stages._reporting import grid_segments
+from lamet_agent.stages._reporting import grid_segments, kinematic_series_label
 from lamet_agent.plotting import (
     configure_plot,
     errorband,
@@ -110,22 +110,27 @@ def run(context: ToolContext) -> dict[str, object]:
     (context.artifact_directory / "diagnostics" / "matching.json").write_text(
         json.dumps(diagnostics, indent=2), encoding="utf-8"
     )
-    start_plot()
-    hline(0.0, color="black")
     plot_min = np.inf
     plot_max = -np.inf
     plotted_x: list[float] = []
     sample_error_mode = str(context.manifest["metadata"]["sample_error_mode"])
-    quasi_label = rf"quasi, $P_z={round(float(momentum), 2):g}\,\mathrm{{GeV}}$"
+    kinematic_label = kinematic_series_label(
+        data.attrs,
+        spacing_fm=getattr(data.ensemble, "a_s", None),
+        fallback=context.job_id,
+    )
+    quasi_label = f"quasi, {kinematic_label}"
     base_series = (
         (data, x_in, quasi_label),
-        (result, x_out, "light-cone"),
+        (result, x_out, f"light-cone, {kinematic_label}"),
     )
     if is_even_about_zero(data):
         base_series = tuple(
             (*_nonnegative_x(values, list(x_values)), label) for values, x_values, label in base_series
         )
     series = []
+    start_plot()
+    hline(0.0, color="black")
     for base_index, (values, x_values, label) in enumerate(base_series):
         selected = select_output_component(values)
         if selected.attrs["output_component"] == "both" and np.iscomplexobj(selected.values):

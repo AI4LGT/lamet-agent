@@ -47,16 +47,15 @@ supplied positive-z grid. Follow this selection policy in order of priority:
    zero. In contrast, an oscillation that is consistent with zero followed by
    a later, large-amplitude excursion away from zero without a plausible local
    trend is pathological; place zmax before that unsupported excursion.
-2. Use raw zmin_fm as the main scan direction. Start at the first available grid
-   point at or just above 0.5 fm, then provide progressively larger grid points
-   so that the tail fit can test when chi2/dof stops improving significantly.
-   Recommend about 4--5 successive zmin grid points when the input coverage
-   allows it, rather than only one or two. Never recommend raw zmin_fm below
-   0.5 fm. Runtime later applies `tail_window_step_offset * z_grid_step_fm`; effective
-   zmin values must remain nonnegative and lie on the input grid. For GPD,
-   effective zmin values must be at least 0.5 fm, including authored ranges
-   and systematic variations. Choose raw GPD starts from `eligible_raw_zmin_fm` when supplied.
-   Other observables may use authored runtime ranges including zero.
+2. Use raw zmin_fm as the main scan direction. Start at the first measured
+   grid point at or above the minimum (0.5 fm, or `gpd_min_zmin_fm` for a
+   GPD job). Recommend about 4--5 successive lower grid points when coverage
+   allows it so the fit can test when chi2/dof stops improving. Runtime
+   applies `tail_window_step_offset * z_grid_step_fm`. Effective zmin values
+   must be nonnegative and lie on the input grid. GPD effective zmin values
+   must also respect the specified minimum, including for systematic variations.
+   Choose from `eligible_raw_zmin_fm` when supplied. Other observables may
+   use authored runtime ranges including zero.
 3. Prefer candidate pairs with the same large zmax and ordered increasing
    zmin values. Recommend 2--3 zmax grid points when the input coverage allows
    it, with the largest valid zmax first and carrying the largest-zmax choice

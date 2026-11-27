@@ -53,3 +53,12 @@ def test_gpd_completion_preserves_positive_branch_and_real_fourier(label, delta,
     assert result.attrs["signed_z_completion"] == "gpd_same_flow_conjugation"
     assert result.attrs["phase_transfer_gpd"] == label
     assert result.attrs["gpd_completion_mode"] == "paired_flow"
+
+
+@pytest.mark.parametrize("xi,observable", [(0.0, "pdf"), (0.25, "gpd")])
+def test_pion_gpd_nlo_matching_selects_the_hard_kernel_by_skewness(xi, observable):
+    from lamet_agent.kernels import matching_kernel_id
+
+    attrs = {"parton": "quark", "target_observable": "gpd", "gfix": "GI",
+             "kernel_operator": "gt", "renormalization_scheme": "hybrid", "xi": xi}
+    assert matching_kernel_id(attrs, order="nlo", resummation="") == f"quark_{observable}_gi_gt_hybrid_nlo"

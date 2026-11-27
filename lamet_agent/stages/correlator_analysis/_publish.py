@@ -7,8 +7,10 @@ import numpy as np
 
 from lamet_agent.agent import ToolContext
 from lamet_agent.data import EnsembleData
+from lamet_agent.kernels.implementation import HBAR_C_GEV_FM
 from lamet_agent.parallel import FitNumericalError
 from lamet_agent.plotting import configure_plot, errorline, save_figure, start_plot
+from lamet_agent.stages._reporting import kinematic_series_label
 from lamet_agent.ui import log
 from lamet_agent.stages.correlator_analysis._diagnostics import write_fit_artifacts
 from lamet_agent.stages.correlator_analysis.physics import (
@@ -92,6 +94,8 @@ def _apply_ordinary_candidate(
         "components": {"re": "real", "im": "imag", "both": "both"}[str(context.params["component"])],
         "tmin": int(candidate["window"]["tmin"]),
         "tmax": int(candidate["window"]["tmax"]),
+        "pt2_windows_by_state": candidate["window"].get("pt2_by_state"),
+        "target_observable": context.manifest["metadata"].get("target_observable"),
         "tsep_values": [int(value) for value in candidate["tsep_values"]],
         "tau_min": int(candidate["window"]["tau_min"]),
         "n_states": candidate["nstate"],
@@ -138,31 +142,39 @@ def run(context: ToolContext, *, candidate_id: str) -> dict[str, object]:
     scope = parse_fit_scope(lsqfit["fit_scope"])
     candidates = [*context.state.get("spectrum_candidates", []), *context.state.get("matrix_element_candidates", [])]
     if scope.needs_pt3_data:
+        state_windows = lsqfit.get("pt2_windows_by_state") or [
+            {"initial": window, "final": window} for window in lsqfit["pt2_windows"]
+        ]
         expected = {
             (
-                int(pt2["tmin"]),
-                int(pt2["tmax"]),
+                pt2["initial"]["tmin"],
+                pt2["initial"]["tmax"],
+                pt2["final"]["tmin"],
+                pt2["final"]["tmax"],
                 int(pt3["tau_cut"]),
                 tuple(int(value) for value in pt3["tsep_ls"]),
                 nstate_key(nstate),
                 float(width),
             )
-            for pt2 in lsqfit["pt2_windows"]
+            for pt2 in state_windows
             for pt3 in lsqfit["pt3_windows"]
             for nstate in nstate_combinations(context.params["nstate"], lsqfit["fit_scope"])
             for width in lsqfit["prior_width"]
         }
         observed = {
             (
-                candidate["window"]["tmin"],
-                candidate["window"]["tmax"],
-                candidate["window"]["tau_min"],
+                window["tmin"],
+                window["tmax"],
+                window.get("pt2_by_state", {}).get("final", window)["tmin"],
+                window.get("pt2_by_state", {}).get("final", window)["tmax"],
+                window["tau_min"],
                 tuple(int(value) for value in candidate.get("tsep_values", [])),
                 nstate_key(candidate["nstate"]) if candidate.get("nstate") is not None else None,
                 candidate.get("prior_width"),
             )
             for candidate in candidates
             if candidate.get("observable") == "matrix_element"
+            for window in [candidate["window"]]
         }
         missing = sorted(expected - observed)
         if missing:
@@ -301,8 +313,49 @@ def run(context: ToolContext, *, candidate_id: str) -> dict[str, object]:
             if primary_quality.get(key) is not None:
                 selected[key] = primary_quality[key]
     context.state["correlator_result"] = data
-    if context.manifest["metadata"].get("target_observable") == "tmd":
-        data.array.attrs["target_observable"] = "tmd"
+    target_observable = str(context.manifest["metadata"].get("target_observable", "")).lower()
+    if target_observable:
+        data.array.attrs["target_observable"] = target_observable
+    fitting_form = str(settings["fitting_form"])
+    data.array.attrs["fitting_form"] = fitting_form
+    data.array.attrs["fitting_component"] = str(context.params["component"])
+    has_nonforward_kinematics = target_observable == "gpd" or fitting_form.lower() == "nonbreit"
+    if has_nonforward_kinematics:
+        source_momentum = np.asarray(json.loads(data.attrs["source_momentum"]), dtype=float)
+        sink_momentum = np.asarray(json.loads(data.attrs["sink_momentum"]), dtype=float)
+        initial_pz = float(source_momentum[2] * data.ensemble.k_s)
+        final_pz = float(sink_momentum[2] * data.ensemble.k_s)
+        if final_pz + initial_pz != 0:
+            data.array.attrs["xi"] = (final_pz - initial_pz) / (final_pz + initial_pz)
+        fits = selected.get("application_fit", {}).get("fits", [])
+        energy_fits = [fit for fit in fits if fit.get("E0_i") is not None and fit.get("E0_f") is not None]
+        source = settings.get("t_energy_source", "fit")
+        if source == "pion_dispersion":
+            if str(data.attrs.get("hadron", "")).lower() != "pion":
+                raise ValueError("pion_dispersion requires a pion matrix element")
+            mpi, ks = float(data.ensemble.m_pi), float(data.ensemble.k_s)
+            initial_energy = np.sqrt(mpi**2 + (ks * np.linalg.norm(source_momentum))**2)
+            final_energy = np.sqrt(mpi**2 + (ks * np.linalg.norm(sink_momentum))**2)
+        elif energy_fits:
+            reference = min(energy_fits, key=lambda fit: (abs(float(fit["z"])), float(fit["z"])))
+            energy_scale = HBAR_C_GEV_FM / float(data.ensemble.a_t)
+            initial_energy = float(reference["E0_i"]) * energy_scale
+            final_energy = float(reference["E0_f"]) * energy_scale
+        if source == "pion_dispersion" or energy_fits:
+            delta = sink_momentum - source_momentum
+            delta_spatial_sq = float(data.ensemble.k_s)**2 * np.dot(delta, delta)
+            data.array.attrs["t_energy_source"] = source
+            data.array.attrs["initial_energy_gev"] = initial_energy
+            data.array.attrs["final_energy_gev"] = final_energy
+            data.array.attrs["t_gev2"] = (final_energy - initial_energy)**2 - delta_spatial_sq
+        elif np.array_equal(source_momentum, sink_momentum):
+            data.array.attrs["t_gev2"] = 0.0
+    kinematic_label = kinematic_series_label(
+        data.attrs,
+        spacing_fm=getattr(data.ensemble, "a_s", None),
+        fallback=context.job_id,
+    )
+    if target_observable == "tmd":
         data.array.attrs["output_component"] = str(context.params["component"])
     data.to_netcdf(context.artifact_directory / "output.nc")
     candidate_table = [
@@ -364,6 +417,7 @@ def run(context: ToolContext, *, candidate_id: str) -> dict[str, object]:
             artifact_directory=context.artifact_directory,
             component=str(context.params["component"]),
             q_min=float(settings["q_min"]),
+            kinematic_label=kinematic_label,
             model_average=model_average,
             fit_model_weights=mean_weights,
             averaged_ids=averaged_ids,
@@ -416,9 +470,17 @@ def run(context: ToolContext, *, candidate_id: str) -> dict[str, object]:
     if plot_artifact is None:
         sample_error_mode = str(context.manifest["metadata"]["sample_error_mode"])
         start_plot()
-        errorline(data.coords[plot_dim], plot_data.average(sample_error_mode))
+        errorline(
+            data.coords[plot_dim],
+            plot_data.average(sample_error_mode),
+            label=kinematic_label,
+        )
         xlabel = r"$z~/~a$" if plot_dim == "z" else plot_dim
-        configure_plot(xlabel=xlabel, ylabel=str(data.name or "result").replace("_", " "))
+        configure_plot(
+            xlabel=xlabel,
+            ylabel=str(data.name or "result").replace("_", " "),
+            legend=has_nonforward_kinematics or target_observable in {"pdf", "da"},
+        )
         save_figure(context.artifact_directory / "plots" / "result.pdf")
         plot_artifact = "plots/result.pdf"
     artifacts = (

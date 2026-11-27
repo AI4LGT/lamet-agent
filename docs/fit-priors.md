@@ -589,8 +589,18 @@ Here, "nucleon family" means input hadron `nucleon`, `proton`, `lambda`, or `xi0
 | DA | `(light, heavy)` | `full` | `A2`, `phi2` |
 | DA | `(heavy, light)` | `full` | `A1`, `phi1` |
 | GPD | `pion` | `sea` | `A2`, `phi2`, `At2`, `phit2` |
-| GPD | `pion` | `valence`, `singlet`, `full` | `A1`, `phi1`, `A3`, `phi3`, `A2`, `phi2`, `At2`, `phit2` |
+| GPD | `pion`, real unpolarized channel at $\xi=0$ | `valence` | `A2`, `A1`, `phi1` |
+| GPD | `pion`, remaining channels | `valence`, `singlet`, `full` | `A1`, `phi1`, `A3`, `phi3`, `A2`, `phi2`, `At2`, `phit2` |
 | GPD | Nucleon family | `sea`, `valence`, `singlet`, `full` | `A2`, `phi2`, `At2`, `phit2` |
+
+For the zero-skewness pion example, each transfer uses its own fitted tail
+amplitudes and the longitudinal $\bar P_z=(p_i^z+p_f^z)/2$. The example sets
+`gpd_min_zmin_fm` to 0.08 fm to permit its explicitly authored short windows.
+The default minimum is 0.5 fm. Each NonBreit `pt2_windows_by_state` entry
+pairs an initial and a final half-open time window in lattice units.
+The example sets `t_energy_source="pion_dispersion"` to label $Q^2=-t$ with
+$E_{i,f}=\sqrt{m_\pi^2+|\mathbf{p}_{i,f}|^2}$. This choice affects the transfer
+metadata and plots. The matrix-element fit still uses its own fitted energies.
 
 Build the complete prior list from the selected row using these rules:
 

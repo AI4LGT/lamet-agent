@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
-from numbers import Real
 from pathlib import Path
 
 from lamet_agent.stages._reporting import (
@@ -13,30 +11,11 @@ from lamet_agent.stages._reporting import (
     describe_grid,
     figure_lines,
     format_value,
+    kinematic_series_label,
     output_attrs,
     stage_overlay_lines,
     write_report,
 )
-
-
-def _momentum_series_label(record: StageReportRecord) -> str | None:
-    value = output_attrs(record).get("momentum_gev")
-    if isinstance(value, Real) and not isinstance(value, bool) and math.isfinite(float(value)):
-        return rf"$P_z={round(float(value), 2):g}\,\mathrm{{GeV}}$"
-    return None
-
-
-def _spacing_series_label(record: StageReportRecord) -> str | None:
-    ensemble = getattr(record.output, "ensemble", None)
-    spacing = getattr(ensemble, "a_s", None)
-    if (
-        isinstance(spacing, Real)
-        and not isinstance(spacing, bool)
-        and math.isfinite(float(spacing))
-        and float(spacing) > 0
-    ):
-        return rf"$a={float(spacing):.4g}\,\mathrm{{fm}}$"
-    return None
 
 
 def _variation_series_label(record: StageReportRecord) -> str | None:
@@ -51,11 +30,15 @@ def _variation_series_label(record: StageReportRecord) -> str | None:
 
 
 def _combined_series_label(record: StageReportRecord) -> str:
+    attrs = output_attrs(record)
     parts = [
         label
         for label in (
-            _momentum_series_label(record),
-            _spacing_series_label(record),
+            kinematic_series_label(
+                attrs,
+                spacing_fm=getattr(getattr(record.output, "ensemble", None), "a_s", None),
+                fallback="",
+            ),
             _variation_series_label(record),
         )
         if label
@@ -71,10 +54,11 @@ selected observable/hadron channel, the GI/CG LA/NLA ansatz is
 $$
 h(z)=\left[A_2e^{i\phi_2\operatorname{sgn}z}
 +\frac{A'_2e^{i\phi'_2\operatorname{sgn}z}}{|z|}\right]
-e^{-\Lambda |z|/(\hbar c)},
+e^{-(\Lambda+\Lambda_0)|z|/(\hbar c)},
 $$
 
-where the primed term is omitted at LA.  The CG family divides the selected
+where the primed term is omitted at LA and $\Lambda_0$ is the authored
+`Lambda0_gev` offset. The CG family divides the selected
 base family by the fitted power $(|z|/1\,\mathrm{fm})^n$.  The algebraic
 coordinate is therefore the numerical input coordinate in fm; only momentum
 phases and the exponential decay use $\hbar c$.  The
@@ -86,15 +70,17 @@ channel-specific base structures are:
 * DA: two ordered meson endpoints, with pion-only isospin constraints;
 * GPD: the hadron-dependent non-forward endpoint structures.
 
-The pion valence-PDF branch uses its dedicated two-endpoint form
+For the real unpolarized pion valence GPD at $\xi=0$, the initial and final
+longitudinal frequencies coincide. Each transfer has its own fitted amplitudes
+and phase. This channel and the pion valence PDF use the same two-endpoint form
 
 $$
 h(z)=\left[A_2+2A_1\cos\left(\phi_1-\frac{P_z|z|}{\hbar c}\right)
  +\frac{1}{|z|}\left(A'_2+2A'_1\cos\left(\phi'_1-\frac{P_z|z|}{\hbar c}\right)\right)\right]
-e^{-\Lambda |z|/(\hbar c)},
+e^{-(\Lambda+\Lambda_0)|z|/(\hbar c)},
 $$
 
-with the CG power applied afterward.  GPD tails use the endpoint structures
+with the CG power applied afterward. Other GPD tails use the endpoint structures
 selected by the hadron and the paired-flow convention.  Thus the parameter
 names are model- and observable-dependent; short-distance data are never
 replaced by the asymptotic ansatz.

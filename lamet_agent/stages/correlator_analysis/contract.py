@@ -91,6 +91,9 @@ PARAM_RULES = (
     Value("analysis_method", Literal["lsqfit", "lanczos"], physics="'lsqfit' fits authored correlator models with sample-wise nonlinear least-squares; 'lanczos' extracts the spectrum or matrix element through the Lanczos algorithm."),
     Recommends("lsqfit", "qda_window", physics="An explicit independent source window is optional.", default=None),
     Recommends("lsqfit", "qda_windows_by_z", physics="Optional static coordinate-specific source windows override qda_window for native TMD axial fits.", default={}),
+    Recommends("lsqfit", "t_energy_source", physics="Energy convention used only to record the invariant momentum transfer for GPD and NonBreit outputs.", default="fit"),
+    Value("lsqfit.t_energy_source", Literal["fit", "pion_dispersion"], physics="Use ground-state energies at the smallest fitted |z|, or the pion dispersion relation with the ensemble pion mass and the full initial and final three-momenta."),
+    Recommends("lsqfit", "pt2_windows_by_state", physics="Optional explicit NonBreit fit candidates with separate initial- and final-state two-point windows; each list item is one paired candidate.", default=[]),
     Recommends("lsqfit", "qda_output", physics="The usual qDA amplitude convention remains the default.", default="ratio"),
     Recommends("lsqfit", "tmd_phase_rotation", physics="Raw axial TMDWF phases are opt-in.", default=False),
     Recommends("lsqfit", "ff_energy_gev", physics="Only the wall-current form factor needs a normalization energy.", default=None),
@@ -132,6 +135,11 @@ PARAM_RULES = (
     Value("lsqfit.pt2_windows.window.tmin", int, physics="The starting Euclidean lattice-time coordinate of the two-point correlator fit; it must be a nonnegative integer.", validator=_nonnegative),
     Depends("lsqfit.pt2_windows.window", "tmax", physics="A two-point fit window requires an upper endpoint."),
     Value("lsqfit.pt2_windows.window.tmax", int, physics="The exclusive ending Euclidean lattice-time coordinate of the two-point correlator fit; it must be a positive integer.", validator=_positive),
+    List("lsqfit.pt2_windows_by_state", "pair", physics="Each candidate may use independent two-point fit windows for the initial and final momentum states."),
+    Depends("lsqfit.pt2_windows_by_state.pair", "initial", physics="A NonBreit two-point window pair requires its initial-state fit window."),
+    Value("lsqfit.pt2_windows_by_state.pair.initial", dict, physics="Initial-state two-point fit window {tmin,tmax}, with an exclusive upper endpoint.", validator=_time_window),
+    Depends("lsqfit.pt2_windows_by_state.pair", "final", physics="A NonBreit two-point window pair requires its final-state fit window."),
+    Value("lsqfit.pt2_windows_by_state.pair.final", dict, physics="Final-state two-point fit window {tmin,tmax}, with an exclusive upper endpoint.", validator=_time_window),
     List("lsqfit.pt3_windows", "window", physics="Multiple three-point windows let the candidate scan test insertion-range stability."),
     Depends("lsqfit.pt3_windows.window", "tsep_ls", physics="A three-point window requires the source-sink separations it uses."),
     List("lsqfit.pt3_windows.window.tsep_ls", "tsep", physics="A list is needed because one candidate window may cover several source-sink separations, which must be unique.", validator=_nonempty_unique),
@@ -223,6 +231,19 @@ def check_lsqfit_windows(context: CheckContext) -> Issue | None:
                 "must be an increasing nonnegative integer window",
                 "Every two-point fit window contains physical lattice times.",
             )
+    state_windows = lsqfit.get("pt2_windows_by_state") or []
+    if state_windows and lsqfit["fitting_form"] != "NonBreit":
+        return Issue(
+            "pt2_windows_by_state",
+            "is only available for NonBreit fits",
+            "Independent initial- and final-state spectra are part of the non-forward kinematics.",
+        )
+    if state_windows and "2pt" not in scope.atom_set:
+        return Issue(
+            "pt2_windows_by_state",
+            "requires a 2pt fit atom",
+            "State-specific windows only select the initial and final two-point likelihood data.",
+        )
     for index, window in enumerate(lsqfit.get("pt3_windows") or []):
         tseps = window["tsep_ls"]
         tau_cut = window["tau_cut"]

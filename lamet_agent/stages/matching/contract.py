@@ -25,7 +25,7 @@ from lamet_agent.contract import (
 
 
 _DATA_KERNEL_ARGUMENTS = frozenset({"x_out", "x_in"})
-_CONTEXT_KERNEL_ARGUMENTS = frozenset({"momentum_gev", "scale_gev", "zs_fm"})
+_CONTEXT_KERNEL_ARGUMENTS = frozenset({"momentum_gev", "scale_gev", "zs_fm", "skewness"})
 
 
 def _positive(value: int | float) -> bool:
@@ -188,7 +188,7 @@ PARAM_RULES = (
     Value("resummation", Literal["", "rgr", "lrr", "rgr_lrr", "rgr_tr", "rgr_lrr_tr"], physics="Empty selects fixed order; rgr selects evolution, lrr leading-renormalon resummation. GI gamma-t hybrid nonsinglet PDF supports rgr_lrr at NLO/NNLO and rgr_tr/rgr_lrr_tr at NLO/NNLO with independent matching. TR rejects spectator scales below mu_min_gev."),
     Depends("", "mu", physics="The matching scale is the MS-bar scale of the published light-cone distribution in GeV, conventionally 2 GeV, and enters every coefficient function through the logarithm ln(4 y^2 Pz^2 / mu^2)."),
     Depends("", "lc_x_ls", physics="A list is the exact light-cone output grid; a start/stop mapping instead keeps the quasi-grid points inside the closed window, and never interpolates."),
-    Recommends("", "kernel_parameters", physics="Kernel-specific controls are explicit and are validated against the selected kernel signature; every kernel accepts eps, the regulator keeping plus-prescription denominators finite, and nlo_rgr_* kernels add kappa and mu_min_gev, which build row x at mu0=2*kappa*abs(x)*Pz for general nonsinglets and zero every row with mu0 below mu_min_gev, so together they impose the cutoff x_min=mu_min_gev/(2*kappa*Pz) and keep mu0 above the Landau pole.", default={}),
+    Recommends("", "kernel_parameters", physics="Kernel-specific controls are explicit and are validated against the selected kernel signature; GPD skewness is derived from upstream xi. Every kernel accepts eps, the regulator keeping plus-prescription denominators finite, and nlo_rgr_* kernels add kappa and mu_min_gev, which build row x at mu0=2*kappa*abs(x)*Pz for general nonsinglets and zero every row with mu0 below mu_min_gev, so together they impose the cutoff x_min=mu_min_gev/(2*kappa*Pz) and keep mu0 above the Landau pole.", default={}),
     Value("mu", (int, float), physics="The matching scale is finite and positive, and must stay far enough above LambdaQCD for a perturbative coupling to exist.", validator=_positive),
     Value("lc_x_ls", (list, dict), physics="The light-cone grid is increasing or has finite start/stop bounds.", validator=_valid_lc_x_ls),
     Value("kernel_parameters", dict, physics="Kernel parameters are an explicit mapping."),

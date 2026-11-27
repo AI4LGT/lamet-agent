@@ -427,6 +427,7 @@ def prepare_resampling_groups(document: dict[str, Any], root: Path) -> dict[str,
     exclusion_reasons: dict[str, dict[str, list[dict[str, str]]]] = {}
     for job in block.get("jobs", []):
         params = {**block.get("defaults", {}), **job}
+        sources = []
         for source in job.get("inputs", {}).get("correlators", []):
             path = Path(source["json"])
             if not path.is_absolute():
@@ -434,13 +435,18 @@ def prepare_resampling_groups(document: dict[str, Any], root: Path) -> dict[str,
             # Inspect selectors before loading large legacy datasets.
             records = json.loads(path.read_text(encoding="utf-8"))["correlators"]
             record = next(record for record in records if record["id"] == source["id"])
+            sources.append((path, record))
+        state_windows = params.get("pt2_windows_by_state")
+        if state_windows:
+            three = next(record for _, record in sources if record["correlator_type"] == "three_point")
+        for path, record in sources:
             group = record.get("selectors", {}).get("resample_group")
             if group is None:
                 continue
             if not isinstance(group, str) or not group:
                 raise ValueError("resample_group must be a nonempty string")
-            loaded = load_descriptor(path, selected_ids={source["id"]})
-            data = loaded["correlators"][source["id"]]
+            loaded = load_descriptor(path, selected_ids={record["id"]})
+            data = loaded["correlators"][record["id"]]
             count = data.n_sample
             identities = record.get("selectors", {}).get("configuration_ids", list(range(count)))
             if not isinstance(identities, list) or len(identities) != count or len(set(map(str, identities))) != count:
@@ -454,13 +460,17 @@ def prepare_resampling_groups(document: dict[str, Any], root: Path) -> dict[str,
                 groups[group] = {"all_configuration_ids": identities, "geometry": geometry}
                 masks[group] = np.ones(count, dtype=bool)
                 exclusion_reasons[group] = {}
-            finite = _finite_fit_configurations(data, params)
+            fit_params = params
+            if state_windows and record["correlator_type"] == "two_point":
+                state = "initial" if record["sink_momentum"] == three["source_momentum"] else "final"
+                fit_params = {**params, "pt2_windows": [pair[state] for pair in state_windows]}
+            finite = _finite_fit_configurations(data, fit_params)
             masks[group] &= finite
             for index in np.flatnonzero(~finite):
                 exclusion_reasons[group].setdefault(str(index), []).append({
                     "configuration_id": identities[index],
                     "job_id": job["id"],
-                    "correlator_id": source["id"],
+                    "correlator_id": record["id"],
                     "reason": "nonfinite_in_authored_fit_domain",
                 })
     for group, entry in groups.items():

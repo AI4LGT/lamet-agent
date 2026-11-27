@@ -1092,7 +1092,27 @@ def scan_fourier_transform(
     ):
         raise ValueError("Fourier scan requires finite positive momentum_gev")
     hadron = str(data.attrs.get("hadron", ""))
-    tail_family = _tail_family(observable, hadron, str(scan["sector"]), psi1_flavor_class, psi2_flavor_class)
+    tail_observable = observable
+    xi = data.attrs.get("xi")
+    if (
+        observable == "GPD"
+        and hadron.lower() == "pion"
+        and (gpd_polarization or data.attrs.get("polarization")) == "unpolarized"
+        and str(scan["sector"]).lower() == "valence"
+        and source_component == "re"
+        and isinstance(xi, (int, float))
+        and not isinstance(xi, bool)
+        and math.isfinite(float(xi))
+        and math.isclose(float(xi), 0.0, rel_tol=0.0, abs_tol=1e-12)
+    ):
+        # At xi=0, the initial and final longitudinal frequencies coincide.
+        # The real part of the four GPD endpoint terms reduces to one cosine
+        # harmonic plus a constant, so retain the existing pion-valence LA/NLA
+        # form with t-dependent fitted amplitudes and phase.
+        tail_observable = "PDF"
+        tail_family = "pion_gpd_zero_skewness_valence"
+    else:
+        tail_family = _tail_family(observable, hadron, str(scan["sector"]), psi1_flavor_class, psi2_flavor_class)
     requested_gpd_grid = None if gpd_projection_grid is None else np.asarray(gpd_projection_grid, dtype=float)
     if observable == "GPD" and requested_gpd_grid is not None:
         if requested_gpd_grid.ndim != 1 or requested_gpd_grid.size == 0 or np.any(~np.isfinite(requested_gpd_grid)):
@@ -1124,7 +1144,7 @@ def scan_fourier_transform(
         names = _tail_parameter_names(
             model_id,
             range_order,
-            observable,
+            tail_observable,
             psi1_flavor_class,
             psi2_flavor_class,
             scan["sector"],
@@ -1140,7 +1160,7 @@ def scan_fourier_transform(
             model_id=model_id,
             order=range_order,
             lambda0_gev=lambda0_gev,
-            observable=observable,
+            observable=tail_observable,
             psi1_flavor_class=psi1_flavor_class,
             psi2_flavor_class=psi2_flavor_class,
             sector=str(scan["sector"]),
@@ -1168,7 +1188,7 @@ def scan_fourier_transform(
                 order=range_order,
                 source_component=source_component,
                 lambda0_gev=lambda0_gev,
-                observable=observable,
+                observable=tail_observable,
                 psi1_flavor_class=psi1_flavor_class,
                 psi2_flavor_class=psi2_flavor_class,
                 sector=str(scan["sector"]),
@@ -1193,7 +1213,7 @@ def scan_fourier_transform(
         names = _tail_parameter_names(
             selected_model_id,
             order,
-            observable,
+            tail_observable,
             psi1_flavor_class,
             psi2_flavor_class,
             scan["sector"],
@@ -1215,7 +1235,7 @@ def scan_fourier_transform(
                 model_id=selected_model_id,
                 order=order,
                 lambda0_gev=lambda0_gev,
-                observable=observable,
+                observable=tail_observable,
                 psi1_flavor_class=psi1_flavor_class,
                 psi2_flavor_class=psi2_flavor_class,
                 sector=str(scan["sector"]),
@@ -1232,7 +1252,7 @@ def scan_fourier_transform(
                 order=order,
                 source_component=source_component,
                 lambda0_gev=lambda0_gev,
-                observable=observable,
+                observable=tail_observable,
                 psi1_flavor_class=psi1_flavor_class,
                 psi2_flavor_class=psi2_flavor_class,
                 sector=str(scan["sector"]),
@@ -1252,12 +1272,14 @@ def scan_fourier_transform(
                 model_id=selected_model_id,
                 tail_parameters=parameters,
                 order=order,
-                observable=observable,
+                observable=tail_observable,
                 psi1_flavor_class=psi1_flavor_class,
                 psi2_flavor_class=psi2_flavor_class,
                 sector=str(scan["sector"]),
                 hadron=hadron,
             )
+            if tail_observable != observable:
+                extended.attrs["tail_family"] = tail_family
             projected_values = (
                 np.real(extended.values)
                 if source_component == "re"

@@ -69,6 +69,15 @@ def matching_kernel_id(
     scheme = str(scheme).strip().lower()
     order = str(order).strip().lower()
     resummation = str(resummation).strip().lower()
+    if (
+        observable == "gpd"
+        and parton == "quark"
+        and gauge == "gi"
+        and operator == "gt"
+        and scheme == "hybrid"
+        and float(attrs.get("xi", float("nan"))) == 0.0
+    ):
+        observable = "pdf"
     if gauge not in _VALID_GAUGES:
         raise ValueError(f"matching provenance gfix must be 'gi' or 'cg', got {gauge!r}")
     if scheme not in _VALID_SCHEMES:

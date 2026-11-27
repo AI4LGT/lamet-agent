@@ -9,10 +9,11 @@ The paper supplies the prescription, not a new derivation of the hybrid term.
 
 `kernel(x_out, x_in, *, momentum_gev, scale_gev, zs_fm, skewness, ...)`
 returns a matrix with shape `(len(x_out), len(x_in))`, acting as
-`lightcone = matrix @ quasi`. The public filename and required arguments are
-unchanged. The matching stage supplies momentum and the hybrid switching
-distance from upstream attributes; `skewness` and the optional numerical
-controls are explicit `kernel_parameters`.
+`lightcone = matrix @ quasi`. The public filename and kernel-call arguments are
+unchanged. In package workflows, the matching stage supplies momentum and the
+hybrid switching distance from upstream attributes and derives `skewness` from
+the upstream GPD attribute `xi`; it is not an authored `kernel_parameters`
+control. Direct calls to `kernel()` still pass `skewness` explicitly.
 
 Let c(x,y) denote the original off-diagonal coefficient, **including** its
 alpha_s C_F/(4 pi) factor, with the inverse-matching sign applied below.
@@ -87,9 +88,12 @@ Refinement width and spacing are caller choices; the kernel accepts arbitrary
 strictly increasing grids and does not force a particular refinement pattern.
 Interpolating a coarse quasi-GPD to more points does not add measured information.
 
-For package execution, put `skewness` and `epsilon2` in `kernel_parameters`;
-keep `zs_fm` in upstream hybrid-renormalization attributes. Existing calls remain
-syntactically valid, but numerical results and grid requirements change.
+For package execution, put `epsilon2` and any other numerical controls in
+`kernel_parameters`; the matching stage derives `skewness` from `xi`. At
+exactly zero GPD skewness, the kernel selector uses the PDF coefficient and
+does not pass a GPD-only `skewness` parameter. Keep `zs_fm` in upstream
+hybrid-renormalization attributes. Existing direct calls remain syntactically
+valid, but numerical results and grid requirements change.
 SciPy is already a required package dependency.
 
 ## Scope and validation limits
