@@ -10,6 +10,11 @@ from lamet_agent.stages.renormalization._inspection import run as inspect
 
 def run(context: ToolContext, _session: LlmSession) -> None:
     """Inspect and execute one explicit fit or apply job without LLM orchestration."""
+    if context.params["strategy"] == "tmd_zo":
+        from lamet_agent.stages.renormalization._zo import run as zo
+
+        zo(context)
+        return
     if context.params["strategy"] == "tmd_ratio":
         from lamet_agent.stages.renormalization._tmd import run as apply_tmd
 

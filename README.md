@@ -614,3 +614,10 @@ hard modulus/phase, and soft matrices before the cut product and signed DGLAP.
 Both new modes default to fractional sharp-cut cell integration; `point` is
 available for reference comparisons. See the companion kernel documents for
 regulator defaults, scale guards, and the finite-cut matching limitation.
+
+### Residual GI TMD renormalization
+
+Extract and apply a single-spacing residual `Z_O` after Wilson-loop division with
+`strategy="tmd_zo"`. See [the TMD Z_O guide](docs/tmd-zo-extraction.md) for the
+NLO and notebook NNLO boundary coefficients, order-matched NLL/NNLL RGR evolution,
+normalization contract, correlated averaging and scale variations.

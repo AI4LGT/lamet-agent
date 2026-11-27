@@ -489,6 +489,30 @@ def _fit_validation_lines(
 
 
 def write_stage_report(*, records: tuple[StageReportRecord, ...], artifact_directory: Path) -> Path:
+    zo_records = tuple(r for r in records if r.params.get("strategy") == "tmd_zo")
+    if zo_records:
+        other = tuple(r for r in records if r.params.get("strategy") != "tmd_zo")
+        lines = (write_stage_report(records=other, artifact_directory=artifact_directory)
+                 .read_text(encoding="utf-8").splitlines() if other else ["# Renormalization Stage Report", ""])
+        lines.extend(["", "## Residual TMD Z_O", "",
+                      "Wilson-loop-subtracted matrix elements are divided by a short-distance MSbar factor. "
+                      "Extraction averages authored coordinate points equally within each replica. "
+                      "The window is user-selected; completion does not certify a plateau.", ""])
+        for record in zo_records:
+            d = record.summary.get("diagnostics", {})
+            lines.extend([f"### `{record.job_id}`", ""])
+            if record.params["type"] == "fit":
+                lines.extend(["| initial-scale factor | Z_O | statistical error |", "|---|---:|---:|"])
+                for scale, value, error in zip(d["scale_factors"], d["Z_O"], d["statistical_errors"]):
+                    lines.append(f"| {scale:g} | {value:.8g} | {error:.5g} |")
+                lines.extend(["", f"Separate scale envelope: {d['scale_envelope']:.5g}.",
+                              f"Reference points (z,b) in fm: {d['points_fm']}.",
+                              f"Window diagnostic: {d['window_diagnostic']}.",
+                              f"Perturbative settings: {d['settings']}."])
+            else:
+                lines.append(f"Applied the stored factor at mu={d['mu']} GeV, scale variant={d['scale_factor']}.")
+            lines.extend(["", *_artifact_summary(record, artifact_directory)])
+        return write_report(artifact_directory, lines)
     formal_figures = _render_formal_figures(records, artifact_directory)
     apply_records = tuple(_apply_records(records))
     overview_lines = (
