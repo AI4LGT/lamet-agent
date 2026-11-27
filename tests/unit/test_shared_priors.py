@@ -142,10 +142,10 @@ def test_fourier_scan_applies_named_priors_to_ranges_and_la_nla_models(tail_inpu
         effective = candidate["effective_priors"]
         assert effective["Lambda"] == {"mean": 0.6, "sdev": 0.2}
         assert effective["A2"] == {"mean": 1.0, "sdev": 3.0}
-        assert candidate["prior_convention"] == "physical_mean_internal_sdev"
-        # Lambda is last for GI; the pre-existing log transform and internal width are preserved.
+        assert candidate["prior_convention"] == "physical_mass_gap_other_internal_sdev"
+        # Lambda is last for GI; its optimizer coordinate is the total mass gap in GeV.
         internal = candidate["base_fit_priors"][f"u{len(effective) - 1}"]
-        assert internal["mean"] == pytest.approx(np.log(0.6))
+        assert internal["mean"] == pytest.approx(0.7)
         assert internal["sdev"] == 0.2
         if candidate["order"] == "LA":
             assert candidate["inactive_prior_overrides"] == ["A2p", "unused"]

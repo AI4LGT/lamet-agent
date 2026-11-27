@@ -9,7 +9,7 @@ from typing import Any, TypedDict
 import numpy as np
 
 from lamet_agent.agent import LlmSession, ToolContext
-from lamet_agent.stages.fourier_transform._inspection import GPD_MIN_ZMIN_FM, prepare, shifted_zmin_fm
+from lamet_agent.stages.fourier_transform._inspection import TAIL_MIN_ZMIN_FM, prepare, shifted_zmin_fm
 from lamet_agent.structured import annotation_schema, json_compatible, validate_unique_items, validate_value
 
 
@@ -42,17 +42,17 @@ def recommend(
         evidence["previous_attempts"] = previous_attempts
     schema, _nullable = annotation_schema(TailRangeSuggestion)
     schema["properties"]["zmin_fm"]["minItems"] = 1
-    schema["properties"]["zmin_fm"]["items"]["minimum"] = 0.5
-    if target == "gpd" and "zmin_fm" in requested_fields:
+    schema["properties"]["zmin_fm"]["items"]["minimum"] = TAIL_MIN_ZMIN_FM
+    if "zmin_fm" in requested_fields:
         data, z_grid_step_fm = prepare(context)
         grid = np.asarray(data.coords["z"], dtype=float)
         eligible = []
-        for raw in grid[grid >= 0.5]:
+        for raw in grid[grid >= TAIL_MIN_ZMIN_FM]:
             effective = shifted_zmin_fm(raw, offset, z_grid_step_fm)
-            if effective >= GPD_MIN_ZMIN_FM and np.any(np.isclose(grid, effective, rtol=0, atol=1e-12)):
+            if effective >= TAIL_MIN_ZMIN_FM and np.any(np.isclose(grid, effective, rtol=0, atol=1e-12)):
                 eligible.append(float(raw))
         if not eligible:
-            raise ValueError(f"No measured GPD zmin_fm satisfies the 0.5 fm minimum with offset {offset}")
+            raise ValueError(f"No measured Fourier zmin_fm satisfies the 0.5 fm minimum with offset {offset}")
         schema["properties"]["zmin_fm"]["items"]["enum"] = eligible
         evidence["eligible_raw_zmin_fm"] = eligible
     schema["properties"]["zmax_fm"]["minItems"] = 1

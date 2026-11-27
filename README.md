@@ -310,6 +310,38 @@ through NNLO in RG counting.
 See [the NNNLL formula and example](lamet_agent/kernels/tmd/cg_nnnll.md).
 This selector does not upgrade the separate TMD hard factors or pipeline order controls.
 
+### Fourier tail-fit minimum distance
+
+All Fourier tail-fit windows require an effective `zmin_fm >= 0.5` fm,
+including PDF, DA, GPD, and any TMD tail fit using the shared tail workflow.
+The check applies after `tail_window_step_offset` shifts the lower boundary
+by measured physical z-grid intervals, including for systematic variants.
+Initial and retry recommendations use measured grid points satisfying this
+shifted bound. Exactly 0.5 fm is allowed; invalid authored ranges raise an error.
+Each model/order must also have more measured real-valued observations than
+fit parameters: `N_z > N_parameters` for one fitted component, or
+`2*N_z > N_parameters` for a joint real/imaginary fit, with at least two
+positive-z points. This is checked in the range scan, the later model scan,
+and direct tail-fit calls. Reflected points, replicas, and priors add no
+observations. Diagnostics report `n_observations`, `n_parameters`, and their
+difference `data_dof`, separately from the fitter's Bayesian `dof`.
+The tail mass gap `Lambda + Lambda0_gev` has a default Gaussian prior
+`0.5 +/- 0.3 GeV` and a hard positive domain (`> 0 GeV`). The width is in
+physical GeV, and the mass-gap prior remains fixed during posterior-prior
+refinement. See [Fourier priors](docs/fit-priors.md#fourier-tails) for the
+residual-parameter convention and Python overrides.
+The bound concerns |z| in the fitted tail; measured short-distance data remain
+in the Fourier transform. The current `strategy="tmd"` direct/tapered TMDWF
+and TMDPDF transforms do not fit a tail and therefore have no `zmin_fm` cut.
+
+
+The positive mass-gap prior damps the oscillation envelope; it does not remove
+physical phases or require a monotonic matrix element. Monotonic-range search
+is no longer part of the tail-range policy. Fourier fits require an explicit
+`sample_error_mode` consistent with the manifest; both PDF examples use
+`variance`. See the [DA/PDF/GPD/TMD test reports](docs/fourier-tail-test-reports.md)
+for numerical checks and the current TMD limitations.
+
 ## Intermediate Data (NetCDF)
 
 Stage-to-stage numerical artifacts are stored as NetCDF files. Every array has:
